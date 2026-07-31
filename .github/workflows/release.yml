@@ -15,7 +15,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: |
+          LATEST_XCODE="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          sudo xcode-select -s "${LATEST_XCODE:-/Applications/Xcode.app}"
+          xcodebuild -version
 
       - name: swift test (TidyCore)
         working-directory: TidyCore

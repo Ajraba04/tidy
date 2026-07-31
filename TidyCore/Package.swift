@@ -18,10 +18,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TidyCoreTests",
-            dependencies: ["TidyCore"],
-            resources: [
-                .copy("Fixtures")
-            ]
+            dependencies: ["TidyCore"]
         )
     ]
 )
