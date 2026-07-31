@@ -26,6 +26,7 @@ final class CleanViewModel {
 
     func loadPlan() async {
         phase = .loadingPlan
+        await DefaultCustomActionExecutors.registerAll(on: engine)
         let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier, environment: environment)
         phase = .reviewingPlan(plan)
     }

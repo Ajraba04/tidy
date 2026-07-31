@@ -35,8 +35,14 @@ public actor CleanEngine {
 
     /// Locates and measures every relevant item's targets. Read-only:
     /// nothing is deleted, moved, or modified.
+    ///
+    /// Tiers are cumulative — matching the shell script, where sections 1–3
+    /// and most of 5–7 run on every invocation and only a handful of
+    /// flags are opt-in — so a Normal plan includes Safe items too, and a
+    /// Deep plan includes Safe and Normal. `Tier` is `Comparable` in
+    /// exactly this order for that reason.
     public func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment) async -> CleanPlan {
-        let relevantItems = items.filter { $0.tier == tier && $0.isRelevant(in: environment) }
+        let relevantItems = items.filter { $0.tier <= tier && $0.isRelevant(in: environment) }
 
         var plannedItems: [PlannedItem] = []
         plannedItems.reserveCapacity(relevantItems.count)

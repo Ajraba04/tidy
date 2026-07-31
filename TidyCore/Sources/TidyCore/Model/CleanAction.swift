@@ -34,16 +34,15 @@ public struct ToolCommand: Sendable {
 
 /// A cleanup operation with logic too specific to express as a plain path
 /// delete — implemented in `Engine` and `Browsers`, never inline in the
-/// catalog.
+/// catalog. Simple path-based items (Trash, build outputs, stale
+/// node_modules, old transcripts) use `deletePath`/`deleteContents`
+/// instead — they don't need a case here.
 public enum CustomOperationID: String, Codable, Sendable, CaseIterable {
     case chromeCookies
     case simulatorPrune
     case gitRepoGC
+    case gitReflogExpireAggressive
     case apfsSnapshots
-    case trashEmpty
-    case staleNodeModules
-    case buildOutputs
-    case transcriptPrune
 }
 
 /// What a `CleanItem` does once its targets have been located and confirmed.

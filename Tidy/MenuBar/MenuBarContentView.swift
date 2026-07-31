@@ -50,8 +50,12 @@ struct MenuBarContentView: View {
                     openWindow(id: WindowID.clean, value: Tier.safe)
                 }
 
+                ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: WindowID.clean, value: Tier.normal)
+                }
+
                 VStack(alignment: .leading, spacing: 0) {
-                    ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {}
                     ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {}
                 }
                 .disabled(true)

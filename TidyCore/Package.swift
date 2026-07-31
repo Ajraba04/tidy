@@ -11,7 +11,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "TidyCore"
+            name: "TidyCore",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
         ),
         .testTarget(
             name: "TidyCoreTests",

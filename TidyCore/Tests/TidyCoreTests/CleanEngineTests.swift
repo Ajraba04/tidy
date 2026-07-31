@@ -40,6 +40,32 @@ struct CleanEngineTests {
         #expect(plan.plannedItems.map(\.id) == ["safe-item"])
     }
 
+    @Test("makePlan is cumulative: Normal includes Safe, Deep includes Safe and Normal")
+    func makePlanIsCumulativeAcrossTiers() async throws {
+        let scratch = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        func item(_ id: String, _ tier: Tier) -> CleanItem {
+            CleanItem(
+                id: id, title: id, tier: tier,
+                declaredRoot: { env in env.homeDirectory },
+                locate: { _ in [] }, action: .deletePath
+            )
+        }
+        let items = [item("safe", .safe), item("normal", .normal), item("deep", .deep)]
+        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let environment = makeEnvironment(homeDirectory: scratch.path)
+
+        let safePlan = await engine.makePlan(items: items, tier: .safe, environment: environment)
+        #expect(Set(safePlan.plannedItems.map(\.id)) == ["safe"])
+
+        let normalPlan = await engine.makePlan(items: items, tier: .normal, environment: environment)
+        #expect(Set(normalPlan.plannedItems.map(\.id)) == ["safe", "normal"])
+
+        let deepPlan = await engine.makePlan(items: items, tier: .deep, environment: environment)
+        #expect(Set(deepPlan.plannedItems.map(\.id)) == ["safe", "normal", "deep"])
+    }
+
     @Test("makePlan measures target sizes without deleting anything")
     func makePlanMeasuresWithoutDeleting() async throws {
         let scratch = try makeScratchDirectory()
