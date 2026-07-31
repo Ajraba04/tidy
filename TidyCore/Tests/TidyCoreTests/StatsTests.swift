@@ -36,3 +36,22 @@ struct SwapStatsTests {
         #expect(stats.usedBytes <= stats.totalBytes)
     }
 }
+
+@Suite("ByteFormat")
+struct ByteFormatTests {
+    @Test("never returns an empty string")
+    func neverReturnsEmptyString() {
+        #expect(!ByteFormat.human(0).isEmpty)
+        #expect(!ByteFormat.human(5_000_000_000).isEmpty)
+    }
+
+    @Test("formats gigabyte-scale and megabyte-scale values distinctly")
+    func formatsDistinctScales() {
+        #expect(ByteFormat.human(5_000_000) != ByteFormat.human(5_000_000_000))
+    }
+
+    @Test("clamps negative input to zero rather than crashing")
+    func clampsNegativeInput() {
+        #expect(ByteFormat.human(-100) == ByteFormat.human(0))
+    }
+}

@@ -1,0 +1,34 @@
+name: Tidy
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  TidyCore:
+    path: TidyCore
+
+targets:
+  Tidy:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tidy
+    dependencies:
+      - package: TidyCore
+    settings:
+      base:
+        PRODUCT_NAME: Tidy
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: "YES"
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Tidy/Tidy.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
