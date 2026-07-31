@@ -28,8 +28,8 @@ public enum DefaultCustomActionExecutors: Sendable {
         }
 
         await engine.register(.simulatorPrune) { target, _ in
-            // target.path carries the device UDID, not a filesystem path —
-            // see CleanCatalog+Xcode.swift, which sets isFilesystemPath:
+            // target.path carries the device UDID, not a filesystem path.
+            // See CleanCatalog+Xcode.swift, which sets isFilesystemPath:
             // false for exactly this reason.
             let succeeded = await SimulatorPruner.deleteDevice(udid: target.path)
             return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: succeeded ? nil : "could not delete \(target.label)")

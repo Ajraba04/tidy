@@ -1,14 +1,13 @@
 import Foundation
 
-/// Live disk space for one volume, read via `URLResourceValues` — no
-/// spawned `df`.
+/// Live disk space for one volume, read via `URLResourceValues` instead
+/// of a spawned `df`.
 public struct DiskStats: Sendable, Equatable {
-    /// Total volume capacity.
     public let totalBytes: Int64
     /// Strictly available space (`.volumeAvailableCapacityKey`).
     public let availableBytes: Int64
     /// Finder-style available space including purgeable
-    /// (`.volumeAvailableCapacityForImportantUsageKey`) — the headline
+    /// (`.volumeAvailableCapacityForImportantUsageKey`): the headline
     /// number, since it matches what Finder and About This Mac show.
     public let availableForImportantUsageBytes: Int64
 

@@ -1,12 +1,12 @@
 import Foundation
 
 extension CleanCatalog {
-    /// Section 2 of the shell script: browser caches and Chrome cookies.
-    /// Every item here is gated on the relevant browser not running —
-    /// checked at `locate` time, right before the plan is built, and the
-    /// cookie cleaner re-checks again immediately before it opens a
-    /// database. Safari cookies are never touched: its binarycookies store
-    /// has no safe per-domain delete.
+    /// Browser caches and Chrome cookies. Every item here is gated on
+    /// the relevant browser not running: checked at `locate` time,
+    /// right before the plan is built, and the cookie cleaner re-checks
+    /// again immediately before it opens a database. Safari cookies are
+    /// never touched: its binarycookies store has no safe per-domain
+    /// delete.
     static var browsers: CleanCategory {
         var items: [CleanItem] = []
 

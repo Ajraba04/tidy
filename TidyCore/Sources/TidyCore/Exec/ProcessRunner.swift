@@ -30,8 +30,8 @@ public enum ProcessRunner: Sendable {
     ///
     /// Exit is detected by polling `process.isRunning` rather than calling
     /// `Process.waitUntilExit()`. That call blocks inside its own nested
-    /// run loop waiting for a termination notification, and in practice —
-    /// confirmed with a debugger, reproducibly, on this toolchain — that
+    /// run loop waiting for a termination notification, and in practice
+    /// (confirmed with a debugger, reproducibly, on this toolchain) that
     /// notification can be lost when `waitUntilExit()` runs on a different
     /// thread than `run()`, which a detached task guarantees: the stuck
     /// thread sat waiting forever for a child that `pgrep` showed had
@@ -47,7 +47,7 @@ public enum ProcessRunner: Sendable {
     /// Each call also ties up multiple OS threads for its duration (one per
     /// detached task below), all doing genuinely blocking work rather than
     /// cooperatively yielding. Swift's concurrency thread pool is sized for
-    /// a small number of cores, not for that — enough concurrent callers
+    /// a small number of cores, not for that. Enough concurrent callers
     /// (e.g. a big test suite, or several catalog items scanned at once)
     /// can exhaust every pool thread. `ProcessConcurrencyGate` bounds how
     /// many calls run at once so the rest queue instead of exhausting it.

@@ -1,13 +1,13 @@
 import Foundation
 
 /// Simulator device deletion, gated on an opt-in approval list rather than
-/// the shell script's keep-list — see `CleanEnvironment.simulatorsApprovedForDeletion`.
+/// the shell script's keep-list: see `CleanEnvironment.simulatorsApprovedForDeletion`.
 /// With nothing approved, this never deletes anything, which is the
 /// shipped default.
 public enum SimulatorPruner: Sendable {
     /// Devices eligible for deletion: present on this machine, and their
     /// name exactly matches an entry the user explicitly approved. Pure
-    /// and synchronous — takes the device list rather than fetching it, so
+    /// and synchronous: takes the device list rather than fetching it, so
     /// it's testable with fabricated devices and never touches `simctl`.
     public static func devicesEligibleForDeletion(
         allDevices: [SimulatorDevice],

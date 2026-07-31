@@ -2,7 +2,7 @@ import Foundation
 
 /// Finds Claude Code session transcript files older than the configured
 /// threshold under `~/.claude/projects`, while never walking into any
-/// `memory/` directory — those hold hand-written, persistent memory files,
+/// `memory/` directory: those hold hand-written, persistent memory files,
 /// not transcripts, and age past any threshold just by being correct.
 public enum TranscriptPruneScanner: Sendable {
     public static func findOldTranscripts(claudeProjectsDirectory: String, olderThanDays: Int) -> [TargetPath] {

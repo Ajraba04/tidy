@@ -1,7 +1,5 @@
 import Foundation
 
-/// A simulator device, decoded from `xcrun simctl list devices -j` — JSON
-/// via `Codable`, so the shell script's embedded python3 disappears.
 public struct SimulatorDevice: Codable, Sendable, Identifiable, Hashable {
     public var id: String { udid }
     public let udid: String
@@ -16,7 +14,6 @@ public struct SimulatorDevice: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
-/// A simulator runtime, decoded from `xcrun simctl list runtimes -j`.
 public struct SimulatorRuntime: Codable, Sendable, Identifiable, Hashable {
     public var id: String { identifier }
     public let name: String
@@ -33,8 +30,6 @@ private struct SimctlRuntimeListResponse: Codable {
     let runtimes: [SimulatorRuntime]
 }
 
-/// Thin wrapper over `xcrun simctl`. Read-only listing lives here for both
-/// Scan (idle runtimes) and the Deep tier's simulator keep-list (Phase 6).
 public enum SimctlClient: Sendable {
     public static func listDevices() async -> [SimulatorDevice] {
         guard let xcrunPath = ToolLocator.locate("xcrun") else { return [] }
@@ -73,7 +68,7 @@ public enum SimctlClient: Sendable {
         return response.runtimes
     }
 
-    /// Runtimes with zero devices — pure waste, per the script's section 9
+    /// Runtimes with zero devices: pure waste, per the script's section 9
     /// report.
     public static func idleRuntimes() async -> [SimulatorRuntime] {
         async let devices = listDevices()
@@ -87,10 +82,9 @@ public enum SimctlClient: Sendable {
     /// produce more output than fits in one pipe buffer (many runtimes ×
     /// many devices), so unlike the other synchronous helpers in this
     /// package, this drains stdout incrementally *while* the process runs
-    /// rather than waiting for exit first — unlike a wait-then-read
-    /// sequence, an incremental drain can never let the buffer fill up and
-    /// block the child. stderr is discarded outright so it can never block
-    /// either.
+    /// rather than waiting for exit first: a wait-then-read sequence could
+    /// let the buffer fill up and block the child. stderr is discarded
+    /// outright so it can never block either.
     static func listDevicesSync() -> [SimulatorDevice] {
         guard let xcrunPath = ToolLocator.locate("xcrun") else { return [] }
 

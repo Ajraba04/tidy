@@ -10,7 +10,7 @@ public struct GitHousekeepingResult: Sendable {
 /// deleted upstream (so their objects become unreachable and `gc` can
 /// actually reclaim them), expire reflogs, `gc --prune=now`, prune stale
 /// worktrees, and clean up lock files left behind by an interrupted
-/// operation — the shell script's section 5.
+/// operation, matching the shell script's git housekeeping.
 public enum GitHousekeeper: Sendable {
     /// Normal tier: reflogs expire on the usual schedule (90 days
     /// reachable, 30 days unreachable), so `git reset`-based undo survives

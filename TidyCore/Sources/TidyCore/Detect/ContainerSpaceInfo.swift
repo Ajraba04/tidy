@@ -1,6 +1,6 @@
 import Foundation
 
-/// APFS container free space — the figure that actually reflects what a
+/// APFS container free space: the figure that actually reflects what a
 /// snapshot delete or a big cleanup will reclaim, since `df` on the boot
 /// volume can under-report until purgeable space and snapshots are
 /// accounted for.

@@ -30,7 +30,7 @@ jobs:
       # secrets are configured. Notarizing a legitimate utility doesn't
       # endanger a Developer account, but the signature embeds the
       # registered developer's name, so it stays opt-in rather than
-      # required. Either way, the app fully works — see
+      # required. Either way, the app fully works. See
       # docs/UNSIGNED_INSTALL.md.
       - name: Sign and notarize
         if: ${{ secrets.MACOS_CERTIFICATE != '' }}
@@ -91,7 +91,7 @@ jobs:
           if [ "$TIDY_SIGNED" = "true" ]; then
             NOTES="Signed and notarized. Should launch with no Gatekeeper warning."
           else
-            NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway — the app is fully functional either way."
+            NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway. The app is fully functional either way."
           fi
           gh release create "${{ github.ref_name }}" "dist/Tidy-${{ github.ref_name }}.zip" \
             --title "Tidy ${{ github.ref_name }}" \

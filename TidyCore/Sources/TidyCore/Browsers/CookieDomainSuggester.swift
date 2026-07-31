@@ -1,8 +1,8 @@
 import Foundation
 import SQLite3
 
-/// Suggests keep-domains by reading the user's own Chrome cookie database
-/// — read-only, computed locally, and never shipped as a default. The
+/// Suggests keep-domains by reading the user's own Chrome cookie database.
+/// Read-only, computed locally, and never shipped as a default. The
 /// domains list in `CleanEnvironment`/`TidyConfig` still ships empty; this
 /// only powers a picker in Settings the user chooses from.
 public enum CookieDomainSuggester: Sendable {
@@ -42,7 +42,7 @@ public enum CookieDomainSuggester: Sendable {
         return results
     }
 
-    /// The last two dot-separated labels — a simplified heuristic, not a
+    /// The last two dot-separated labels: a simplified heuristic, not a
     /// public-suffix-list lookup. Good enough for a suggestion the user
     /// still reviews and confirms; not used anywhere that treats it as a
     /// security boundary.

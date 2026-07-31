@@ -15,7 +15,7 @@ public struct CustomActionOutcome: Sendable {
 
 /// A `CustomOperationID`'s real implementation, registered with the engine
 /// so bespoke logic (Chrome cookies, simulator pruning, git gc, APFS
-/// snapshots — Phases 5 and 6) never has to live inside the engine itself.
+/// snapshots) never has to live inside the engine itself.
 public typealias CustomActionExecutor = @Sendable (TargetPath, CleanEnvironment) async -> CustomActionOutcome
 
 /// Enumerates catalog items into a confirmable plan, then executes exactly
@@ -40,9 +40,9 @@ public actor CleanEngine {
     /// Locates and measures every relevant item's targets. Read-only:
     /// nothing is deleted, moved, or modified.
     ///
-    /// Tiers are cumulative — matching the shell script, where sections 1–3
-    /// and most of 5–7 run on every invocation and only a handful of
-    /// flags are opt-in — so a Normal plan includes Safe items too, and a
+    /// Tiers are cumulative, matching the shell script, where sections 1-3
+    /// and most of 5-7 run on every invocation and only a handful of
+    /// flags are opt-in. A Normal plan includes Safe items too, and a
     /// Deep plan includes Safe and Normal. `Tier` is `Comparable` in
     /// exactly this order for that reason.
     public func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment) async -> CleanPlan {
@@ -84,7 +84,7 @@ public actor CleanEngine {
     }
 
     /// Executes exactly the plan handed to it. Every target is re-validated
-    /// against `PathGuard` immediately before deletion — defense in depth
+    /// against `PathGuard` immediately before deletion: defense in depth
     /// against however much time has passed since the plan was made.
     public func execute(plan: CleanPlan, environment: CleanEnvironment) async -> RunReport {
         let startedAt = Date()
@@ -96,8 +96,8 @@ public actor CleanEngine {
 
         // Every planned item runs, not just ones with non-empty targets:
         // a `.runTool` action (e.g. "npm cache clean --force") has no
-        // target path by design — it is the tool's own job to know what to
-        // clean — so filtering on `targets.isEmpty` would silently skip it.
+        // target path by design (it's the tool's own job to know what to
+        // clean), so filtering on `targets.isEmpty` would silently skip it.
         for item in plan.plannedItems {
             let result = await executeItem(item, guardian: guardian, environment: environment)
             results.append(result)

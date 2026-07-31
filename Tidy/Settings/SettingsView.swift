@@ -61,7 +61,7 @@ struct CookieDomainsSection: View {
         } header: {
             Text("Cookie domains to keep")
         } footer: {
-            Text("Chrome cookies for these domains (and their subdomains) survive Normal and Deep cleans. Empty means nothing is kept — Chrome cookie cleaning is skipped entirely until you add at least one.")
+            Text("Chrome cookies for these domains (and their subdomains) survive Normal and Deep cleans. Empty means nothing is kept: Chrome cookie cleaning is skipped entirely until you add at least one.")
         }
     }
 
@@ -149,7 +149,7 @@ struct SimulatorApprovalSection: View {
         } header: {
             Text("Simulator devices")
         } footer: {
-            Text("Every device is kept by default. Check a device to allow Deep Clean to delete it. This never runs on its own — Deep Clean still shows a confirmation first.")
+            Text("Every device is kept by default. Check a device to allow Deep Clean to delete it. This never runs on its own: Deep Clean still shows a confirmation first.")
         }
     }
 

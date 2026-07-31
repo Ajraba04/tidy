@@ -18,7 +18,7 @@ public struct ItemResult: Identifiable, Sendable, Codable {
 }
 
 /// The record of one `CleanEngine.execute` run, matching what the shell
-/// script appended to its log file — but structured, and written to
+/// script appended to its log file, but structured and written to
 /// `runs.jsonl` as one JSON object per line.
 public struct RunReport: Sendable, Codable {
     public let tier: Tier

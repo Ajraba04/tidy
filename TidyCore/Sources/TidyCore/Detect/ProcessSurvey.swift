@@ -1,13 +1,12 @@
 import Foundation
 
-/// One process's resident memory, for the "top memory consumers" report.
 public struct ProcessUsage: Sendable, Identifiable, Equatable {
     public var id: String { name }
     public let name: String
     public let residentBytes: Int64
 }
 
-/// Reads process memory via `ps` — there is no `FileManager`-based way to
+/// Reads process memory via `ps`: there is no `FileManager`-based way to
 /// enumerate per-process RSS, so this is one of the few places TidyCore
 /// shells out for something other than a tool's own index/DB, matching what
 /// the shell script itself does.

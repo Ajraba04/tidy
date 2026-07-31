@@ -1,8 +1,8 @@
 import Foundation
 
 /// An APFS local (Time Machine) snapshot. Deleting one only discards a
-/// restore point — live data is unaffected — but that action itself is a
-/// privileged operation (Phase 6). This lister is read-only.
+/// restore point (live data is unaffected), but that action itself is a
+/// privileged operation. This lister is read-only.
 public struct LocalSnapshot: Sendable, Identifiable, Equatable {
     public var id: String { identifier }
     /// e.g. "com.apple.TimeMachine.2026-07-31-120000.local"
@@ -41,7 +41,7 @@ public enum SnapshotLister: Sendable {
 
     /// A synchronous existence check for use inside `CleanItem.locate`
     /// closures, which cannot be `async`. Safe as a same-thread,
-    /// non-detached `run()`-then-`waitUntilExit()` sequence — the pattern
+    /// non-detached `run()`-then-`waitUntilExit()` sequence: the pattern
     /// that turned out to be unreliable was specifically calling
     /// `waitUntilExit()` from a *different* thread/task than `run()`
     /// (`ProcessRunner`'s original design); this never does that, and

@@ -2,10 +2,11 @@ import Testing
 @testable import TidyCore
 
 /// These tests only exercise `devicesEligibleForDeletion`, a pure function
-/// over a caller-supplied device array — never real `simctl` device
-/// listing or deletion. `deleteDevice` is exercised exactly once, against
-/// a UDID that cannot possibly correspond to a real device, specifically
-/// so this suite can never touch this machine's sanctioned simulators.
+/// over a caller-supplied device array. They never touch real `simctl`
+/// device listing or deletion. `deleteDevice` is exercised exactly once,
+/// against a UDID that cannot possibly correspond to a real device,
+/// specifically so this suite can never touch this machine's sanctioned
+/// simulators.
 @Suite("SimulatorPruner")
 struct SimulatorPrunerTests {
     @Test("returns nothing when the approval list is empty")
@@ -57,14 +58,14 @@ struct SimulatorPrunerTests {
         #expect(!succeeded)
     }
 
-    @Test("real devices on this machine are never eligible when nothing real is approved — exercises the full listing pipeline read-only")
+    @Test("real devices on this machine are never eligible when nothing real is approved (exercises the full listing pipeline read-only)")
     func realDevicesNeverEligibleWithoutRealApproval() {
         // Unlike the other tests here, this calls the real, synchronous
         // simctl-backed listing (SimctlClient.listDevicesSync()) against
         // whatever simulators actually exist on this machine. It never
-        // calls deleteDevice on the result — only asserts the (read-only)
-        // eligibility filter — so even a bug in the matching logic could
-        // at worst make this assertion fail, not delete anything.
+        // calls deleteDevice on the result, only asserts the read-only
+        // eligibility filter, so even a bug in the matching logic could at
+        // worst make this assertion fail, not delete anything.
         let realDevices = SimctlClient.listDevicesSync()
         let eligible = SimulatorPruner.devicesEligibleForDeletion(
             allDevices: realDevices,

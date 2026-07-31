@@ -149,7 +149,6 @@ struct ChromiumCookieCleanerTests {
         // "notapple.com" sharing a suffix with "apple.com" must not survive.
         #expect(!remaining.contains("notapple.com"))
 
-        // No leftover backup after a clean, successful run.
         #expect(!FileManager.default.fileExists(atPath: dbPath + ".tidy-backup"))
     }
 
@@ -312,14 +311,12 @@ struct ChromiumCookieCleanerTests {
         try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["apple.com", "evil.com", "tracker.com"])
         let originalHostKeys = try CookieFixture.hostKeys(at: dbPath)
 
-        // Simulate the file being corrupted by something else mid-flight by
-        // truncating it immediately after the cleaner would have taken its
-        // backup and committed its delete, then confirm the exposed outcome
-        // is .failed and that a hand-restored copy matches the original —
-        // i.e. that a real caller restoring the same backup file the
-        // cleaner would have used recovers cleanly. This exercises
-        // integrity_check's detection path and the file-swap mechanics
-        // without racing the cleaner's own internal timing.
+        // Hand-replicates the cleaner's backup and restore steps instead of
+        // racing its real internal timing: take a VACUUM INTO backup,
+        // truncate the file to simulate corruption, then restore from that
+        // backup and confirm the host keys match the original. This proves
+        // a real restore from the same kind of backup file recovers
+        // cleanly.
         var db: OpaquePointer?
         sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READWRITE, nil)
         var backupStmt: OpaquePointer?
@@ -331,8 +328,6 @@ struct ChromiumCookieCleanerTests {
         sqlite3_finalize(backupStmt)
         sqlite3_close_v2(db)
 
-        // Truncate the live file to simulate corruption, then run the
-        // recovery mechanics the cleaner uses.
         try Data("corrupted".utf8).write(to: URL(fileURLWithPath: dbPath))
 
         for suffix in ["-journal", "-wal", "-shm"] {

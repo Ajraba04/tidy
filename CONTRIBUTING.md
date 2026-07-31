@@ -4,14 +4,14 @@
 
 ```
 Tidy.xcodeproj      thin app target; references TidyCore as a local package
-Tidy/               SwiftUI layer only — views and view models
+Tidy/               SwiftUI layer only: views and view models
 TidyCore/           all logic, zero UI, zero third-party dependencies
 project.yml         xcodegen source of truth for Tidy.xcodeproj
 ```
 
 `Tidy.xcodeproj` is generated from `project.yml` by
 [XcodeGen](https://github.com/yonaskolb/XcodeGen). If you edit
-`project.yml` (new source files usually don't require this — Xcode picks
+`project.yml` (new source files usually don't require this: Xcode picks
 up new files under existing groups automatically when the project already
 references the containing folder), regenerate the project:
 
@@ -25,7 +25,7 @@ change.
 
 ## Building and testing
 
-`TidyCore` is a plain Swift package — iterate on it without opening Xcode:
+`TidyCore` is a plain Swift package. Iterate on it without opening Xcode:
 
 ```bash
 cd TidyCore
@@ -45,11 +45,11 @@ Requires macOS 14+ and Xcode 15+.
 ## Ground rules
 
 - **Zero network calls.** No analytics, no update checker, no remote Swift
-  packages. This is a stated privacy feature — if your change needs the
+  packages. This is a stated privacy feature: if your change needs the
   network, it probably belongs in a different project.
 - **No delete path skips the plan screen.** `TidyCore`'s `CleanEngine`
   exposes `makePlan` (read-only) and `execute` (acts on exactly the plan
-  handed to it). Every new catalog item goes through both — there is no
+  handed to it). Every new catalog item goes through both. There is no
   shortcut for a "quick delete."
 - **`PathGuard` gates every deletion**, twice: once when the plan is built,
   once again immediately before the delete happens. Don't add a code path

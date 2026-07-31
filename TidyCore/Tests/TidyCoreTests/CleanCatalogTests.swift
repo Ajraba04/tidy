@@ -57,7 +57,7 @@ struct CleanCatalogTests {
         }
     }
 
-    @Test("safe tier contains no custom actions requiring Phase 5/6 handlers")
+    @Test("safe tier contains no custom actions")
     func safeTierHasNoCustomActionsYet() {
         for item in CleanCatalog.items(in: .safe) {
             if case .custom = item.action {

@@ -1,8 +1,6 @@
 import Foundation
 
 extension CleanCatalog {
-    /// Section 6 (stale node_modules, build outputs, old session
-    /// transcripts) and section 7 (Trash) of the shell script.
     static var extras: CleanCategory {
         var items: [CleanItem] = []
 
@@ -10,7 +8,7 @@ extension CleanCatalog {
             id: "normal.trash.empty",
             title: "Empty Trash",
             tier: .normal,
-            dangerNote: "Permanent — there is no second bin behind this one",
+            dangerNote: "Permanent. There is no second bin behind this one",
             relativePath: ".Trash",
             declaredRootRelativePath: ".Trash",
             action: .deleteContents

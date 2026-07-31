@@ -42,7 +42,7 @@ struct MenuBarContentView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 0) {
-                ModeButton(title: "Scan", subtitle: "See what's using space — nothing deleted") {
+                ModeButton(title: "Scan", subtitle: "See what's using space, nothing deleted") {
                     open(WindowID.scan)
                 }
 

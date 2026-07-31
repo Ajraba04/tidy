@@ -63,7 +63,7 @@ public struct PathGuard: Sendable {
         }
 
         // realpath fails when the path (or a component of it) does not
-        // exist yet — fall back to lexical resolution so a not-yet-created
+        // exist yet: fall back to lexical resolution so a not-yet-created
         // target still gets a stable, comparable form.
         let resolved = (expanded as NSString).resolvingSymlinksInPath
         if resolved.count > 1, resolved.hasSuffix("/") {

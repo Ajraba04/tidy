@@ -19,7 +19,7 @@ Package.resolved
 dist/
 *.zip
 
-# Personal tooling — not part of the Tidy project
+# Personal tooling, not part of the Tidy project
 /Cleanup.command
 /execplan/
 /.claude/

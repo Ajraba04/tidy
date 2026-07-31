@@ -1,7 +1,7 @@
 import Foundation
 
 /// The full read-only "what's using space, what's still big, what's idle"
-/// report — the app's Scan mode, and the shell script's sections 8–9. Zero
+/// report: the app's Scan mode, and the shell script's sections 8-9. Zero
 /// deletion code runs to produce this.
 public struct ScanReport: Sendable {
     public let generatedAt: Date

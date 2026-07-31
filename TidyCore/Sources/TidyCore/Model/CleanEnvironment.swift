@@ -2,7 +2,7 @@ import Foundation
 
 /// Everything a `CleanItem.locate` closure needs to resolve its targets on
 /// this particular machine: where home is, what tools were detected, and the
-/// user's own configuration. Ships with empty keep-lists and no roots —
+/// user's own configuration. Ships with empty keep-lists and no roots:
 /// nothing here defaults to any one person's machine.
 ///
 /// Named `CleanEnvironment`, not `Environment`: the app layer imports both
@@ -18,7 +18,7 @@ public struct CleanEnvironment: Sendable {
     /// Deliberately an opt-*in* delete-approval list, not a keep-list: the
     /// shell script this app replaces used a keep-list with a few
     /// hardcoded personal device names, so an empty list meant "delete
-    /// everything else" — the wrong default for a stranger installing this
+    /// everything else," the wrong default for a stranger installing this
     /// app. Empty here means nothing is eligible for deletion. Matched by
     /// exact device name, not substring.
     public var simulatorsApprovedForDeletion: [String]

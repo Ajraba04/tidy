@@ -1,6 +1,5 @@
 import Foundation
 
-/// A path ranked by measured size, for the "what's still big" report.
 public struct RankedItem: Sendable, Identifiable, Equatable {
     public var id: String { path }
     public let path: String
@@ -14,8 +13,8 @@ public struct RankedItem: Sendable, Identifiable, Equatable {
 
 /// Read-only "largest remaining items" scans, ported from the shell
 /// script's section 9: two separate top-level rankings (home, then
-/// ~/Library) rather than one merged sort — mixing them would double-count
-/// the same bytes and misrepresent them as independent — plus single files
+/// ~/Library) rather than one merged sort (mixing them would double-count
+/// the same bytes and misrepresent them as independent), plus single files
 /// over 1 GB.
 public enum LargestItemsScanner: Sendable {
     /// Immediate children of `$HOME`, filtered the way the script's glob
@@ -30,7 +29,6 @@ public enum LargestItemsScanner: Sendable {
             .map { homeDirectory + "/" + $0 }
     }
 
-    /// Immediate children of `~/Library`.
     public static func libraryEntries(homeDirectory: String) -> [String] {
         let libraryPath = homeDirectory + "/Library"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: libraryPath)) ?? []

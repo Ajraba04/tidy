@@ -41,7 +41,7 @@ final class CustomViewModel {
     }
 
     /// Only reachable from the confirmation dialog on the selection
-    /// screen — there is no other path from a selection to a deletion.
+    /// screen. There is no other path from a selection to a deletion.
     func executeSelected() async {
         guard case .selecting(let plan) = phase else { return }
         let filteredItems = plan.plannedItems.filter { selectedIDs.contains($0.id) }

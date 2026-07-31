@@ -1,9 +1,6 @@
 import Foundation
 
 extension CleanCatalog {
-    /// A catalog item whose single target is a fixed path under the
-    /// user's home directory (`~/Library/Caches/X`, `~/.npm/_cacache`, ...).
-    /// Covers most of the shell script's plain `nuke`/`nuke_contents` calls.
     static func fixedPathItem(
         id: String,
         title: String,
@@ -34,7 +31,7 @@ extension CleanCatalog {
 
     /// A catalog item whose action is a package manager's own cache-clean
     /// subcommand rather than a path deletion. `estimateRelativePath`, when
-    /// given, is measured for display only — the tool manages the actual
+    /// given, is measured for display only: the tool manages the actual
     /// deletion.
     static func toolRunItem(
         id: String,
@@ -66,8 +63,6 @@ extension CleanCatalog {
         )
     }
 
-    /// A catalog item whose targets are every entry under a directory
-    /// matching a glob-like prefix (e.g. `~/.gradle/caches/build-cache-*`).
     static func globPrefixItem(
         id: String,
         title: String,

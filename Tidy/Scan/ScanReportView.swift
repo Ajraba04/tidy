@@ -37,7 +37,7 @@ struct ScanReportView: View {
 
                 ReportSection(title: "Idle simulator runtimes") {
                     SimpleTextList(
-                        lines: report.idleSimulatorRuntimes.map { "\($0.name) — no devices use it" },
+                        lines: report.idleSimulatorRuntimes.map { "\($0.name): no devices use it" },
                         emptyText: "Every installed runtime is in use."
                     )
                 }

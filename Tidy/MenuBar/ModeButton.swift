@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// One of the four mode rows (Scan / Safe / Normal / Deep). Wired up
-/// starting Phase 3; a placeholder action until then.
+/// One of the four mode rows (Scan / Safe / Normal / Deep).
 struct ModeButton: View {
     let title: String
     let subtitle: String

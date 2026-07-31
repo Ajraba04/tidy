@@ -2,7 +2,7 @@ import Foundation
 
 /// Finds `node_modules` directories, under the user's configured project
 /// roots, whose own modification time is older than the configured
-/// threshold — reclonable dependency trees a project hasn't touched in a
+/// threshold: reclonable dependency trees a project hasn't touched in a
 /// while. Read-only: reports candidates, never deletes.
 public enum StaleNodeModulesScanner: Sendable {
     public static func find(roots: [String], olderThanDays: Int, maxDepth: Int = 5) -> [TargetPath] {

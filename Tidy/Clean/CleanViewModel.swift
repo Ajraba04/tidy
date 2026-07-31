@@ -31,8 +31,8 @@ final class CleanViewModel {
         phase = .reviewingPlan(plan)
     }
 
-    /// Only reachable after the plan screen's confirmation dialog — there
-    /// is no other path from a plan to a deletion.
+    /// Only reachable after the plan screen's confirmation dialog.
+    /// There is no other path from a plan to a deletion.
     func executeConfirmedPlan(_ plan: CleanPlan) async {
         phase = .executing
         let report = await engine.execute(plan: plan, environment: environment)

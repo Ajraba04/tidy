@@ -6,7 +6,7 @@ Gatekeeper will refuse to open it with a message like:
 
 > "Tidy" can't be opened because Apple cannot check it for malicious software.
 
-This doesn't mean anything is wrong with the app — it means nobody paid
+This doesn't mean anything is wrong with the app. It means nobody paid
 Apple to notarize this particular build. The app is fully functional
 either way. Two ways to open it:
 
@@ -16,7 +16,7 @@ either way. Two ways to open it:
 2. In Finder, right-click (or Control-click) `Tidy.app` and choose **Open**.
 3. In the dialog that appears, click **Open** again.
 
-macOS remembers this choice — you only need to do it once per download.
+macOS remembers this choice, so you only need to do it once per download.
 
 ## Option 2: Remove the quarantine flag
 
@@ -32,9 +32,9 @@ Then launch the app normally by double-clicking it.
 
 ## Verifying what you downloaded
 
-Tidy makes zero network calls — you can check this yourself. With the app
+Tidy makes zero network calls. You can check this yourself. With the app
 running, open **Activity Monitor ▸ Network** (or use `nettop` / Little
 Snitch / any traffic monitor of your choice) and confirm it shows no
 connections while you use any part of the app. The source is also fully
-open — read `TidyCore/` before you build or run it, if you'd rather verify
+open: read `TidyCore/` before you build or run it, if you'd rather verify
 that way.

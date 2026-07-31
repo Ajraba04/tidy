@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# make-release.sh — build a Release-configuration Tidy.app and zip it,
+# make-release.sh: build a Release-configuration Tidy.app and zip it,
 # mirroring what .github/workflows/release.yml does. Useful for a local
 # test build before tagging, or for producing an unsigned build by hand.
 #
@@ -14,7 +14,7 @@ VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null || echo dev)}"
 
 FREE_KB=$(df -k / | awk 'NR==2{print $4}')
 if [ "$FREE_KB" -lt 5242880 ]; then
-  echo "Less than 5 GB free on / — a Release build needs headroom. Free up space first." >&2
+  echo "Less than 5 GB free on /: a Release build needs headroom. Free up space first." >&2
   exit 1
 fi
 

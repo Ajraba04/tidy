@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
 
-/// Live swap usage via `sysctlbyname("vm.swapusage")` — no spawned
-/// `sysctl`.
+/// Live swap usage via `sysctlbyname("vm.swapusage")` instead of
+/// spawning `sysctl`.
 public struct SwapStats: Sendable, Equatable {
     public let totalBytes: Int64
     public let usedBytes: Int64

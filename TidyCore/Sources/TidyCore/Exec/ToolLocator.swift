@@ -3,7 +3,7 @@ import Foundation
 /// Finds an executable's absolute path without ever trusting the caller's
 /// inherited `PATH`. Xcode-owned tools resolve through `xcrun --find`; other
 /// CLIs are looked up in a small, fixed list of install locations. If a tool
-/// cannot be found this way, callers must render a "not found" row — never
+/// cannot be found this way, callers must render a "not found" row; never
 /// fall back to a shell that would search the user's PATH.
 public enum ToolLocator: Sendable {
     static let xcrunPath = "/usr/bin/xcrun"
@@ -20,7 +20,7 @@ public enum ToolLocator: Sendable {
     /// A tool's resolved path never changes mid-run, so results are cached
     /// by name. Beyond the obvious repeat-lookup saving, this bounds how
     /// many `xcrun --find` processes ever spawn (one per distinct name, not
-    /// one per caller) — `locateViaXcrun` blocks its calling thread inside
+    /// one per caller). `locateViaXcrun` blocks its calling thread inside
     /// `Process.waitUntilExit()`'s own nested run loop, and enough
     /// concurrent callers (many catalog items checked at once, a large
     /// test suite) can exhaust Swift's cooperative thread pool the same way

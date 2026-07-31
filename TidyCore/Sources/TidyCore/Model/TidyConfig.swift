@@ -14,7 +14,7 @@ public struct CustomPreset: Sendable, Codable, Identifiable, Equatable {
 
 /// Everything the app persists across launches, versioned so a future
 /// schema change can migrate rather than break. Every collection here
-/// ships empty — nothing defaults to any one person's machine.
+/// ships empty: nothing defaults to any one person's machine.
 public struct TidyConfig: Sendable, Codable, Equatable {
     public static let currentSchemaVersion = 1
 

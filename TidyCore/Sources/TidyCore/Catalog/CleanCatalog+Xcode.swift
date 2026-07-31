@@ -1,8 +1,7 @@
 extension CleanCatalog {
     /// Section 3 of the shell script (safe tier) plus `simctl delete
     /// unavailable` and the CodingAssistant index. Simulator device
-    /// deletion against the user's keep-list, and Archives, are Deep-tier
-    /// (Phase 6).
+    /// deletion against the user's keep-list, and Archives, are Deep tier.
     static var xcodeAndSimulators: CleanCategory {
         let derivedDataItems = [
             fixedPathItem(

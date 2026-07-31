@@ -1,8 +1,8 @@
 import Foundation
 
 /// Probes common project-root locations for git repositories, for
-/// onboarding to present as candidates the user confirms — never assumed
-/// or shipped as a default.
+/// onboarding to present as candidates the user confirms. These are
+/// never assumed or shipped as a default.
 public enum GitRootDiscovery: Sendable {
     public static let candidateRootNames = ["Developer", "Desktop", "Documents", "development", "Projects"]
 
@@ -12,7 +12,7 @@ public enum GitRootDiscovery: Sendable {
     }
 
     /// A candidate root is one of the well-known names whose immediate
-    /// children include at least one directory with a `.git` — i.e. it
+    /// children include at least one directory with a `.git`, i.e. it
     /// looks like "the folder that holds my projects", not a project
     /// itself.
     public static func discoverCandidates(homeDirectory: String = NSHomeDirectory()) -> [Candidate] {

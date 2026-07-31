@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
 
-/// Live RAM usage via `host_statistics64(HOST_VM_INFO64)` — no spawned
-/// `ps`/`vm_stat`.
+/// Live RAM usage via `host_statistics64(HOST_VM_INFO64)` instead of
+/// spawning `ps`/`vm_stat`.
 public struct MemoryStats: Sendable, Equatable {
     public let totalBytes: Int64
-    /// (active + wired + compressed) × page size — the same definition
+    /// (active + wired + compressed) × page size: the same definition
     /// Activity Monitor uses for "Memory Used".
     public let usedBytes: Int64
 

@@ -18,7 +18,6 @@ public enum ToolID: String, Codable, Sendable, CaseIterable {
     case diskutil
     case osascript
 
-    /// The executable name `ToolLocator` looks up.
     public var executableName: String { rawValue }
 }
 
@@ -33,10 +32,10 @@ public struct ToolCommand: Sendable {
 }
 
 /// A cleanup operation with logic too specific to express as a plain path
-/// delete — implemented in `Engine` and `Browsers`, never inline in the
+/// delete, implemented in `Engine` and `Browsers`, never inline in the
 /// catalog. Simple path-based items (Trash, build outputs, stale
-/// node_modules, old transcripts) use `deletePath`/`deleteContents`
-/// instead — they don't need a case here.
+/// node_modules, old transcripts) don't need a case here: they use
+/// `deletePath`/`deleteContents` instead.
 public enum CustomOperationID: String, Codable, Sendable, CaseIterable {
     case chromeCookies
     case simulatorPrune
@@ -47,13 +46,11 @@ public enum CustomOperationID: String, Codable, Sendable, CaseIterable {
 
 /// What a `CleanItem` does once its targets have been located and confirmed.
 public enum CleanAction: Sendable {
-    /// `FileManager` removal of the whole path.
     case deletePath
     /// Empties a directory's contents but keeps the directory itself.
     case deleteContents
     /// Runs a tool's own cache-clean subcommand so its index/DB stays
     /// consistent (e.g. `npm cache clean --force`).
     case runTool(ToolCommand)
-    /// Anything with bespoke logic: cookies, simulators, git gc, snapshots.
     case custom(CustomOperationID)
 }

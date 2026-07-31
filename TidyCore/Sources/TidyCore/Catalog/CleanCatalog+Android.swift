@@ -1,11 +1,10 @@
 import Foundation
 
 extension CleanCatalog {
-    /// The shell script's `--android` tier: AVDs, system-images, NDK, SDK
-    /// temp. API levels are discovered by listing what's actually present
-    /// under `system-images` rather than a hardcoded pair — the script's
-    /// own `android-29`/`android-31` were this machine's targets, not a
-    /// general default.
+    /// Covers AVDs, system-images, NDK, and SDK temp files. API levels
+    /// are discovered by listing what's actually present under
+    /// `system-images` rather than hardcoded, since specific versions
+    /// like `android-29` are tied to one machine, not a general default.
     static var android: CleanCategory {
         var items: [CleanItem] = []
 

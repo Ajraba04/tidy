@@ -6,7 +6,7 @@ import SQLite3
 /// symbol. Passing `nil` (`SQLITE_STATIC`) instead would tell SQLite to
 /// read the bytes later, but Swift's implicit `String` -> `UnsafePointer<CChar>`
 /// bridging is only valid for the duration of the single call it's passed
-/// to — a `nil`-destructor bind here would be a use-after-free.
+/// to, so a `nil`-destructor bind here would be a use-after-free.
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 public struct ChromeProfile: Sendable, Equatable {
@@ -24,7 +24,7 @@ public enum ChromeCookieOutcome: Sendable, Equatable {
     case failed(reason: String)
     /// The rare, serious case: something went wrong after the backup was
     /// taken and it could not be restored either. `backupPath` still holds
-    /// the pre-clean database — never deleted in this outcome.
+    /// the pre-clean database, never deleted in this outcome.
     case failedAndNotRestored(reason: String, backupPath: String)
 }
 
@@ -35,8 +35,8 @@ enum CookieCleanerError: Error, CustomStringConvertible {
     }
 }
 
-/// Selective Chrome cookie deletion via the native SQLite3 C API — the
-/// shell script's `sqlite3` CLI calls, ported with a materially safer
+/// Selective Chrome cookie deletion via the native SQLite3 C API. Ports the
+/// shell script's `sqlite3` CLI calls with a materially safer
 /// sequence: keep-domains go into a bound temp table rather than
 /// string-concatenated SQL, the backup is a self-contained `VACUUM INTO`
 /// snapshot rather than a raw file copy (immune to WAL/journal sidecar
@@ -45,7 +45,7 @@ enum CookieCleanerError: Error, CustomStringConvertible {
 /// `PRAGMA integrity_check` gates whether the backup gets discarded or
 /// restored.
 ///
-/// Never decrypts `encrypted_value` — no Keychain access, no "Chrome Safe
+/// Never decrypts `encrypted_value`: no Keychain access, no "Chrome Safe
 /// Storage" prompt. Never touches `Extension Cookies` or
 /// `Safe Browsing Cookies`, matching the shell script.
 public enum ChromiumCookieCleaner: Sendable {
@@ -65,7 +65,7 @@ public enum ChromiumCookieCleaner: Sendable {
     }
 
     /// Chrome writes a `SingletonLock` symlink into its user-data dir for
-    /// as long as it's running — a narrower, faster-to-notice check than
+    /// as long as it's running, a narrower, faster-to-notice check than
     /// polling the process list, used as a second gate right before
     /// opening each database.
     public static func hasSingletonLock(homeDirectory: String) -> Bool {
@@ -97,7 +97,7 @@ public enum ChromiumCookieCleaner: Sendable {
         return nil
     }
 
-    /// Synchronous and `nonisolated` by design — this does real file and
+    /// Synchronous and `nonisolated` by design: this does real file and
     /// SQLite I/O and must never run on the main actor. Callers dispatch it
     /// onto a background task.
     public static func clean(profile: ChromeProfile, keepDomains: [String], homeDirectory: String) -> ChromeCookieOutcome {
@@ -179,19 +179,19 @@ public enum ChromiumCookieCleaner: Sendable {
             try? exec(database, "ROLLBACK")
             // The database itself was never modified before COMMIT above,
             // so on any failure up to and including a bad COMMIT, the
-            // backup was for nothing — discard it rather than restore.
+            // backup was for nothing: discard it rather than restore.
             try? fm.removeItem(atPath: backupPath)
             return .failed(reason: "\(error)")
         }
     }
 
-    /// Builds `temp.keep(exact, pattern)` from bound parameters — never
-    /// string-concatenated SQL — and returns the `EXISTS` predicate that
+    /// Builds `temp.keep(exact, pattern)` from bound parameters (never
+    /// string-concatenated SQL) and returns the `EXISTS` predicate that
     /// both the count and delete statements share, so "how many would be
     /// kept" and "what gets deleted" can never drift apart.
     ///
     /// `pattern` is `%.` + the domain with `\`, `%`, and `_` escaped, used
-    /// with `ESCAPE '\'` — SQLite's `LIKE` treats `_` and `%` as wildcards
+    /// with `ESCAPE '\'`: SQLite's `LIKE` treats `_` and `%` as wildcards
     /// even inside what looks like a literal domain, so an unescaped
     /// pattern could silently widen the keep-set for a domain containing
     /// either character. `LIKE` is already ASCII case-insensitive; `=` is
@@ -276,7 +276,7 @@ public enum ChromiumCookieCleaner: Sendable {
                 try fm.copyItem(atPath: backupPath, toPath: dbPath)
                 try? fm.removeItem(atPath: backupPath)
             }
-            return .failed(reason: reason + " — original restored from backup")
+            return .failed(reason: reason + " (original restored from backup)")
         } catch {
             return .failedAndNotRestored(reason: reason, backupPath: backupPath)
         }
