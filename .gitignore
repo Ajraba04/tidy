@@ -1,0 +1,24 @@
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+.DS_Store
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Release scratch
+dist/
+*.zip
+
+# Personal tooling — not part of the Tidy project
+/Cleanup.command
+/execplan/
