@@ -7,7 +7,7 @@ public struct CleanItem: Identifiable, Sendable {
     public let tier: Tier
     /// The declared root every target this item resolves must fall under.
     /// `PathGuard` enforces this before any deletion.
-    public let declaredRoot: @Sendable (Environment) -> String?
+    public let declaredRoot: @Sendable (CleanEnvironment) -> String?
     /// Hides this item when the relevant toolchain is not installed.
     public let requires: ToolchainID?
     /// Shown when this item is on by default but has a real consequence
@@ -19,7 +19,7 @@ public struct CleanItem: Identifiable, Sendable {
     /// Resolves this item's targets on the current machine. May glob, may
     /// return zero targets if nothing is present. Read-only: locating a
     /// target never deletes anything.
-    public let locate: @Sendable (Environment) -> [TargetPath]
+    public let locate: @Sendable (CleanEnvironment) -> [TargetPath]
     public let action: CleanAction
 
     public init(
@@ -29,8 +29,8 @@ public struct CleanItem: Identifiable, Sendable {
         requires: ToolchainID? = nil,
         dangerNote: String? = nil,
         costNote: String? = nil,
-        declaredRoot: @escaping @Sendable (Environment) -> String?,
-        locate: @escaping @Sendable (Environment) -> [TargetPath],
+        declaredRoot: @escaping @Sendable (CleanEnvironment) -> String?,
+        locate: @escaping @Sendable (CleanEnvironment) -> [TargetPath],
         action: CleanAction
     ) {
         self.id = id
@@ -44,7 +44,7 @@ public struct CleanItem: Identifiable, Sendable {
         self.action = action
     }
 
-    public func isRelevant(in environment: Environment) -> Bool {
+    public func isRelevant(in environment: CleanEnvironment) -> Bool {
         guard let requires else { return true }
         return environment.hasTool(requires)
     }

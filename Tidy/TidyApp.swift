@@ -7,5 +7,14 @@ struct TidyApp: App {
             MenuBarContentView()
         }
         .menuBarExtraStyle(.window)
+
+        Window("Scan Report", id: WindowID.scan) {
+            ScanView()
+        }
+        .windowResizability(.contentSize)
     }
+}
+
+enum WindowID {
+    static let scan = "scan"
 }

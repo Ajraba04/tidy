@@ -3,6 +3,7 @@ import TidyCore
 
 struct MenuBarContentView: View {
     @State private var refresher = StatsRefresher()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -39,13 +40,19 @@ struct MenuBarContentView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 0) {
-                ModeButton(title: "Scan", subtitle: "See what's using space — nothing deleted") {}
-                ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {}
-                ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {}
-                ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {}
+                ModeButton(title: "Scan", subtitle: "See what's using space — nothing deleted") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: WindowID.scan)
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {}
+                    ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {}
+                    ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {}
+                }
+                .disabled(true)
+                .opacity(0.5)
             }
-            .disabled(true)
-            .opacity(0.5)
 
             Divider()
 

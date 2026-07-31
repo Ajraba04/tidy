@@ -4,7 +4,11 @@ import Foundation
 /// this particular machine: where home is, what tools were detected, and the
 /// user's own configuration. Ships with empty keep-lists and no roots —
 /// nothing here defaults to any one person's machine.
-public struct Environment: Sendable {
+///
+/// Named `CleanEnvironment`, not `Environment`: the app layer imports both
+/// TidyCore and SwiftUI, and `Environment` would collide with SwiftUI's own
+/// `@Environment` property wrapper type in every file that does.
+public struct CleanEnvironment: Sendable {
     public var homeDirectory: String
     public var detectedTools: Set<ToolchainID>
     public var gitRoots: [String]
@@ -18,7 +22,7 @@ public struct Environment: Sendable {
         homeDirectory: String = NSHomeDirectory(),
         detectedTools: Set<ToolchainID> = [],
         gitRoots: [String] = [],
-        protectedRoots: [String] = Environment.defaultProtectedRoots(homeDirectory: NSHomeDirectory()),
+        protectedRoots: [String] = CleanEnvironment.defaultProtectedRoots(homeDirectory: NSHomeDirectory()),
         keepCookieDomains: [String] = [],
         keepSimulatorNames: [String] = [],
         staleNodeModulesThresholdDays: Int = 60,

@@ -37,6 +37,29 @@ struct SwapStatsTests {
     }
 }
 
+@Suite("PathDisplay")
+struct PathDisplayTests {
+    @Test("shortens home directory to a tilde")
+    func shortensHomeExactly() {
+        #expect(PathDisplay.tilde("/Users/tester", homeDirectory: "/Users/tester") == "~")
+    }
+
+    @Test("shortens a path under home")
+    func shortensPathUnderHome() {
+        #expect(PathDisplay.tilde("/Users/tester/Library/Caches", homeDirectory: "/Users/tester") == "~/Library/Caches")
+    }
+
+    @Test("leaves a path outside home untouched")
+    func leavesOutsideHomeUntouched() {
+        #expect(PathDisplay.tilde("/Applications/Xcode.app", homeDirectory: "/Users/tester") == "/Applications/Xcode.app")
+    }
+
+    @Test("does not shorten a sibling that merely shares a prefix with home")
+    func doesNotShortenSiblingWithSharedPrefix() {
+        #expect(PathDisplay.tilde("/Users/tester2/file", homeDirectory: "/Users/tester") == "/Users/tester2/file")
+    }
+}
+
 @Suite("ByteFormat")
 struct ByteFormatTests {
     @Test("never returns an empty string")

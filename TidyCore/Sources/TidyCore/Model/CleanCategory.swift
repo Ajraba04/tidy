@@ -15,7 +15,7 @@ public struct CleanCategory: Identifiable, Sendable {
         items.filter { $0.tier == tier }
     }
 
-    public func relevantItems(in environment: Environment) -> [CleanItem] {
+    public func relevantItems(in environment: CleanEnvironment) -> [CleanItem] {
         items.filter { $0.isRelevant(in: environment) }
     }
 }
