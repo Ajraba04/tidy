@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Nothing personal ships as a default, in the repo, or in git
+      # history. This gate fails the build if it does.
+      - name: Personal data grep gate
+        run: |
+          set -uo pipefail
+          if grep -rniE 'binjamshid|albayyan|claude\.ai|/Users/[A-Za-z]' TidyCore/Sources Tidy; then
+            echo "::error::Personal data pattern found in source files — see matches above"
+            exit 1
+          fi
+          echo "No personal data patterns found."
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: swift test (TidyCore)
+        working-directory: TidyCore
+        run: swift test
+
+      - name: xcodebuild build (Tidy.app)
+        run: |
+          xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Debug \
+            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO

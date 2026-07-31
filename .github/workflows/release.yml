@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: swift test (TidyCore)
+        working-directory: TidyCore
+        run: swift test
+
+      - name: Release build
+        run: |
+          xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
+            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
+
+      # Signing and notarization are opt-in: they only run if this repo's
+      # secrets are configured. Notarizing a legitimate utility doesn't
+      # endanger a Developer account, but the signature embeds the
+      # registered developer's name, so it stays opt-in rather than
+      # required. Either way, the app fully works — see
+      # docs/UNSIGNED_INSTALL.md.
+      - name: Sign and notarize
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/tidy-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" "$(security list-keychains -d user | sed 's/"//g')"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+          APP_PATH="DerivedData/Build/Products/Release/Tidy.app"
+          codesign --deep --force --options runtime --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
+
+          NOTARIZE_ZIP="$RUNNER_TEMP/Tidy-notarize.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$NOTARIZE_ZIP"
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --wait
+          xcrun stapler staple "$APP_PATH"
+
+          security delete-keychain "$KEYCHAIN_PATH"
+          echo "TIDY_SIGNED=true" >> "$GITHUB_ENV"
+
+      - name: Ad-hoc sign (unsigned release)
+        if: ${{ secrets.MACOS_CERTIFICATE == '' }}
+        run: |
+          set -euo pipefail
+          APP_PATH="DerivedData/Build/Products/Release/Tidy.app"
+          codesign -s - --force --deep "$APP_PATH"
+          echo "TIDY_SIGNED=false" >> "$GITHUB_ENV"
+
+      - name: Zip release artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ditto -c -k --keepParent "DerivedData/Build/Products/Release/Tidy.app" "dist/Tidy-${{ github.ref_name }}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$TIDY_SIGNED" = "true" ]; then
+            NOTES="Signed and notarized. Should launch with no Gatekeeper warning."
+          else
+            NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway — the app is fully functional either way."
+          fi
+          gh release create "${{ github.ref_name }}" "dist/Tidy-${{ github.ref_name }}.zip" \
+            --title "Tidy ${{ github.ref_name }}" \
+            --notes "$NOTES"
