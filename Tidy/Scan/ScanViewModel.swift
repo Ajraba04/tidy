@@ -19,12 +19,7 @@ final class ScanViewModel {
         phase = .running
 
         let home = NSHomeDirectory()
-        let environment = CleanEnvironment(
-            homeDirectory: home,
-            detectedTools: ToolchainDetector.detect(homeDirectory: home),
-            gitRoots: [],
-            protectedRoots: CleanEnvironment.defaultProtectedRoots(homeDirectory: home)
-        )
+        let environment = ConfigStore.load().makeEnvironment(homeDirectory: home)
 
         let report = await ScanEngine.run(environment: environment, sizeScanner: sizeScanner)
         phase = .complete(report)

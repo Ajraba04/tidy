@@ -6,12 +6,7 @@ struct CleanView: View {
 
     init(tier: Tier) {
         let home = NSHomeDirectory()
-        let environment = CleanEnvironment(
-            homeDirectory: home,
-            detectedTools: ToolchainDetector.detect(homeDirectory: home),
-            gitRoots: [],
-            protectedRoots: CleanEnvironment.defaultProtectedRoots(homeDirectory: home)
-        )
+        let environment = ConfigStore.load().makeEnvironment(homeDirectory: home)
         let engine = CleanEngine(sizeScanner: SizeScanner())
         _model = State(initialValue: CleanViewModel(tier: tier, engine: engine, environment: environment))
     }
