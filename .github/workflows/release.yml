@@ -35,8 +35,22 @@ jobs:
       # registered developer's name, so it stays opt-in rather than
       # required. Either way, the app fully works. See
       # docs/UNSIGNED_INSTALL.md.
+      #
+      # `if:` conditions can't reference the secrets context directly, so
+      # this step resolves it to a plain step output first.
+      - name: Check for signing secret
+        id: signing_check
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        run: |
+          if [ -n "$MACOS_CERTIFICATE" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sign and notarize
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        if: steps.signing_check.outputs.configured == 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -73,7 +87,7 @@ jobs:
           echo "TIDY_SIGNED=true" >> "$GITHUB_ENV"
 
       - name: Ad-hoc sign (unsigned release)
-        if: ${{ secrets.MACOS_CERTIFICATE == '' }}
+        if: steps.signing_check.outputs.configured == 'false'
         run: |
           set -euo pipefail
           APP_PATH="DerivedData/Build/Products/Release/Tidy.app"
