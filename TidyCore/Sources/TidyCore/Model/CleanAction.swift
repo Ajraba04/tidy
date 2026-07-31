@@ -1,0 +1,60 @@
+/// A resolvable command-line tool a `CleanAction.runTool` case can invoke.
+/// `ToolLocator` resolves the identifier to an absolute path; if it cannot,
+/// the item renders as "not found" rather than falling back to a shell.
+public enum ToolID: String, Codable, Sendable, CaseIterable {
+    case npm
+    case brew
+    case pod
+    case uv
+    case pnpm
+    case deno
+    case pip3
+    case flutter
+    case go
+    case qlmanage
+    case xcrun
+    case git
+    case tmutil
+    case diskutil
+    case osascript
+
+    /// The executable name `ToolLocator` looks up.
+    public var executableName: String { rawValue }
+}
+
+public struct ToolCommand: Sendable {
+    public let tool: ToolID
+    public let arguments: [String]
+
+    public init(_ tool: ToolID, _ arguments: [String] = []) {
+        self.tool = tool
+        self.arguments = arguments
+    }
+}
+
+/// A cleanup operation with logic too specific to express as a plain path
+/// delete — implemented in `Engine` and `Browsers`, never inline in the
+/// catalog.
+public enum CustomOperationID: String, Codable, Sendable, CaseIterable {
+    case chromeCookies
+    case simulatorPrune
+    case gitRepoGC
+    case apfsSnapshots
+    case trashEmpty
+    case staleNodeModules
+    case buildOutputs
+    case transcriptPrune
+}
+
+/// What a `CleanItem` does once its targets have been located and confirmed.
+public enum CleanAction: Sendable {
+    /// `FileManager` removal of the whole path.
+    case deletePath
+    /// Empties a directory's contents but keeps the directory itself.
+    case deleteContents
+    /// Runs a tool's own cache-clean subcommand so its index/DB stays
+    /// consistent (e.g. `npm cache clean --force`).
+    case runTool(ToolCommand)
+    /// Anything with bespoke logic: cookies, simulators, git gc, snapshots.
+    case custom(CustomOperationID)
+}
