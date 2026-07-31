@@ -33,6 +33,10 @@ public actor CleanEngine {
         customExecutors[operation] = executor
     }
 
+    public func hasExecutor(for operation: CustomOperationID) -> Bool {
+        customExecutors[operation] != nil
+    }
+
     /// Locates and measures every relevant item's targets. Read-only:
     /// nothing is deleted, moved, or modified.
     ///
@@ -53,15 +57,14 @@ public actor CleanEngine {
 
             let guardian = PathGuard(protectedRoots: environment.protectedRoots)
             let safeTargets = rawTargets.filter { target in
-                guardian.isSafe(target.path, mustBeUnder: declaredRoot, home: environment.homeDirectory)
+                guard target.isFilesystemPath else { return true }
+                return guardian.isSafe(target.path, mustBeUnder: declaredRoot, home: environment.homeDirectory)
             }
 
+            let measurablePaths = safeTargets.filter(\.isFilesystemPath).map(\.path)
             var estimatedBytes: Int64 = 0
-            if !safeTargets.isEmpty {
-                let results = await sizeScanner.scan(
-                    paths: safeTargets.map(\.path),
-                    protectedRoots: environment.protectedRoots
-                )
+            if !measurablePaths.isEmpty {
+                let results = await sizeScanner.scan(paths: measurablePaths, protectedRoots: environment.protectedRoots)
                 estimatedBytes = results.reduce(0) { $0 + $1.bytes }
             }
 
@@ -142,6 +145,19 @@ public actor CleanEngine {
             var succeeded = true
             var messages: [String] = []
             for target in item.targets {
+                // Same defense-in-depth re-validation as deleteTargets,
+                // for the custom actions whose targets are real paths
+                // (Chrome profiles, git repos) rather than an opaque
+                // identifier like a simulator UDID.
+                if target.isFilesystemPath {
+                    do {
+                        try guardian.validate(target.path, home: environment.homeDirectory)
+                    } catch {
+                        succeeded = false
+                        messages.append("\(target.path): \(error)")
+                        continue
+                    }
+                }
                 let outcome = await executor(target, environment)
                 freed += outcome.freedBytes
                 succeeded = succeeded && outcome.succeeded

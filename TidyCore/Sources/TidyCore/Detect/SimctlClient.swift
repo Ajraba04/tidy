@@ -81,4 +81,57 @@ public enum SimctlClient: Sendable {
         let usedRuntimeIDs = Set(await devices.map(\.runtimeIdentifier))
         return await runtimes.filter { !usedRuntimeIDs.contains($0.identifier) }
     }
+
+    /// A synchronous device listing for use inside `CleanItem.locate`
+    /// closures, which cannot be `async`. `simctl list devices -j` can
+    /// produce more output than fits in one pipe buffer (many runtimes ×
+    /// many devices), so unlike the other synchronous helpers in this
+    /// package, this drains stdout incrementally *while* the process runs
+    /// rather than waiting for exit first — unlike a wait-then-read
+    /// sequence, an incremental drain can never let the buffer fill up and
+    /// block the child. stderr is discarded outright so it can never block
+    /// either.
+    static func listDevicesSync() -> [SimulatorDevice] {
+        guard let xcrunPath = ToolLocator.locate("xcrun") else { return [] }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: xcrunPath)
+        process.arguments = ["simctl", "list", "devices", "-j"]
+        process.environment = ProcessRunner.minimalEnvironment
+
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+
+        var data = Data()
+        let handle = outPipe.fileHandleForReading
+        while true {
+            let chunk = handle.availableData
+            if chunk.isEmpty { break }
+            data.append(chunk)
+        }
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0,
+              let response = try? JSONDecoder().decode(SimctlDeviceListResponse.self, from: data)
+        else {
+            return []
+        }
+
+        var devices: [SimulatorDevice] = []
+        for (runtimeIdentifier, deviceList) in response.devices {
+            for device in deviceList {
+                var device = device
+                device.runtimeIdentifier = runtimeIdentifier
+                devices.append(device)
+            }
+        }
+        return devices
+    }
 }

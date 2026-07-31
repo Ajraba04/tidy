@@ -10,7 +10,8 @@ public enum CleanCatalog: Sendable {
             gitCleanup,
             extras,
             android,
-            dependencyCaches
+            dependencyCaches,
+            system
         ]
     }
 

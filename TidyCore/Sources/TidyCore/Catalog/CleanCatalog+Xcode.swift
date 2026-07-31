@@ -112,10 +112,52 @@ extension CleanCatalog {
             )
         ]
 
+        let deepItems = [
+            fixedPathItem(
+                id: "deep.xcode.archives",
+                title: "Xcode Archives",
+                tier: .deep,
+                requires: .xcode,
+                dangerNote: "Deletes the dSYMs needed to symbolicate crash reports from builds you've already shipped",
+                relativePath: "Library/Developer/Xcode/Archives",
+                declaredRootRelativePath: "Library/Developer/Xcode",
+                action: .deleteContents
+            ),
+            CleanItem(
+                id: "deep.simulator.erase-all",
+                title: "Erase all simulator app data and settings",
+                tier: .deep,
+                requires: .xcode,
+                dangerNote: "Wipes installed apps and data from every simulator device, including ones you're keeping",
+                declaredRoot: { env in env.homeDirectory },
+                locate: { _ in [] },
+                action: .runTool(ToolCommand(.xcrun, ["simctl", "erase", "all"]))
+            ),
+            CleanItem(
+                id: "deep.simulator.delete-approved",
+                title: "Delete simulator devices you've approved for removal",
+                tier: .deep,
+                requires: .xcode,
+                dangerNote: "Permanently deletes the device and everything installed on it",
+                declaredRoot: { env in env.homeDirectory },
+                locate: { env in
+                    guard !env.simulatorsApprovedForDeletion.isEmpty else { return [] }
+                    let devices = SimctlClient.listDevicesSync()
+                    return SimulatorPruner.devicesEligibleForDeletion(
+                        allDevices: devices,
+                        approvedForDeletion: env.simulatorsApprovedForDeletion
+                    ).map { device in
+                        TargetPath(path: device.udid, label: "\(device.name) [\(device.runtimeIdentifier)]", isFilesystemPath: false)
+                    }
+                },
+                action: .custom(.simulatorPrune)
+            )
+        ]
+
         return CleanCategory(
             id: "xcode-simulators",
             title: "Xcode & Simulators",
-            items: derivedDataItems + simulatorCacheItems
+            items: derivedDataItems + simulatorCacheItems + deepItems
         )
     }
 }

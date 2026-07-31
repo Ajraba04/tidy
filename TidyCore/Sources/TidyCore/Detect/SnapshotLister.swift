@@ -38,4 +38,38 @@ public enum SnapshotLister: Sendable {
             .filter { $0.hasPrefix("com.apple.TimeMachine") }
             .map { LocalSnapshot(identifier: $0) }
     }
+
+    /// A synchronous existence check for use inside `CleanItem.locate`
+    /// closures, which cannot be `async`. Safe as a same-thread,
+    /// non-detached `run()`-then-`waitUntilExit()` sequence — the pattern
+    /// that turned out to be unreliable was specifically calling
+    /// `waitUntilExit()` from a *different* thread/task than `run()`
+    /// (`ProcessRunner`'s original design); this never does that, and
+    /// `tmutil listlocalsnapshots`'s output is small enough that reading it
+    /// after `waitUntilExit()` returns can't hit the large-output pipe
+    /// deadlock either.
+    static func hasLocalSnapshotsSync(volumePath: String = "/") -> Bool {
+        guard let tmutilPath = ToolLocator.locate("tmutil") else { return false }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tmutilPath)
+        process.arguments = ["listlocalsnapshots", volumePath]
+        process.environment = ProcessRunner.minimalEnvironment
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else { return false }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let text = String(data: data, encoding: .utf8) ?? ""
+        return text.contains("com.apple.TimeMachine")
+    }
 }

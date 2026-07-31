@@ -14,7 +14,14 @@ public struct CleanEnvironment: Sendable {
     public var gitRoots: [String]
     public var protectedRoots: [String]
     public var keepCookieDomains: [String]
-    public var keepSimulatorNames: [String]
+    /// Simulator device names the user has explicitly opted into deleting.
+    /// Deliberately an opt-*in* delete-approval list, not a keep-list: the
+    /// shell script this app replaces used a keep-list with a few
+    /// hardcoded personal device names, so an empty list meant "delete
+    /// everything else" — the wrong default for a stranger installing this
+    /// app. Empty here means nothing is eligible for deletion. Matched by
+    /// exact device name, not substring.
+    public var simulatorsApprovedForDeletion: [String]
     public var staleNodeModulesThresholdDays: Int
     public var transcriptAgeThresholdDays: Int
 
@@ -24,7 +31,7 @@ public struct CleanEnvironment: Sendable {
         gitRoots: [String] = [],
         protectedRoots: [String] = CleanEnvironment.defaultProtectedRoots(homeDirectory: NSHomeDirectory()),
         keepCookieDomains: [String] = [],
-        keepSimulatorNames: [String] = [],
+        simulatorsApprovedForDeletion: [String] = [],
         staleNodeModulesThresholdDays: Int = 60,
         transcriptAgeThresholdDays: Int = 45
     ) {
@@ -33,7 +40,7 @@ public struct CleanEnvironment: Sendable {
         self.gitRoots = gitRoots
         self.protectedRoots = protectedRoots
         self.keepCookieDomains = keepCookieDomains
-        self.keepSimulatorNames = keepSimulatorNames
+        self.simulatorsApprovedForDeletion = simulatorsApprovedForDeletion
         self.staleNodeModulesThresholdDays = staleNodeModulesThresholdDays
         self.transcriptAgeThresholdDays = transcriptAgeThresholdDays
     }

@@ -1,9 +1,11 @@
 extension CleanCatalog {
-    /// Section 5 of the shell script: per-repo `git gc`, with reflog expiry
-    /// conservative here. The Deep tier's `--git-deep` equivalent (expire
-    /// everything now) is a separate, prominently-warned item (Phase 6).
+    /// Section 5 of the shell script: per-repo `git gc`, with conservative
+    /// reflog expiry at Normal. The Deep tier's `--git-deep` equivalent —
+    /// expire every reflog now — is a separate, prominently-warned,
+    /// opt-in item: nothing survives it, so there is no `git reset` rescue
+    /// afterward.
     static var gitCleanup: CleanCategory {
-        let item = CleanItem(
+        let housekeeping = CleanItem(
             id: "normal.git.housekeeping",
             title: "Git housekeeping (gc, remote prune, conservative reflog expiry)",
             tier: .normal,
@@ -16,6 +18,20 @@ extension CleanCatalog {
             action: .custom(.gitRepoGC)
         )
 
-        return CleanCategory(id: "git", title: "Git repositories", items: [item])
+        let aggressiveReflogExpiry = CleanItem(
+            id: "deep.git.reflog-expire-all",
+            title: "Expire ALL git reflogs now",
+            tier: .deep,
+            requires: .git,
+            dangerNote: "Loses git undo history — no `git reset` rescue survives this",
+            declaredRoot: { env in env.homeDirectory },
+            locate: { env in
+                GitRepoScanner.findRepositories(roots: env.gitRoots, protectedRoots: env.protectedRoots)
+                    .map { TargetPath(path: $0, label: PathDisplay.tilde($0, homeDirectory: env.homeDirectory)) }
+            },
+            action: .custom(.gitReflogExpireAggressive)
+        )
+
+        return CleanCategory(id: "git", title: "Git repositories", items: [housekeeping, aggressiveReflogExpiry])
     }
 }

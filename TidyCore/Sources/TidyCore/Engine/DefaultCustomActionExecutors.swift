@@ -21,6 +21,33 @@ public enum DefaultCustomActionExecutors: Sendable {
             let result = await GitHousekeeper.runConservative(repoPath: target.path)
             return CustomActionOutcome(freedBytes: 0, succeeded: result.succeeded, message: result.message)
         }
+
+        await engine.register(.gitReflogExpireAggressive) { target, _ in
+            let result = await GitHousekeeper.runAggressiveReflogExpiry(repoPath: target.path)
+            return CustomActionOutcome(freedBytes: 0, succeeded: result.succeeded, message: result.message)
+        }
+
+        await engine.register(.simulatorPrune) { target, _ in
+            // target.path carries the device UDID, not a filesystem path —
+            // see CleanCatalog+Xcode.swift, which sets isFilesystemPath:
+            // false for exactly this reason.
+            let succeeded = await SimulatorPruner.deleteDevice(udid: target.path)
+            return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: succeeded ? nil : "could not delete \(target.label)")
+        }
+
+        await engine.register(.apfsSnapshots) { _, _ in
+            // Re-lists rather than trusting the plan-time snapshot count,
+            // since time may have passed; deletes everything found in one
+            // administrator-privileged call so only one password prompt
+            // appears regardless of how many snapshots exist.
+            let snapshots = await SnapshotLister.listLocalSnapshots()
+            guard !snapshots.isEmpty else {
+                return CustomActionOutcome(freedBytes: 0, succeeded: true, message: "no snapshots to delete")
+            }
+            let succeeded = await SnapshotDeleter.deleteSnapshots(snapshots)
+            let message = succeeded ? "deleted \(snapshots.count) snapshot(s)" : "snapshot deletion failed or was cancelled"
+            return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: message)
+        }
     }
 
     private static func mapChromeCookieOutcome(_ outcome: ChromeCookieOutcome) -> CustomActionOutcome {

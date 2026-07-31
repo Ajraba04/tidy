@@ -55,11 +55,10 @@ struct MenuBarContentView: View {
                     openWindow(id: WindowID.clean, value: Tier.normal)
                 }
 
-                VStack(alignment: .leading, spacing: 0) {
-                    ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {}
+                ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: WindowID.clean, value: Tier.deep)
                 }
-                .disabled(true)
-                .opacity(0.5)
             }
 
             Divider()
