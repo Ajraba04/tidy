@@ -17,7 +17,44 @@ public enum ToolLocator: Sendable {
         "/sbin"
     ]
 
+    /// A tool's resolved path never changes mid-run, so results are cached
+    /// by name. Beyond the obvious repeat-lookup saving, this bounds how
+    /// many `xcrun --find` processes ever spawn (one per distinct name, not
+    /// one per caller) — `locateViaXcrun` blocks its calling thread inside
+    /// `Process.waitUntilExit()`'s own nested run loop, and enough
+    /// concurrent callers (many catalog items checked at once, a large
+    /// test suite) can exhaust Swift's cooperative thread pool the same way
+    /// `ProcessRunner` guards against.
+    private static let cache = LocatorCache()
+
+    /// Caps concurrent `xcrun --find` spawns for names not yet cached (a
+    /// cold-start thundering herd), independent of `ProcessRunner`'s gate
+    /// since this path never goes through `ProcessRunner`.
+    private static let concurrencyLimit = DispatchSemaphore(value: 4)
+
     public static func locate(_ name: String) -> String? {
+        if let cached = cache.value(for: name) {
+            return cached
+        }
+        concurrencyLimit.wait()
+        defer { concurrencyLimit.signal() }
+
+        // Another thread may have populated the cache while this one
+        // waited on the semaphore.
+        if let cached = cache.value(for: name) {
+            return cached
+        }
+
+        let resolved = locateUncached(name)
+        cache.store(resolved, for: name)
+        return resolved
+    }
+
+    public static func isAvailable(_ name: String) -> Bool {
+        locate(name) != nil
+    }
+
+    private static func locateUncached(_ name: String) -> String? {
         if let found = locateViaXcrun(name) {
             return found
         }
@@ -28,10 +65,6 @@ public enum ToolLocator: Sendable {
             }
         }
         return nil
-    }
-
-    public static func isAvailable(_ name: String) -> Bool {
-        locate(name) != nil
     }
 
     private static func locateViaXcrun(_ name: String) -> String? {
@@ -63,5 +96,24 @@ public enum ToolLocator: Sendable {
             return nil
         }
         return path
+    }
+}
+
+/// Lock-protected cache distinguishing "not yet looked up" from "looked up,
+/// not found" (`nil`).
+private final class LocatorCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String: String?] = [:]
+
+    func value(for name: String) -> String?? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage[name]
+    }
+
+    func store(_ path: String?, for name: String) {
+        lock.lock()
+        storage[name] = path
+        lock.unlock()
     }
 }

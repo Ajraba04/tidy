@@ -22,3 +22,4 @@ dist/
 # Personal tooling — not part of the Tidy project
 /Cleanup.command
 /execplan/
+/.claude/

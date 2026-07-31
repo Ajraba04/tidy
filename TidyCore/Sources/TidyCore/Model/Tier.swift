@@ -1,6 +1,6 @@
 /// A cleaning tier, matching the shell script's opt-in structure: each tier
 /// out from `safe` costs either a re-download or local history.
-public enum Tier: String, Codable, CaseIterable, Sendable, Comparable {
+public enum Tier: String, Codable, CaseIterable, Sendable, Comparable, Hashable {
     case scanOnly
     case safe
     case normal

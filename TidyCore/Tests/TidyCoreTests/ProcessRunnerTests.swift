@@ -56,4 +56,26 @@ struct ProcessRunnerTests {
     func minimalEnvironmentIsFixed() {
         #expect(ProcessRunner.minimalEnvironment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin")
     }
+
+    @Test("a process that outlives its timeout is killed and reported as timed out, not hung forever")
+    func timesOutRatherThanHangingForever() async throws {
+        let output = try await ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: "/bin/sleep"),
+            arguments: ["30"],
+            timeout: 0.5
+        )
+        #expect(output.timedOut)
+        #expect(!output.succeeded)
+    }
+
+    @Test("a process well under its timeout is not reported as timed out")
+    func doesNotReportTimeoutForFastCommand() async throws {
+        let output = try await ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: "/bin/echo"),
+            arguments: ["fast"],
+            timeout: 10
+        )
+        #expect(!output.timedOut)
+        #expect(output.succeeded)
+    }
 }

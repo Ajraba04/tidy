@@ -1,7 +1,7 @@
 import Foundation
 
 /// The outcome of executing one `PlannedItem`.
-public struct ItemResult: Identifiable, Sendable {
+public struct ItemResult: Identifiable, Sendable, Codable {
     public let id: String
     public let title: String
     public let freedBytes: Int64
@@ -20,7 +20,7 @@ public struct ItemResult: Identifiable, Sendable {
 /// The record of one `CleanEngine.execute` run, matching what the shell
 /// script appended to its log file — but structured, and written to
 /// `runs.jsonl` as one JSON object per line.
-public struct RunReport: Sendable {
+public struct RunReport: Sendable, Codable {
     public let tier: Tier
     public let results: [ItemResult]
     public let startedAt: Date

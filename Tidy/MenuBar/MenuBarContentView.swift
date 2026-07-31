@@ -45,8 +45,12 @@ struct MenuBarContentView: View {
                     openWindow(id: WindowID.scan)
                 }
 
+                ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: WindowID.clean, value: Tier.safe)
+                }
+
                 VStack(alignment: .leading, spacing: 0) {
-                    ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {}
                     ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {}
                     ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {}
                 }
