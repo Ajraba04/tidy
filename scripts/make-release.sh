@@ -35,8 +35,16 @@ ZIP_PATH="dist/Tidy-$VERSION.zip"
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
+DMG_PATH="dist/Tidy-$VERSION.dmg"
+rm -f "$DMG_PATH"
+STAGING="$(mktemp -d)"
+trap 'rm -rf "$STAGING"' EXIT
+cp -R "$APP_PATH" "$STAGING/"
+ln -s /Applications "$STAGING/Applications"
+hdiutil create -volname "Tidy" -srcfolder "$STAGING" -fs HFS+ -format UDZO -ov "$DMG_PATH"
+
 echo
-echo "Built unsigned $ZIP_PATH"
+echo "Built unsigned $ZIP_PATH and $DMG_PATH"
 echo "This is ad-hoc signed (not notarized). To open it locally:"
 echo "  xattr -dr com.apple.quarantine \"$APP_PATH\""
 echo "or right-click the app in Finder and choose Open."

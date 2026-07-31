@@ -100,6 +100,17 @@ jobs:
           mkdir -p dist
           ditto -c -k --keepParent "DerivedData/Build/Products/Release/Tidy.app" "dist/Tidy-${{ github.ref_name }}.zip"
 
+      - name: Build DMG
+        run: |
+          set -euo pipefail
+          STAGING="$RUNNER_TEMP/dmg-staging"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          cp -R "DerivedData/Build/Products/Release/Tidy.app" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Tidy" -srcfolder "$STAGING" -fs HFS+ \
+            -format UDZO -ov "dist/Tidy-${{ github.ref_name }}.dmg"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,6 +121,8 @@ jobs:
           else
             NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway. The app is fully functional either way."
           fi
-          gh release create "${{ github.ref_name }}" "dist/Tidy-${{ github.ref_name }}.zip" \
+          gh release create "${{ github.ref_name }}" \
+            "dist/Tidy-${{ github.ref_name }}.dmg" \
+            "dist/Tidy-${{ github.ref_name }}.zip" \
             --title "Tidy ${{ github.ref_name }}" \
             --notes "$NOTES"
