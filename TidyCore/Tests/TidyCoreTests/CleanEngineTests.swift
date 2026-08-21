@@ -34,7 +34,7 @@ struct CleanEngineTests {
             locate: { _ in [] }, action: .deletePath
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let plan = await engine.makePlan(items: [safeItem, deepItem], tier: .safe, environment: makeEnvironment(homeDirectory: scratch.path))
 
         #expect(plan.plannedItems.map(\.id) == ["safe-item"])
@@ -53,7 +53,7 @@ struct CleanEngineTests {
             )
         }
         let items = [item("safe", .safe), item("normal", .normal), item("deep", .deep)]
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
 
         let safePlan = await engine.makePlan(items: items, tier: .safe, environment: environment)
@@ -82,7 +82,7 @@ struct CleanEngineTests {
             action: .deletePath
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: makeEnvironment(homeDirectory: scratch.path))
 
         #expect(plan.plannedItems.first?.estimatedBytes ?? 0 >= 100_000)
@@ -104,7 +104,7 @@ struct CleanEngineTests {
             action: .deletePath
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: makeEnvironment(homeDirectory: scratch.path))
 
         #expect(plan.plannedItems.first?.targets.isEmpty == true)
@@ -128,7 +128,7 @@ struct CleanEngineTests {
             action: .deletePath
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
@@ -154,7 +154,7 @@ struct CleanEngineTests {
             action: .deleteContents
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
@@ -171,7 +171,7 @@ struct CleanEngineTests {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
@@ -194,7 +194,7 @@ struct CleanEngineTests {
             action: .runTool(ToolCommand(.git, ["--version"]))
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
@@ -222,7 +222,7 @@ struct CleanEngineTests {
         try FileManager.default.createDirectory(atPath: scratch.appendingPathComponent("a").path, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: scratch.appendingPathComponent("b").path, withIntermediateDirectories: true)
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let callCount = LockedCounter()
         await engine.register(.chromeCookies) { target, _ in
             callCount.increment()
@@ -251,7 +251,7 @@ struct CleanEngineTests {
             action: .custom(.gitRepoGC)
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
@@ -275,7 +275,7 @@ struct CleanEngineTests {
         )
         let plan = CleanPlan(tier: .safe, plannedItems: [plannedItem])
 
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         let report = await engine.execute(plan: plan, environment: makeEnvironment(homeDirectory: scratch.path))
 
         #expect(FileManager.default.fileExists(atPath: scratch.path))
