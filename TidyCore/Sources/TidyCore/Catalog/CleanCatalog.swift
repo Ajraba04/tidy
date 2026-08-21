@@ -11,7 +11,8 @@ public enum CleanCatalog: Sendable {
             extras,
             android,
             dependencyCaches,
-            system
+            system,
+            memory
         ]
     }
 

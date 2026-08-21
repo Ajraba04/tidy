@@ -33,7 +33,7 @@ struct SizeScannerTests {
         try payload.write(to: scratch.appendingPathComponent("a.bin"))
         try payload.write(to: scratch.appendingPathComponent("b.bin"))
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         let results = await scanner.scan(paths: [scratch.path], protectedRoots: [])
 
         #expect(results.count == 1)
@@ -42,7 +42,7 @@ struct SizeScannerTests {
 
     @Test("returns zero for a path that does not exist")
     func returnsZeroForMissingPath() async {
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         let results = await scanner.scan(
             paths: ["/nonexistent/path/for/tidy/tests-\(UUID().uuidString)"],
             protectedRoots: []
@@ -58,7 +58,7 @@ struct SizeScannerTests {
         let file = scratch.appendingPathComponent("solo.bin")
         try Data(repeating: 0x1, count: 50_000).write(to: file)
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         let results = await scanner.scan(paths: [file.path], protectedRoots: [])
         #expect(results.first?.bytes ?? 0 >= 50_000)
     }
@@ -76,7 +76,7 @@ struct SizeScannerTests {
         try Data(repeating: 0x1, count: 100_000).write(to: kept.appendingPathComponent("small.bin"))
         try Data(repeating: 0x1, count: 900_000).write(to: protectedDir.appendingPathComponent("large.bin"))
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
 
         let unprotected = await scanner.scan(paths: [scratch.path], protectedRoots: [])
         let protectedResults = await scanner.scan(paths: [scratch.path], protectedRoots: [protectedDir.path])
@@ -102,7 +102,7 @@ struct SizeScannerTests {
             paths.append(dir.path)
         }
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         let collector = SyncCollector()
         let results = await scanner.scan(paths: paths, protectedRoots: [], onItem: { result in
             collector.record(result.path)
@@ -118,7 +118,7 @@ struct SizeScannerTests {
         defer { try? FileManager.default.removeItem(at: scratch) }
         try Data(repeating: 0x1, count: 10_000).write(to: scratch.appendingPathComponent("f.bin"))
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         await scanner.cancelAll()
         await scanner.cancelAll()
 
@@ -136,7 +136,7 @@ struct SizeScannerTests {
         defer { try? FileManager.default.removeItem(at: scratch) }
         try Data(repeating: 0x1, count: 10_000).write(to: scratch.appendingPathComponent("f.bin"))
 
-        let scanner = SizeScanner(cache: SizeCache(fileURL: nil))
+        let scanner = SizeScanner()
         let results = await scanner.scan(paths: [scratch.path], protectedRoots: [])
         #expect(results.first?.bytes ?? 0 >= 10_000)
     }

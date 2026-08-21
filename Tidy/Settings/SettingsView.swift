@@ -14,6 +14,10 @@ struct SettingsView: View {
                 staleNodeModulesDays: $configStore.config.staleNodeModulesThresholdDays,
                 transcriptAgeDays: $configStore.config.transcriptAgeThresholdDays
             )
+            MemorySection(
+                appsApprovedForQuit: $configStore.config.appsApprovedForQuit,
+                allowRestart: $configStore.config.allowRestartToReclaimSwap
+            )
         }
         .formStyle(.grouped)
         .frame(minWidth: 480, idealWidth: 520, minHeight: 520, idealHeight: 600)
@@ -176,5 +180,80 @@ struct ThresholdsSection: View {
             Stepper("Stale node_modules after \(staleNodeModulesDays) days", value: $staleNodeModulesDays, in: 7...365, step: 1)
             Stepper("Old session transcripts after \(transcriptAgeDays) days", value: $transcriptAgeDays, in: 7...365, step: 1)
         }
+    }
+}
+
+
+/// Opt-in controls for the two memory actions that can interrupt the user:
+/// quitting a named application, and restarting the Mac. Both ship off.
+struct MemorySection: View {
+    @Binding var appsApprovedForQuit: [String]
+    @Binding var allowRestart: Bool
+    @State private var newApp = ""
+    @State private var suggestions: [ProcessUsage] = []
+
+    var body: some View {
+        Section {
+            ForEach(appsApprovedForQuit, id: \.self) { name in
+                Text(name)
+            }
+            .onDelete { indices in appsApprovedForQuit.remove(atOffsets: indices) }
+
+            HStack {
+                TextField("Application name", text: $newApp)
+                    .onSubmit(addTypedApp)
+                Button("Add", action: addTypedApp)
+                    .disabled(newApp.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if !suggestions.isEmpty {
+                DisclosureGroup("Currently using the most memory (\(suggestions.count))") {
+                    ForEach(suggestions) { usage in
+                        Button {
+                            add(usage.name)
+                            suggestions.removeAll { $0.name == usage.name }
+                        } label: {
+                            Label(
+                                "\(usage.name) — \(ByteFormat.human(usage.residentBytes))",
+                                systemImage: "plus.circle"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else {
+                Button("Suggest from top memory consumers…") {
+                    Task {
+                        let found = await ProcessSurvey.topMemoryConsumers()
+                        suggestions = found.filter { !appsApprovedForQuit.contains($0.name) }
+                    }
+                }
+            }
+
+            Toggle("Allow the restart-to-reclaim-swap action", isOn: $allowRestart)
+        } header: {
+            Text("Memory & swap")
+        } footer: {
+            Text("""
+                 Tidy asks these applications to quit, the way the Quit menu item does: an app with \
+                 unsaved work can prompt or refuse, and nothing is ever force-killed. Empty means no \
+                 app is eligible.
+
+                 Swap is different: macOS grows swapfiles on demand and never shrinks them while the \
+                 Mac stays booted, so restarting is the only thing that returns that space. The \
+                 restart action stays hidden until you enable it here.
+                 """)
+        }
+    }
+
+    private func addTypedApp() {
+        add(newApp)
+        newApp = ""
+    }
+
+    private func add(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !appsApprovedForQuit.contains(trimmed) else { return }
+        appsApprovedForQuit.append(trimmed)
     }
 }

@@ -29,6 +29,17 @@ public enum LargestItemsScanner: Sendable {
             .map { homeDirectory + "/" + $0 }
     }
 
+    /// The top-level entries `homeTopLevelEntries` filters out: `.Trash`
+    /// and Apple's capitalized dot-entries. They are excluded from the
+    /// ranking on purpose, but the large-file sweep has always walked into
+    /// them, so Scan must still cover them to keep that behavior.
+    public static func homeExcludedTopLevelEntries(homeDirectory: String) -> [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: homeDirectory)) ?? []
+        return names
+            .filter { !matchesHomeTopLevelPattern($0) }
+            .map { homeDirectory + "/" + $0 }
+    }
+
     public static func libraryEntries(homeDirectory: String) -> [String] {
         let libraryPath = homeDirectory + "/Library"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: libraryPath)) ?? []

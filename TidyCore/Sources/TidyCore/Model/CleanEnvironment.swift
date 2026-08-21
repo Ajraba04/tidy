@@ -24,6 +24,14 @@ public struct CleanEnvironment: Sendable {
     public var simulatorsApprovedForDeletion: [String]
     public var staleNodeModulesThresholdDays: Int
     public var transcriptAgeThresholdDays: Int
+    /// Application names the user has explicitly approved for quitting,
+    /// an opt-in list like `simulatorsApprovedForDeletion`. Empty means
+    /// nothing is eligible. Matched by exact name, not substring.
+    public var appsApprovedForQuit: [String]
+    /// Whether the restart-to-reclaim-swap item may appear at all. Off by
+    /// default: rebooting the machine should never be reachable from a
+    /// checkbox the user did not deliberately enable.
+    public var allowRestartToReclaimSwap: Bool
 
     public init(
         homeDirectory: String = NSHomeDirectory(),
@@ -33,7 +41,9 @@ public struct CleanEnvironment: Sendable {
         keepCookieDomains: [String] = [],
         simulatorsApprovedForDeletion: [String] = [],
         staleNodeModulesThresholdDays: Int = 60,
-        transcriptAgeThresholdDays: Int = 45
+        transcriptAgeThresholdDays: Int = 45,
+        appsApprovedForQuit: [String] = [],
+        allowRestartToReclaimSwap: Bool = false
     ) {
         self.homeDirectory = homeDirectory
         self.detectedTools = detectedTools
@@ -43,6 +53,8 @@ public struct CleanEnvironment: Sendable {
         self.simulatorsApprovedForDeletion = simulatorsApprovedForDeletion
         self.staleNodeModulesThresholdDays = staleNodeModulesThresholdDays
         self.transcriptAgeThresholdDays = transcriptAgeThresholdDays
+        self.appsApprovedForQuit = appsApprovedForQuit
+        self.allowRestartToReclaimSwap = allowRestartToReclaimSwap
     }
 
     /// iCloud is not local scratch space and is never walked into, by
