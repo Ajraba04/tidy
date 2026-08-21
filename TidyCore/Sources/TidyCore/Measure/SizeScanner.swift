@@ -11,11 +11,19 @@ public actor SizeScanner {
     }
 
     private var generation = 0
-    private var cache: SizeCache
     private let maxConcurrentWalks: Int
 
-    public init(cache: SizeCache = SizeCache(), maxConcurrentWalks: Int = 3) {
-        self.cache = cache
+    /// Defaults to the machine's core count, clamped: this walk is
+    /// syscall-bound rather than seek-bound on APFS, so a fixed low
+    /// concurrency left throughput on the table.
+    ///
+    /// There is deliberately no size cache. One was tried and removed: a
+    /// directory's mtime only changes when its *immediate* children change,
+    /// so a cache keyed on it serves stale sizes for deep trees like
+    /// `~/.gradle/caches`, and sound incremental sizing needs a change feed
+    /// (FSEvents with a persisted event ID), not an mtime. Measuring a
+    /// deletion estimate is not a place to be approximately right.
+    public init(maxConcurrentWalks: Int = max(4, min(8, ProcessInfo.processInfo.activeProcessorCount))) {
         self.maxConcurrentWalks = maxConcurrentWalks
     }
 
@@ -65,23 +73,11 @@ public actor SizeScanner {
             }
         }
 
-        let ordered = paths.compactMap { path in byPath[path].map { Result(path: path, bytes: $0) } }
-        for result in ordered {
-            let modifiedAt = Self.modificationTime(ofPath: result.path)
-            cache.store(bytes: result.bytes, forPath: result.path, modifiedAt: modifiedAt)
-        }
-        cache.save()
-        return ordered
+        return paths.compactMap { path in byPath[path].map { Result(path: path, bytes: $0) } }
     }
 
     private func isCurrentGeneration(_ generation: Int) -> Bool {
         generation == self.generation
-    }
-
-    static func modificationTime(ofPath path: String) -> TimeInterval {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
-        let date = attributes?[.modificationDate] as? Date
-        return date?.timeIntervalSince1970 ?? 0
     }
 
     /// Sums allocated size (`.totalFileAllocatedSizeKey`, matching `du`)

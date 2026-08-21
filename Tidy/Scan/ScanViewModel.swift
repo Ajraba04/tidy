@@ -13,7 +13,6 @@ final class ScanViewModel {
     }
 
     private(set) var phase: Phase = .idle
-    private let sizeScanner = SizeScanner()
 
     func runScan() async {
         phase = .running
@@ -21,7 +20,7 @@ final class ScanViewModel {
         let home = NSHomeDirectory()
         let environment = ConfigStore.load().makeEnvironment(homeDirectory: home)
 
-        let report = await ScanEngine.run(environment: environment, sizeScanner: sizeScanner)
+        let report = await ScanEngine.run(environment: environment)
         phase = .complete(report)
     }
 }

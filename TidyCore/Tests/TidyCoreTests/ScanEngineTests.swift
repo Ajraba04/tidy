@@ -18,7 +18,7 @@ struct ScanEngineTests {
             protectedRoots: []
         )
 
-        let report = await ScanEngine.run(environment: environment, sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let report = await ScanEngine.run(environment: environment)
 
         #expect(report.memoryStats.totalBytes > 0)
         #expect(report.detectedTools == environment.detectedTools)
