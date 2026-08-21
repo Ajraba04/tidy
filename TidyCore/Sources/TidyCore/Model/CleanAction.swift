@@ -42,6 +42,9 @@ public enum CustomOperationID: String, Codable, Sendable, CaseIterable {
     case gitRepoGC
     case gitReflogExpireAggressive
     case apfsSnapshots
+    case purgeInactiveMemory
+    case quitMemoryHog
+    case restartToReclaimSwap
 }
 
 /// What a `CleanItem` does once its targets have been located and confirmed.
