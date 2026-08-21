@@ -12,6 +12,12 @@ public struct PlannedItem: Identifiable, Sendable {
     public let targets: [TargetPath]
     public let estimatedBytes: Int64
     public let action: CleanAction
+    /// The declared root this item's targets were validated against at plan
+    /// time, carried so `CleanEngine.execute` can re-check the same rule
+    /// rather than a weaker one. Without this the execute-time check is
+    /// strictly weaker than the plan-time check, and the containment rule
+    /// that is unique to this codebase is the one that gets dropped.
+    public let declaredRoot: String?
 
     public init(
         id: String,
@@ -21,7 +27,8 @@ public struct PlannedItem: Identifiable, Sendable {
         costNote: String?,
         targets: [TargetPath],
         estimatedBytes: Int64,
-        action: CleanAction
+        action: CleanAction,
+        declaredRoot: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -31,6 +38,7 @@ public struct PlannedItem: Identifiable, Sendable {
         self.targets = targets
         self.estimatedBytes = estimatedBytes
         self.action = action
+        self.declaredRoot = declaredRoot
     }
 
     public var isEmpty: Bool { targets.isEmpty }

@@ -8,6 +8,7 @@ public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible 
     case notAbsolute(path: String)
     case isRoot
     case isHome
+    case isSystemRoot(path: String)
     case insideProtectedRoot(path: String, root: String)
     case outsideDeclaredRoot(path: String, root: String)
 
@@ -21,6 +22,8 @@ public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible 
             return "refusing unsafe path: '/'"
         case .isHome:
             return "refusing unsafe path: home directory"
+        case .isSystemRoot(let path):
+            return "refusing system path: \(path)"
         case .insideProtectedRoot(let path, let root):
             return "refusing protected path: \(path) (under \(root))"
         case .outsideDeclaredRoot(let path, let root):
@@ -36,6 +39,28 @@ public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible 
 /// must resolve to somewhere under the `CleanItem` that produced it, so a bug
 /// in one item's `locate` closure cannot reach another item's territory.
 public struct PathGuard: Sendable {
+    /// Container directories that must never themselves be deleted or
+    /// emptied, whatever an item's `locate` closure returns. Matched
+    /// exactly, not by prefix: `/Library` is refused while
+    /// `/Library/Developer/CoreSimulator/Caches` stays reachable, because
+    /// the catastrophic case is emptying the container, not cleaning
+    /// something inside it.
+    ///
+    /// Every catalog item today declares a root under `$HOME`, so nothing
+    /// here is reachable in practice. This is the guardrail that has to
+    /// exist *before* any item declares a root above `$HOME`, not after.
+    static let systemContainerPaths: Set<String> = [
+        "/Users", "/System", "/Library", "/Applications", "/usr", "/bin",
+        "/sbin", "/etc", "/var", "/private", "/opt", "/cores", "/Network",
+        "/Volumes", "/System/Volumes", "/System/Volumes/Data",
+        "/private/var", "/private/etc", "/private/tmp", "/tmp"
+    ]
+
+    /// Subtrees that are refused wholesale. `/System/Volumes` is excluded
+    /// deliberately: the data volume and the VM volume live under it, and
+    /// firmlinked user paths must stay reachable.
+    static let systemSubtrees: [String] = ["/System/Library", "/usr", "/bin", "/sbin"]
+
     public let protectedRoots: [String]
 
     public init(protectedRoots: [String]) {
@@ -87,6 +112,13 @@ public struct PathGuard: Sendable {
 
         if path == "/" { throw PathGuardError.isRoot }
         if path == canonicalHome { throw PathGuardError.isHome }
+
+        if Self.systemContainerPaths.contains(path) {
+            throw PathGuardError.isSystemRoot(path: path)
+        }
+        for subtree in Self.systemSubtrees where Self.isEqualOrDescendant(path, of: subtree) {
+            throw PathGuardError.isSystemRoot(path: path)
+        }
 
         for root in protectedRoots {
             if Self.isEqualOrDescendant(path, of: root) {
