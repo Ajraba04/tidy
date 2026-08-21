@@ -21,6 +21,13 @@ public struct ScanReport: Sendable {
     public let staleNodeModules: [TargetPath]
     public let launchAgents: [String]
     public let topMemoryConsumers: [ProcessUsage]
+    /// Space only a restart returns. Reported, never acted on, and never
+    /// added to any plan total.
+    public let restartOnlyReclaim: RestartReclaimSurvey
+    /// Big directories no catalog item claims: what Tidy cannot currently
+    /// see. `RankedItem` by design -- there is no route from here to a
+    /// deletion.
+    public let unclaimedBySize: [RankedItem]
 
     public init(
         generatedAt: Date,
@@ -36,7 +43,9 @@ public struct ScanReport: Sendable {
         idleSimulatorRuntimes: [SimulatorRuntime],
         staleNodeModules: [TargetPath],
         launchAgents: [String],
-        topMemoryConsumers: [ProcessUsage]
+        topMemoryConsumers: [ProcessUsage],
+        restartOnlyReclaim: RestartReclaimSurvey = RestartReclaimSurvey(components: [], pagedOutBytes: 0),
+        unclaimedBySize: [RankedItem] = []
     ) {
         self.generatedAt = generatedAt
         self.detectedTools = detectedTools
@@ -52,5 +61,7 @@ public struct ScanReport: Sendable {
         self.staleNodeModules = staleNodeModules
         self.launchAgents = launchAgents
         self.topMemoryConsumers = topMemoryConsumers
+        self.restartOnlyReclaim = restartOnlyReclaim
+        self.unclaimedBySize = unclaimedBySize
     }
 }

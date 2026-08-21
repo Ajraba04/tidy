@@ -9,6 +9,20 @@ struct ScanReportView: View {
             VStack(alignment: .leading, spacing: 16) {
                 summaryRow
 
+                if !report.restartOnlyReclaim.isEmpty {
+                    RestartReclaimSection(survey: report.restartOnlyReclaim)
+                }
+
+                ReportSection(title: "Big, and not covered by Tidy") {
+                    RankedItemsList(
+                        items: report.unclaimedBySize,
+                        emptyText: "Nothing large sits outside what Tidy's catalog covers."
+                    )
+                    Text("Tidy has no rule that touches these. Reported so coverage gaps are visible, not offered for deletion.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 ReportSection(title: "Top level of home") {
                     RankedItemsList(items: report.topLevelHomeRanking, emptyText: "Nothing measured.")
                 }
