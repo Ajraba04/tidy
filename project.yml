@@ -21,7 +21,7 @@ targets:
       base:
         PRODUCT_NAME: Tidy
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "1.5.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
