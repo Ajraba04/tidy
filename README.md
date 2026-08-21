@@ -1,9 +1,13 @@
 # Tidy
 
-A native macOS menu bar app for reclaiming disk space and memory: regeneratable
+A native macOS menu bar app for reclaiming disk space: regeneratable
 developer tool caches, browser caches, Xcode and simulator data, git object
 cleanup, and more. It's organized into Scan, Safe, Normal, Deep, and Custom
 modes, with a plan you review before anything is deleted.
+
+It also has a small, deliberately conservative set of memory and swap
+actions. See [Memory and swap](#memory-and-swap) for what they can and
+cannot do, which is mostly a story about what macOS does not allow.
 
 Requires macOS 14 (Sonoma) or later.
 
@@ -35,9 +39,51 @@ much space it would free, and only deletes after you say so.
 - **Custom** exposes every catalog item, individually checkable, with
   savable named presets.
 
+Scan also reports two things it will never act on: space only a restart
+can return, and large directories no catalog item covers.
+
 Every mode works the same way: build a plan (locate + measure, zero
 writes) → review it → confirm → execute. There's no code path from a plan
 to a deletion that skips your confirmation.
+
+## Memory and swap
+
+Most "memory cleaners" on macOS are selling something that isn't real. Here
+is exactly what Tidy can do, and what it can't:
+
+- **Swap cannot be reclaimed while the Mac is booted.** macOS grows
+  swapfiles on demand and does not return them until boot. There is no API,
+  no supported command, and no privilege level that changes this. So the
+  only honest "free swap" action is a restart, and that is literally what
+  the restart item does. It ships disabled and has to be enabled in
+  Settings before it will even appear.
+- **Purging inactive memory is real, and usually not a win.** `purge(8)`
+  evicts the file-backed page cache, moving pages from inactive to free.
+  Those pages were caching data the machine was about to want again, so the
+  number in Activity Monitor improves while real performance briefly gets
+  worse. Offered, never on by default, and labelled with that trade-off.
+- **Quitting an application is the one unambiguous win.** Its resident
+  memory returns the moment it exits. Tidy asks apps to quit the way the
+  Quit menu item does; an app with unsaved work can prompt or refuse, and
+  nothing is ever force-killed. Only applications you name in Settings are
+  eligible.
+
+Memory figures are measured before and after, and are reported separately
+from disk. They are never added into the "freed" total, because disk space
+and RAM are different resources and one combined number would be wrong
+about both.
+
+Scan's **"Only a restart can reclaim this"** panel reports what macOS is
+holding in swap and VM files, broken out per component. It has no button:
+those bytes belong to the kernel, and Tidy will not pretend otherwise.
+
+## Coverage gaps
+
+Scan reports **"Big, and not covered by Tidy"**: directories over 500 MB
+that no catalog item touches. Cleanup catalogs drift out of date as the
+tools around them grow new directories, and this makes that drift visible
+instead of silent. It reports only; nothing there can be deleted until
+somebody writes a real catalog item for it.
 
 ## Privacy
 
