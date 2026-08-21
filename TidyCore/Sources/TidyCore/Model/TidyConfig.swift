@@ -25,6 +25,8 @@ public struct TidyConfig: Sendable, Codable, Equatable {
     public var gitRoots: [String]
     public var staleNodeModulesThresholdDays: Int
     public var transcriptAgeThresholdDays: Int
+    public var appsApprovedForQuit: [String]
+    public var allowRestartToReclaimSwap: Bool
     public var presets: [CustomPreset]
 
     public init(
@@ -35,6 +37,8 @@ public struct TidyConfig: Sendable, Codable, Equatable {
         gitRoots: [String] = [],
         staleNodeModulesThresholdDays: Int = 60,
         transcriptAgeThresholdDays: Int = 45,
+        appsApprovedForQuit: [String] = [],
+        allowRestartToReclaimSwap: Bool = false,
         presets: [CustomPreset] = []
     ) {
         self.schemaVersion = schemaVersion
@@ -44,6 +48,8 @@ public struct TidyConfig: Sendable, Codable, Equatable {
         self.gitRoots = gitRoots
         self.staleNodeModulesThresholdDays = staleNodeModulesThresholdDays
         self.transcriptAgeThresholdDays = transcriptAgeThresholdDays
+        self.appsApprovedForQuit = appsApprovedForQuit
+        self.allowRestartToReclaimSwap = allowRestartToReclaimSwap
         self.presets = presets
     }
 
@@ -56,7 +62,9 @@ public struct TidyConfig: Sendable, Codable, Equatable {
             keepCookieDomains: keepCookieDomains,
             simulatorsApprovedForDeletion: simulatorsApprovedForDeletion,
             staleNodeModulesThresholdDays: staleNodeModulesThresholdDays,
-            transcriptAgeThresholdDays: transcriptAgeThresholdDays
+            transcriptAgeThresholdDays: transcriptAgeThresholdDays,
+            appsApprovedForQuit: appsApprovedForQuit,
+            allowRestartToReclaimSwap: allowRestartToReclaimSwap
         )
     }
 }

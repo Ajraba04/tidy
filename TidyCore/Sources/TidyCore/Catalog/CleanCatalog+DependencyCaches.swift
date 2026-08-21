@@ -1,3 +1,5 @@
+import Foundation
+
 extension CleanCatalog {
     /// The shell script's `--deep` tier: full Gradle/SwiftPM/pub caches,
     /// `.npm/_npx`, Maven, CocoaPods repo cache. Each one costs a
@@ -83,6 +85,46 @@ extension CleanCatalog {
             requires: .go,
             tool: .go,
             arguments: ["clean", "-modcache"]
+        ))
+
+        // Flutter was detected by `ToolchainDetector` but required by no
+        // item, leaving `.flutter` a toolchain the app could recognise and
+        // then do nothing about. Its engine artifacts are the largest
+        // single thing a Flutter install puts on disk.
+        items.append(fixedPathItem(
+            id: "safe.flutter.tool-state",
+            title: "~/.flutter_tool_state",
+            tier: .safe,
+            requires: .flutter,
+            relativePath: ".flutter_tool_state",
+            declaredRootRelativePath: ".flutter_tool_state"
+        ))
+
+        items.append(CleanItem(
+            id: "deep.flutter.sdk-cache",
+            title: "Flutter SDK bin/cache (engine artifacts)",
+            tier: .deep,
+            requires: .flutter,
+            costNote: "Several GB of engine artifacts; 'flutter precache' re-downloads them",
+            declaredRoot: { env in env.homeDirectory },
+            locate: { env in
+                // The SDK lives wherever the user unpacked it, so it is
+                // resolved from the `flutter` executable rather than
+                // guessed. Only offered when the SDK sits inside $HOME:
+                // an SDK installed system-wide is outside this item's
+                // declared root, and PathGuard would refuse it anyway.
+                guard let executable = ToolLocator.locate("flutter") else { return [] }
+                let sdkRoot = ((executable as NSString).deletingLastPathComponent as NSString)
+                    .deletingLastPathComponent
+                let cachePath = sdkRoot + "/bin/cache"
+                guard PathGuard.isEqualOrDescendant(
+                    PathGuard.canonicalize(cachePath),
+                    of: PathGuard.canonicalize(env.homeDirectory)
+                ) else { return [] }
+                guard FileManager.default.fileExists(atPath: cachePath) else { return [] }
+                return [TargetPath(path: cachePath, label: PathDisplay.tilde(cachePath))]
+            },
+            action: .deletePath
         ))
 
         return CleanCategory(id: "dependency-caches", title: "Dependency caches", items: items)

@@ -48,6 +48,34 @@ public enum DefaultCustomActionExecutors: Sendable {
             let message = succeeded ? "deleted \(snapshots.count) snapshot(s)" : "snapshot deletion failed or was cancelled"
             return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: message)
         }
+
+        await engine.register(.purgeInactiveMemory) { _, _ in
+            let outcome = await MemoryReclaimer.purgeInactiveMemory()
+            return mapMemoryOutcome(outcome)
+        }
+
+        await engine.register(.quitMemoryHog) { target, _ in
+            // target.path carries the application name, not a path.
+            let outcome = await MemoryReclaimer.quitApplication(named: target.path)
+            return mapMemoryOutcome(outcome)
+        }
+
+        await engine.register(.restartToReclaimSwap) { _, _ in
+            let outcome = await MemoryReclaimer.restartToReclaimSwap()
+            return mapMemoryOutcome(outcome)
+        }
+    }
+
+    /// Memory outcomes report zero disk bytes by construction: freeing RAM
+    /// frees no disk, and letting a memory figure reach `freedBytes` would
+    /// inflate the disk total the results screen shows.
+    private static func mapMemoryOutcome(_ outcome: MemoryReclaimer.Outcome) -> CustomActionOutcome {
+        CustomActionOutcome(
+            freedBytes: 0,
+            reclaimedMemoryBytes: outcome.reclaimedMemoryBytes,
+            succeeded: outcome.succeeded,
+            message: outcome.message
+        )
     }
 
     private static func mapChromeCookieOutcome(_ outcome: ChromeCookieOutcome) -> CustomActionOutcome {

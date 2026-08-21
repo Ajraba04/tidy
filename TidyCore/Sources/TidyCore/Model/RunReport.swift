@@ -5,13 +5,25 @@ public struct ItemResult: Identifiable, Sendable, Codable {
     public let id: String
     public let title: String
     public let freedBytes: Int64
+    /// RAM returned by this item, if any. Separate from `freedBytes`
+    /// because disk and memory are different resources: summing them would
+    /// produce a headline number that is wrong about both.
+    public let reclaimedMemoryBytes: Int64
     public let succeeded: Bool
     public let message: String?
 
-    public init(id: String, title: String, freedBytes: Int64, succeeded: Bool, message: String? = nil) {
+    public init(
+        id: String,
+        title: String,
+        freedBytes: Int64,
+        reclaimedMemoryBytes: Int64 = 0,
+        succeeded: Bool,
+        message: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.freedBytes = freedBytes
+        self.reclaimedMemoryBytes = reclaimedMemoryBytes
         self.succeeded = succeeded
         self.message = message
     }
@@ -50,5 +62,18 @@ public struct RunReport: Sendable, Codable {
 
     public var measuredDeltaBytes: Int64 {
         max(0, freeSpaceAfterBytes - freeSpaceBeforeBytes)
+    }
+
+    public var totalReclaimedMemoryBytes: Int64 {
+        results.reduce(0) { $0 + $1.reclaimedMemoryBytes }
+    }
+
+    /// True when the estimate and the observed free-space change disagree
+    /// by more than a rounding-level margin, which is the moment the app
+    /// owes the user an explanation rather than a number.
+    public var freedFigureNeedsReconciling: Bool {
+        guard totalFreedBytes > 0 else { return false }
+        let difference = abs(totalFreedBytes - measuredDeltaBytes)
+        return difference > max(64 * 1024 * 1024, totalFreedBytes / 10)
     }
 }

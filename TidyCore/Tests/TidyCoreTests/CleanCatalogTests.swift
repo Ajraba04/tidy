@@ -68,7 +68,7 @@ struct CleanCatalogTests {
 
     @Test("every custom action referenced by the catalog has a registered executor")
     func everyCustomActionHasARegisteredExecutor() async {
-        let engine = CleanEngine(sizeScanner: SizeScanner(cache: SizeCache(fileURL: nil)))
+        let engine = CleanEngine(sizeScanner: SizeScanner())
         await DefaultCustomActionExecutors.registerAll(on: engine)
 
         var referencedOperations: Set<CustomOperationID> = []
