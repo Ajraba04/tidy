@@ -87,6 +87,8 @@ enum EffectAccounting {
 
 /// The outcome of executing one `PlannedItem`.
 public struct ItemResult: Identifiable, Sendable, Codable {
+    /// Nil means the record did not observe memory reclaim; explicit zero is measured.
+    public let measuredReclaimedMemoryBytes: Int64?
     public let id: String
     public let title: String
     public let freedBytes: Int64
@@ -103,7 +105,7 @@ public struct ItemResult: Identifiable, Sendable, Codable {
         id: String,
         title: String,
         freedBytes: Int64,
-        reclaimedMemoryBytes: Int64 = 0,
+        reclaimedMemoryBytes: Int64? = nil,
         succeeded: Bool,
         message: String? = nil,
         targetOutcomes: [TargetEffectOutcome]? = nil,
@@ -112,7 +114,8 @@ public struct ItemResult: Identifiable, Sendable, Codable {
         self.id = id
         self.title = title
         self.freedBytes = freedBytes
-        self.reclaimedMemoryBytes = reclaimedMemoryBytes
+        self.reclaimedMemoryBytes = reclaimedMemoryBytes ?? 0
+        self.measuredReclaimedMemoryBytes = reclaimedMemoryBytes
         self.succeeded = succeeded
         self.message = message
         self.targetOutcomes = targetOutcomes
@@ -121,6 +124,7 @@ public struct ItemResult: Identifiable, Sendable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, freedBytes, reclaimedMemoryBytes, succeeded, message, targetOutcomes, effectStatus
+        case measuredReclaimedMemoryBytes
     }
 
     public init(from decoder: Decoder) throws {
@@ -128,11 +132,28 @@ public struct ItemResult: Identifiable, Sendable, Codable {
         id = try values.decode(String.self, forKey: .id)
         title = try values.decode(String.self, forKey: .title)
         freedBytes = try values.decode(Int64.self, forKey: .freedBytes)
-        reclaimedMemoryBytes = try values.decode(Int64.self, forKey: .reclaimedMemoryBytes)
+        let legacyMemory = try values.decodeIfPresent(Int64.self, forKey: .reclaimedMemoryBytes)
+        reclaimedMemoryBytes = legacyMemory ?? 0
+        measuredReclaimedMemoryBytes = values.contains(.measuredReclaimedMemoryBytes)
+            ? try values.decodeIfPresent(Int64.self, forKey: .measuredReclaimedMemoryBytes) : legacyMemory
         succeeded = try values.decode(Bool.self, forKey: .succeeded)
         message = try values.decodeIfPresent(String.self, forKey: .message)
         targetOutcomes = try values.decodeIfPresent([TargetEffectOutcome].self, forKey: .targetOutcomes)
         effectStatus = try values.decodeIfPresent(EffectStatus.self, forKey: .effectStatus)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(freedBytes, forKey: .freedBytes)
+        try values.encode(reclaimedMemoryBytes, forKey: .reclaimedMemoryBytes)
+        // Encode explicit null so the compatibility zero cannot become a measurement on reopen.
+        try values.encode(measuredReclaimedMemoryBytes, forKey: .measuredReclaimedMemoryBytes)
+        try values.encode(succeeded, forKey: .succeeded)
+        try values.encodeIfPresent(message, forKey: .message)
+        try values.encodeIfPresent(targetOutcomes, forKey: .targetOutcomes)
+        try values.encodeIfPresent(effectStatus, forKey: .effectStatus)
     }
 }
 
@@ -140,6 +161,11 @@ public struct ItemResult: Identifiable, Sendable, Codable {
 /// script appended to its log file, but structured and written to
 /// `runs.jsonl` as one JSON object per line.
 public struct RunReport: Sendable, Codable {
+    public var measuredTotalReclaimedMemoryBytes: Int64? {
+        EffectAccounting.checkedSum(results.map {
+            ByteObservation(bytes: $0.measuredReclaimedMemoryBytes, explanation: nil)
+        }).bytes
+    }
     public let tier: Tier
     public let results: [ItemResult]
     public let startedAt: Date
