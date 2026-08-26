@@ -1,5 +1,7 @@
 # T05 — Settings preservation and UI safety implementation-entry plan
 
+**FIFO ownership correction:** [Shared test-support amendment](2026-08-26-shared-fifo-test-support-amendment.md) permits the narrowly scoped helper extraction; all safety and behavioral assertions remain binding.
+
 > **For agentic workers:** Use executing-plans after independent review and assignment of the entered unit. This is an entry card: its new interfaces/tests remain proposed until the assigned unit implements and verifies them. Source work is serialized with other assigned implementers. T03.A's overlapping RunReport changes are independently approved through `ec9dbc5`; A.1 owns only the reconciled additions below. Preparation of this card alone authorizes no source commit, launch, test or build.
 
 **Goal:** Preserve historical settings and reports, make recovery non-destructive, and test shared application settings/confirmation ownership without granting fixture execution authority.
@@ -551,7 +553,7 @@ These tests perform no successful SettingsStore write; read-only recovery tests 
 
 ### A.1/A.2 reader addendum — FIFO entry fixture approved
 
-The original A.1 JSON/mode entry batch and this additional phase-specific FIFO fixture are independently approved for implementation entry. Review corrections bind the lock probe to preserved device/inode identities and distinguish new-API compile RED from genuine behavioral regression evidence. T02 contains `FIFOAdmissionWatchdog` and its real FIFO regression in `TidyCore/Tests/TidyCoreTests/ConfirmedExecutionTests.swift` (helper at line70 at this inspection). This card adapts that tested mechanism; it does not claim the settings tests below have run. Keep the helper private in `SettingsMigrationTests.swift` under the distinct name below. T05 owns only that new settings test code; do not move/edit T02's helper or create a public production testing API. Sharing a test-support source later would need separately assigned file ownership and both callers' verification.
+The original A.1 JSON/mode entry batch and this phase-specific FIFO fixture retain their semantic requirements. The [approved shared-helper amendment](2026-08-26-shared-fifo-test-support-amendment.md) supersedes the earlier private-copy ownership instruction: all suites use test-internal `FIFOReadWatchdog` in `TidyCore/Tests/TidyCoreTests/FIFOReadWatchdog.swift`. Keep the settings wrapper and all assertions unchanged; A.2F reuses that same support. No public production testing API is introduced.
 
 Phase allocation:
 
@@ -564,58 +566,11 @@ Append the complete following code to `SettingsMigrationTests.swift` (including 
 ```swift
 import Dispatch
 
-private final class SettingsFIFOReadWatchdog {
-    private final class Outcome: @unchecked Sendable {
-        private let lock = NSLock()
-        private var fired = false
-        func markFired() { lock.lock(); fired = true; lock.unlock() }
-        func didFire() -> Bool { lock.lock(); defer { lock.unlock() }; return fired }
-    }
-    private let completed = DispatchSemaphore(value: 0)
-    private let drained = DispatchSemaphore(value: 0)
-    private let outcome = Outcome()
-    private let worker: Thread
-
-    init(fifo: URL) throws {
-        let reader = open(fifo.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard reader >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        // Prove rescue is possible, then leave NO writer alive during the call.
-        let probe = open(fifo.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard probe >= 0 else {
-            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            close(reader); throw error
-        }
-        close(probe)
-        let completed = self.completed, drained = self.drained, outcome = self.outcome
-        let path = fifo.path
-        worker = Thread {
-            var writer: Int32 = -1
-            if completed.wait(timeout: .now() + .seconds(5)) == .timedOut {
-                outcome.markFired()
-                writer = open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-                guard writer >= 0 else {
-                    fatalError("Settings FIFO rescue failed (errno \(errno)); retaining scratch at \(path) because settings I/O may still be active")
-                }
-                completed.wait()
-            }
-            if writer >= 0 { close(writer) }
-            close(reader) // ownership transferred after successful initialization
-            drained.signal()
-        }
-        worker.start()
-    }
-    func finishAndDrain() -> Bool {
-        completed.signal()
-        drained.wait()
-        while !worker.isFinished { Thread.sleep(forTimeInterval: 0.001) }
-        return outcome.didFire()
-    }
-}
-
+// Shared FIFOReadWatchdog is defined in TidyCoreTests/FIFOReadWatchdog.swift.
 private func withSettingsFIFORescue<Value>(
     _ fifo: URL, operation: () async throws -> Value
 ) async throws -> Result<Value, Error> {
-    let watchdog = try SettingsFIFOReadWatchdog(fifo: fifo)
+    let watchdog = try FIFOReadWatchdog(fifo: fifo)
     let result: Result<Value, Error>
     do { result = .success(try await operation()) }
     catch { result = .failure(error) }

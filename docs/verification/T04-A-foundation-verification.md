@@ -21,4 +21,12 @@ Controller unsigned arm64 production app build: `xcodebuild -quiet -project Tidy
 
 ## Remaining boundaries
 
+## Shared FIFO test-support correction — 2026-08-26
+
+The user directly resumed after the narrow shared-helper approval request. The tracked shared-FIFO amendment supersedes the plan's separate-copy instruction. One package-test-internal FIFOReadWatchdog now serves ConfirmedExecutionTests, RunRecoveryTests and SettingsMigrationTests; all assertions and caller catch/drain/cleanup ordering are unchanged. No production source changed.
+
+Fresh pre-refactor full baseline:297 tests/41 suites, exit0,10.986s. Controller inspected the actual extracted helper and all three caller diffs before approving FIFO execution. Focused post-refactor:92 tests/3 suites, exit0,3.562s (build9.15s). Controller post-refactor full suite:297 tests/41 suites, exit0,12.808s (build0.60s). No compiler/test warnings in the successful runs; sandbox-only manifest failures preceded approved retries. `git diff --check` passed. Prior unsigned production build evidence applies to unchanged production source; no new app build or launch was needed for this test-only extraction. Independent re-review remains pending at this checkpoint.
+
+## Remaining full-program boundaries
+
 Real subprocess ownership/recovery, supported positive effects and terminal proofs, aggregate manifest/proof reservations, joint optional report accounting, persisted-settings/app integration, Intel and macOS 14 device verification, physical interruption testing and the rest of T01–T24 remain open. Fault injection does not establish power-loss durability or a hard syscall latency guarantee. The user requested README/GitHub/DMG delivery after the full program is finished, not a foundation-only preview.
