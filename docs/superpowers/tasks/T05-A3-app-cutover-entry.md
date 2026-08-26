@@ -42,6 +42,7 @@ Future A.3 ownership is exactly this allowlist; source changes require a separat
 | `Tidy/Execution/AppExecutionServices.swift` | Actual off-main factory, explicit paths, app-lifetime bootstrap state, read-only recovery/journal state, shared services; retain actual AppReviewSession |
 | `Tidy/Settings/AppConfigStore.swift` | Keep actual `config.didSet { bridge.submit(config: config) }`; no I/O/projection/discovery in setter or its argument evaluation |
 | `Tidy/TidyApp.swift` | Resolve production paths explicitly once, own one bootstrap state, show loading/recovery and pass identical services to all scenes |
+| `Tidy/MenuBar/MenuBarContentView.swift` | Remove `hasCheckedOnboarding`, `checkOnboardingOnce()` and its `.onAppear` call; when onboarding is unfinished show an explicit `Set up Tidy…` button that opens the existing `WindowID.onboarding` only on that button's click |
 | `Tidy/Scan/ScanViewModel.swift`, `Tidy/Scan/ScanView.swift` | Consume shared service config/path rather than fallback loader; remove auto-scan `.task`; explicit scan only and unknown tools `[]`, no `makeEnvironment` detector call |
 | `Tidy/Clean/RunReportPresentation.swift` (new) | Pure availability/text projection actually consumed by CleanResultsView; no authority or I/O |
 | `Tidy/Clean/CleanResultsView.swift` | Consume the projection, preserve T02 no-op/denial text and distinct disk/memory accounting |
@@ -141,6 +142,7 @@ All app classes retain/add Observation as required by actual SwiftUI state. The 
 - Settings load creates no parents/config/metadata. Missing file plus absent auxiliary state is genuine `.newDefaults`/revision0, not recovery; known schema2 with no store metadata remains a read-only valid load. The **real journal constructor** may create its explicit no-follow owner-only journal path/parents off-main. This is the sole bootstrap path creation, not generic `FileManager.createDirectory` recovery. Production settings and journal share application-support ancestry; verify the real missing-common-parent case below. Settings metadata/config are first created only by an explicit validated edit. Corrupt/future/partial initialized settings are preserved and never repaired.
 - Production TidyApp resolves `NSHomeDirectory()` and `FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first` once in its explicit production path factory. Pass `base/Tidy/config.json` and `base/Tidy/execution`; absence of a valid absolute home/support URL shows unavailable with no bootstrap. No ConfigStore.defaultURL, environment mutation, fake-home fallback, scratch path, directory creation or settings read belongs to TidyApp init. All injected paths are explicit and production has no test arguments.
 - Every scene uses the same State-owned bootstrap object. Loading shows only loading; recovery shows explanation/read-only data, no actionable settings/reset or review/confirmation. No onboarding, suggestions, scan, detector, locator, Process, makeEnvironment or auto-discovery Task runs during startup/setters. Remove ScanView's automatic `.task`; only its explicit button uses shared config and `makePolicyEnvironment(... detectedTools: [])`. T08 remains responsible for accepted discovery, not this patch.
+- `MenuBarContentView` is also part of this startup boundary. Its `.onAppear` may refresh the existing local stats only; it must not open onboarding, inspect onboarding completion or call any helper that can do so. Delete `hasCheckedOnboarding` and `checkOnboardingOnce()` rather than retaining a latent automatic route. If `configStore.config.hasCompletedOnboarding == false`, render an explicit `Set up Tidy…` button whose action alone calls the existing `open(WindowID.onboarding)`. That click preserves reachability of the existing Welcome window; its user-initiated `OnboardingView.onAppear` → `OnboardingViewModel.start()` → `ToolchainDetector.detect()` route remains T08-bound manual onboarding/detection work and is neither startup behavior nor an A.3 discovery fix.
 
 ### Bridge ordering, capacity and error contract
 
@@ -472,6 +474,47 @@ final class SharedSettingsWiringTests: XCTestCase {
             let saved = await services.settings.load()
             XCTAssertEqual(saved.envelope?.revision, 42)
             XCTAssertEqual(try Data(contentsOf: s.support.appendingPathComponent("config.backup.json")), bytes)
+        }
+    }
+
+    func testSchema1BootstrapMigratesSharedControlsWithoutWritingUntilExplicitEdit() async throws {
+        let legacy = Data(#"""
+        {"schemaVersion":1,"hasCompletedOnboarding":true,"keepCookieDomains":["example.invalid","keep.invalid"],"simulatorsApprovedForDeletion":["Old simulator name"],"gitRoots":["/fixture/Developer","/fixture/Other"],"staleNodeModulesThresholdDays":90,"transcriptAgeThresholdDays":120,"appsApprovedForQuit":["Old application name"],"allowRestartToReclaimSwap":true,"presets":[{"name":"Weekly","itemIDs":["safe.tool.npm-cache-clean","unknown.preset.id","deep.simulator.erase-all"]}]}
+        """#.utf8)
+        let migrated = TidyConfig(schemaVersion: 2, hasCompletedOnboarding: true,
+            keepCookieDomains: ["example.invalid", "keep.invalid"],
+            simulatorsApprovedForDeletion: ["Old simulator name"],
+            gitRoots: ["/fixture/Developer", "/fixture/Other"],
+            staleNodeModulesThresholdDays: 90, transcriptAgeThresholdDays: 120,
+            appsApprovedForQuit: ["Old application name"], allowRestartToReclaimSwap: true,
+            presets: [CustomPreset(name: "Weekly", itemIDs: [
+                "safe.tool.npm-cache-clean", "unknown.preset.id", "deep.simulator.erase-all"
+            ])])
+        try await run(seed: legacy) { s, services, io in
+            XCTAssertEqual(services.settingsLoad.disposition, .migrated)
+            XCTAssertEqual(services.settingsLoad.envelope?.schemaVersion, 2)
+            XCTAssertEqual(services.settingsLoad.envelope?.revision, 0)
+            XCTAssertEqual(services.settingsLoad.envelope?.config, migrated)
+            XCTAssertEqual(services.configStore.config, migrated) // shared app controls preserve every migrated field
+            XCTAssertEqual(services.policyBridge.durableSettingsRevision, 0)
+            XCTAssertEqual(io.configAttempts, 0)
+            XCTAssertEqual(try Data(contentsOf: s.paths.settings), legacy)
+            XCTAssertFalse(FileManager.default.fileExists(atPath:
+                s.support.appendingPathComponent("config.backup.json").path))
+
+            services.configStore.config.transcriptAgeThresholdDays = 121
+            await services.policyBridge.drain()
+            let saved = await services.settings.load()
+            var expected = migrated; expected.transcriptAgeThresholdDays = 121
+            XCTAssertEqual(saved.disposition, .loaded)
+            XCTAssertEqual(saved.envelope?.schemaVersion, 2)
+            XCTAssertEqual(saved.envelope?.revision, 1)
+            XCTAssertEqual(saved.envelope?.config, expected)
+            XCTAssertEqual(services.configStore.config, expected)
+            XCTAssertEqual(services.policyBridge.durableSettingsRevision, 1)
+            XCTAssertEqual(io.configAttempts, 1)
+            XCTAssertEqual(try Data(contentsOf:
+                s.support.appendingPathComponent("config.backup.json")), legacy)
         }
     }
 
@@ -868,6 +911,7 @@ Add `import Darwin` alongside the current Foundation/Testing/@testable imports i
 
 - [ ] Implement only the declared app factory/bridge/state contract, migrate the listed app consumers, delete ConfigStore and change schema default in one non-deployable work batch. Keep TidyConfig's historical schema1 decoder fixtures explicit; do not globally rewrite fixture versions. Trace every default initializer/lazy call so a remaining raw writer cannot publish flat schema2.
 - [ ] Review whole app transitive startup/settings call paths against no-discovery contract, then run the RED/GREEN commands below under Controller scheduling. A mismatch in file ownership or inability to get testable internal I/O is a stop/review condition, not permission to widen APIs.
+- [ ] Perform this focused **actual-source adoption inspection** in addition to the unhosted wiring tests: inspect `Tidy/MenuBar/MenuBarContentView.swift` after the cutover and verify `hasCheckedOnboarding` and `checkOnboardingOnce` are absent; its popover `.onAppear` contains only the existing stats refresh and does not open a window or inspect onboarding completion; and the only retained `WindowID.onboarding` route in that file is an explicit `Button("Set up Tidy…")` action guarded by unfinished onboarding. Then trace that click to the existing Welcome scene and record that `OnboardingView.onAppear` invokes `model.start()`, which invokes `ToolchainDetector.detect()`. This is a manual, click-initiated T08 route, not A.3 startup discovery. The unhosted XCTest target cannot prove SwiftUI `.onAppear` adoption or the absence of this transitive UI route; source/signature inspection is required and must not be reported as executed source-test evidence.
 
 ## Task 3: Historical-memory presentation RED and actual view adoption
 
@@ -978,5 +1022,6 @@ Unsigned compile is not launch/native UI/Intel/macOS14 evidence. No commit comma
 - [ ] Check RED observes a suspended actual publication, non-main thread, live MainActor event, second edit during suspension, first real success without enabling, then latest real success committing existing coordinator ticket.
 - [ ] Check both real failure stages, sticky recovery, no revision/authority conflation, complete32 snapshot persistence and observable overflow, rejected oversized data, valid explicit retry, one shared service and closed-window persistence independence.
 - [ ] Inspect bootstrap journal/settings off-main ordering and missing shared parent behavior; reject live-path defaults, corrupt/future reset, default-enabled interval, discovery, automatic scan, fallback loader/writer or flat schema2 writer.
+- [ ] Independently perform the focused `MenuBarContentView` source-adoption inspection above: verify no popover appearance can transitively reach `OnboardingView.onAppear` → `OnboardingViewModel.start()` → `ToolchainDetector.detect()`, while the explicit `Set up Tidy…` button remains the sole unfinished-onboarding route. Do not substitute unhosted XCTest results for this SwiftUI source/appearance check.
 - [ ] Confirm actual CleanResultsView consumes tested availability and preserves T02 text; do not call pure projection tests a rendered native-view pass.
 - [ ] Independent review must approve this entry before source. Source/test review and actual commands then remain separate evidence. A.2P acceptance is mandatory before A.3 entry; B.1 stable-OS AX, B.2 accepted-adapter positive effect/dialog/in-flight tests, T06 registry integration, T08 discovery and full useful cleanup remain open at this scoped unit's completion.
