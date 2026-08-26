@@ -575,9 +575,17 @@ private func withNestedManifest(_ body: (ReviewedTree) throws -> Void) throws {
         #expect(tool.provenReclaimedBytes.explanation == "Tool exit and volume delta do not prove attributable physical reclaim")
     }
 
-    @Test func missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero() {
+    @Test func missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero() throws {
         let bytes = Data(#"{"id":"x","title":"X","freedBytes":100,"succeeded":true}"#.utf8)
-        #expect(throws: DecodingError.self) { _ = try JSONDecoder().decode(ItemResult.self, from: bytes) }
+        let item = try JSONDecoder().decode(ItemResult.self, from: bytes)
+        #expect(item.measuredReclaimedMemoryBytes == nil)
+        let report = RunReport(tier: .safe, results: [item],
+            startedAt: Date(timeIntervalSince1970: 100), finishedAt: Date(timeIntervalSince1970: 101),
+            freeSpaceBeforeBytes: 1000, freeSpaceAfterBytes: 1000)
+        #expect(report.measuredTotalReclaimedMemoryBytes == nil)
+        let roundTrip = try JSONDecoder().decode(RunReport.self, from: JSONEncoder().encode(report))
+        #expect(roundTrip.results[0].measuredReclaimedMemoryBytes == nil)
+        #expect(roundTrip.measuredTotalReclaimedMemoryBytes == nil)
     }
 
     @Test func componentOrderedTraversalAndSiblingPrefixesAgreeWithDigest() throws {
