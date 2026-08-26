@@ -78,6 +78,25 @@ struct PlanVisibilityTests {
         #expect(FileManager.default.fileExists(atPath: protected.path))
     }
 
+    @Test("Explicit nonavailable discovery reasons are never blank")
+    func blankDiscoveryReasonsAreNormalized() async throws {
+        let cases: [(ReviewStatus, String)] = [.noWork, .blocked, .unavailable].flatMap { status in
+            [(status, ""), (status, " \n\t ")]
+        }
+        let items = cases.enumerated().map { index, testCase in
+            CleanItem(id: "blank.reason.\(index)", title: "Blank reason", tier: .safe,
+                declaredRoot: { _ in nil }, locate: { _ in [] }, action: .deletePath,
+                discover: { _ in ActionDiscovery(status: testCase.0, reason: testCase.1, targets: []) })
+        }
+        let plan = await CleanEngine(sizeScanner: SizeScanner()).makePlan(items: items, tier: .safe,
+            environment: CleanEnvironment(homeDirectory: "/fixture-not-used", protectedRoots: []))
+        #expect(plan.reviewItems.map(\.review.status) == cases.map(\.0))
+        for item in plan.reviewItems {
+            #expect(!item.review.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            #expect(item.targets.isEmpty)
+        }
+    }
+
     @Test("Caller-supplied available descriptors and duplicate IDs cannot grant selection")
     func forgedAvailabilityCannotGrantSelection() {
         let row = PlannedItem(id: "safe.tool.npm-cache-clean", title: "Forged", tier: .safe,

@@ -9,6 +9,8 @@ Date: 2026-08-26. Source base: `f3d4e47`. Implementation is confined to the `CAJ
 - Controller final `swift test --jobs 2`: exit 0, **175 tests / 37 suites passed**, 43.358 seconds, arm64e-apple-macos14.0 target. Build took 11.60 seconds. The zero-test XCTest preamble is separate from the successful Swift Testing run.
 - Implementer final unsigned Debug builds of `TidyUITestHost` and `Tidy`: both exit 0, arm64, jobs2, `/private/tmp/tidy-headroom-build`, no warning output on these final incremental builds. The earlier baseline Xcode scheme warning remains recorded in the program ledger; these runs do not erase that history.
 - Controller `git diff --check`: exit 0.
+- After independent review, the focused `swift test --filter PlanVisibilityTests --jobs 2` passed6/6 (exit0), including all three nonavailable statuses crossed with empty/newline-tab whitespace reasons. This is covering verification after the175-test checkpoint, not a new full-suite claim.
+- Controller final post-fix production and fixture unsigned arm64/jobs2 builds both exited0 with no output. The first sandboxed production attempt exited74 because SwiftPM could not emit its manifest diagnostic in the existing user cache; approved unsandboxed retry passed. An implementer interim host formatting build found a closing-brace error, corrected before these successful final builds.
 
 ## Fixture isolation
 
@@ -42,9 +44,28 @@ Key local screenshots (CUA temporary artifacts; may expire):
 - [Custom Other and memory](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 1.51.59 PM.jpeg>)
 - [Safe final rows](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 1.53.01 PM.jpeg>)
 
+## Measured minimum-content-size follow-up
+
+The independently reviewed host-only fallback fixed the scene content to620×620 and added a GeometryReader observation to the existing marker footer. Actual rounded allocated geometry, not the hard-coded frame or screenshot pixel size, visibly read `620 × 620 pt` on Safe, Normal, Deep and Custom, including expanded Custom. Host source SHA-256: `8f563a98737d673d828e488f98f597dc466901049a807f65d35665b95bff12a8`. Target membership, registry and shared row source remained unchanged from the audited checkpoint; final production executable-directory scan found no fixture symbols/marker.
+
+- Safe and Normal: top and final rows reached, zero selection, explanatory text readable, disabled Clean Now footer unobscured. Safe's final Flutter row and Normal's project/transcript/Flutter rows were visually inspected.
+- Deep: native ordinary scrolling reached the permanent simulator restriction and final memory/restart rows. Multi-line danger/cost explanations remained readable above the fixed footer; optional restart still makes no guaranteed reclaim claim.
+- Custom: expanded immutable four-ID disclosure fits; clicking its preset preserves all IDs and zero selection. Scrolling reaches Memory & Swap and Other with both fixture warning/cost notes visible. Save/Clean footers remain unobscured; Return opens no dialog and final AX reports both disabled.
+
+Key follow-up screenshots (temporary CUA artifacts, may expire):
+
+- [Safe minimum and final row](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 2.23.44 PM.jpeg>)
+- [Normal minimum final rows](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 2.24.39 PM.jpeg>)
+- [Deep minimum long notes](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 2.26.04 PM.jpeg>)
+- [Custom minimum expanded preset](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 2.26.25 PM.jpeg>)
+- [Custom minimum Other notes and footer](</private/var/folders/jj/_xfw89rd22xdj75hnf0hhd900000gp/T/com.openai.sky.CUAService/TidyUITestHost Screenshot 2026-08-26 at 2.27.12 PM.jpeg>)
+
+This closes the scoped620-point content-layout observation, not interactive resizing/transition behavior or production Custom's smaller minimum width. Quit was sent only to the fixture after this follow-up.
+
 ## Remaining gates and tool limitations
 
-- **Minimum-window-size verification remains open.** Corner and edge resize gestures did not change the observed window dimensions. No claim is made about 620-point/minimum layout. This outstanding manual requirement needs a working native resize path or a separately reviewed size fixture; it is not silently replaced by a build/source check.
+- Original corner/edge resize gestures did not change the680×760 fixture. The separately reviewed measured-size fixture above supplies scoped620-point layout evidence; it does not establish interactive resizing or every production window size.
+- During minimum inspection, programmatic AX endpoint jumps gave changing scrollbar positions and a temporarily blank Deep list capture at2.25.29/2.25.34. An ordinary one-page scroll restored rendering, and subsequent ordinary scrolling visibly reached all final warning rows. Root did not diagnose this as either solely a tool or app/OS defect. T05/T23 must reproduce on supported stable OS with ordinary mouse/keyboard and AX navigation before claiming robust scrolling/accessibility; the limited layout evidence is not a pristine automated run.
 - One native scroll call returned `noWindowsAvailable`; reinspection found the same window, and coordinate focus plus native scroll actions restored inspection. AX snapshots sometimes omitted labels until focus settled; labeled controls were subsequently observed. These transient tool observations are not asserted to be app defects or a pristine automated UI run.
 - Quit was sent only to the fixture host after inspection. Positive selection/execution, real settings persistence/migration, outer production container lifetime, sealed coordinator/recovery, full T05 automation and physical Intel/macOS14/stable-OS acceptance remain open.
 - Independent task-scoped spec/code-quality review is required before accepting this source checkpoint. Passing default-denied tests is not proof of useful cleanup.

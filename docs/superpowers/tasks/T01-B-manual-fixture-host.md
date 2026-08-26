@@ -381,6 +381,22 @@ The first command is a membership-audit starting point, not an automatic pass: r
 
 ## Acceptance boundary and dependency accounting
 
+### Approved minimum-size fallback, 2026-08-26
+
+Native corner/edge drag attempts did not resize the observed 680×760 fixture window. Independent fixture reviewer approved this compile-time-only fallback, without adding I/O, runtime flags, authority or production changes:
+
+```swift
+WindowGroup("Tidy: Manual Review Fixtures") {
+    FixtureChooser().frame(width: 620, height: 620)
+}
+.defaultSize(width: 620, height: 620)
+.windowResizability(.contentSize)
+```
+
+Apply only to the existing host scene, preserving the chooser and five-source membership. Controller verified the installed SwiftUI SDK declares WindowResizability/contentSize and windowResizability available since macOS13, within the macOS14 floor. Rebuild host with the existing arm64/jobs2 command, audit the two-line semantic change, then inspect the real shared content. Verify620×620 content points, not an assumed outer-window/screenshot pixel size; title-bar size and scale differ. Inspect all four surfaces, Custom expanded preset disclosure, scrolling, long explanations and footer. Fixed framing must not conceal unchecked overflow. Record actual sizing/render evidence, retaining earlier680×760 observations and failed drag attempts. This does not prove interactive resizing, resize-transition behavior, or production Custom's smaller minimum width. No source/build-only pass is permitted.
+
+Reviewer-approved measurement refinement: wrap the scene's chooser in `GeometryReader { geometry in FixtureChooser(observedContentSize: geometry.size) }`, with the fixed620×620 frame outside that reader. The chooser accepts this immutable CGSize and extends its existing marker footer with width/height rounded from that actual geometry. Preserve the marker verbatim; no extra row, overlay, runtime flag, state or I/O. This reports allocated content points without guessing display scale or title-bar dimensions from screenshot pixels. Observe the rounded620×620-point text on every surface, including expanded Custom, and separately inspect descendant readability, scrolling and footer overlap; the measurement alone proves none of those layout properties.
+
 This supplement provides actual manual render/interaction evidence for production-shared review content only. It does not prove discovery classification (covered separately by production-bound core tests), production container initialization/navigation, actual settings persistence/migration, production lifecycle/concurrency, positive selection/deselection or executor invocation, accepted targetless capability execution, sealed coordinator authority, interruption/recovery, full UI automation, or dual-architecture device behavior.
 
 T01.B's existing standard/custom wrapper diff must still be reviewed and production-built. T01 overall remains open for accepted production capabilities and T02/T04 integration. T05 retains its schema migration, recording/coordinator UI tests, window/policy-update behavior and complete host safety suite. This is an independent early rendering slice, not completion of T05.
