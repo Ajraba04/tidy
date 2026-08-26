@@ -42,7 +42,7 @@ Source writes were paused before the following checks. No other package/build jo
 - Production app: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO`; exit 0, no output. No launch or signing change.
 - `git diff --check` passed. Core/app source contains no temporary diagnostic prints. App-model/manual-host tests were not rerun for this core mechanism/report change; prior evidence is not relabeled as current.
 
-Independent source/spec review of `cefbbae..149c44e` found one Important structural-validation gap: a correctly hashed manifest could contain a malformed or inconsistent ancestor chain because canonical rehashing did not fully validate parent-directory types and relationships. This is an internal malformed-value acceptance defect, not a demonstrated production authority bypass. The fix and follow-up evidence below are ready for independent re-review; the foundation is not approved yet.
+Independent source/spec review of `cefbbae..149c44e` found one Important structural-validation gap: a correctly hashed manifest could contain a malformed or inconsistent ancestor chain because canonical rehashing did not fully validate parent-directory types and relationships. This is an internal malformed-value acceptance defect, not a demonstrated production authority bypass. Independent re-review approved the correction through `ec9dbc5`: spec compliant and quality approved for T03.A only, with no remaining Critical, Important or Minor findings. Full T03 and production integration remain subject to the gates below.
 
 ### Correctly hashed malformed-structure follow-up
 

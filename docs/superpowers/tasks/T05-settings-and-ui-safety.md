@@ -41,6 +41,25 @@ T05B.2 is **entry-blocked**, not a task to populate with fake trusted IDs or an 
 
 Files for A.1: create `TidyCore/Sources/TidyCore/Policy/SettingsEnvelope.swift`, `SettingsStore.swift`; modify `Model/RunReport.swift` and `TidyCore/Package.swift`; create `TidyCore/Tests/TidyCoreTests/SettingsMigrationTests.swift` and `Fixtures/Config/{v1-original,v1-memory,corrupt,v999,old-report}.json`. `Model/TidyConfig.swift`, `Engine/ConfigStore.swift`, existing ConfigStoreTests and all app persistence call sites remain unchanged through A.1/A.2; their migration belongs to A.3's atomic app cutover.
 
+T03.A reconciliation: A.1 also owns the single `GuardedDeletionTests.missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero` test migration once its explicit availability fields land. Its interim T03 expectation is a decode error rather than invented zero. Replace only that expectation with successful legacy decode plus `measuredReclaimedMemoryBytes == nil` and nil aggregate/round-trip observations; do not remove the regression or retain a contradictory required-key expectation after A.1. Other T03 mechanism tests remain unchanged. Include this focused test in A.1 GREEN verification alongside its original migration suite.
+
+Complete replacement for that one test at A.1 entry (not a T03 source edit):
+
+```swift
+@Test func missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero() throws {
+    let bytes = Data(#"{"id":"x","title":"X","freedBytes":100,"succeeded":true}"#.utf8)
+    let item = try JSONDecoder().decode(ItemResult.self, from: bytes)
+    #expect(item.measuredReclaimedMemoryBytes == nil)
+    let report = RunReport(tier: .safe, results: [item],
+        startedAt: Date(timeIntervalSince1970: 100), finishedAt: Date(timeIntervalSince1970: 101),
+        freeSpaceBeforeBytes: 1000, freeSpaceAfterBytes: 1000)
+    #expect(report.measuredTotalReclaimedMemoryBytes == nil)
+    let roundTrip = try JSONDecoder().decode(RunReport.self, from: JSONEncoder().encode(report))
+    #expect(roundTrip.results[0].measuredReclaimedMemoryBytes == nil)
+    #expect(roundTrip.measuredTotalReclaimedMemoryBytes == nil)
+}
+```
+
 **Staging contract:** A.1's SettingsStore uses its own bounded legacy decoder and constructs the in-memory projection with explicit `TidyConfig(schemaVersion: 2, ...)`. Keep `TidyConfig.currentSchemaVersion`, its default initializer and T02's existing flat ConfigStore writer at schema1 through A.1/A.2. Do not change the default to2 while ConfigStore still writes flat objects: a flat schema2 file is not a valid schema2 envelope. A.2's new writer is exercised only at explicit disposable scratch URLs until A.3; it must not share the live app URL with the legacy writer. Existing fallback load behavior/tests remain untouched until A.3 replaces all app consumers together. Intermediate A.1/A.2 builds are not deployable migration releases and must never be reported as production recovery-safe.
 
 Proposed signatures (declarations specify implementation obligations, not compiled source):
