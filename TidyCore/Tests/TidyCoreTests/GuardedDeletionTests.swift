@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import Testing
@@ -49,7 +50,133 @@ private func unknown() -> ByteObservation {
     ByteObservation(bytes: nil, explanation: "Not measured")
 }
 
+// Pure value serialization, deliberately independent of validateDigest's
+// structural checks. Malformed values built here are never executed.
+private func rehashedTree(_ original: ReviewedTree, header: ReviewedManifestHeader? = nil,
+                          transform: (ReviewedLeaf) -> ReviewedLeaf? = { $0 }) throws -> ReviewedTree {
+    let header = header ?? original.header
+    let batches = try original.batches.compactMap { batch -> ReviewedBatch? in
+        let entries = batch.entries.compactMap(transform)
+        guard !entries.isEmpty else { return nil }
+        let provisional = ReviewedBatch(id: batch.id, entries: entries, encodedBytes: 0)
+        return ReviewedBatch(id: batch.id, entries: entries,
+                             encodedBytes: try ManifestEncoding.batch(provisional).count)
+    }
+    var hash = SHA256()
+    hash.update(data: try ManifestEncoding.header(header))
+    var exclusions = ManifestEncoding()
+    exclusions.integer(UInt64(original.excludedRelativePaths.count))
+    for path in original.excludedRelativePaths { try exclusions.string(path) }
+    hash.update(data: exclusions.data)
+    var sequence = ManifestEncoding()
+    sequence.integer(UInt64(batches.count))
+    hash.update(data: sequence.data)
+    for batch in batches { hash.update(data: try ManifestEncoding.batch(batch)) }
+    return ReviewedTree(header: header, batches: batches,
+        excludedRelativePaths: original.excludedRelativePaths, digest: Data(hash.finalize()))
+}
+
+private func changedSnapshot(_ value: NodeSnapshot, field: String) -> NodeSnapshot {
+    NodeSnapshot(device: field == "device" ? value.device ^ 1 : value.device,
+        inode: field == "inode" ? value.inode ^ 1 : value.inode,
+        generation: value.generation,
+        mode: field == "type" ? (value.mode & ~UInt32(S_IFMT)) | UInt32(S_IFREG) : value.mode,
+        linkCount: value.linkCount, apparentBytes: value.apparentBytes,
+        allocatedBytes: value.allocatedBytes, modifiedSeconds: value.modifiedSeconds,
+        modifiedNanoseconds: field == "metadata" ? (value.modifiedNanoseconds + 1) % 1_000_000_000
+            : value.modifiedNanoseconds,
+        changedSeconds: value.changedSeconds, changedNanoseconds: value.changedNanoseconds)
+}
+
+private func withNestedManifest(_ body: (ReviewedTree) throws -> Void) throws {
+    try inScratch { scratch in
+        _ = try scratch.file("a/b/leaf")
+        _ = try scratch.file("a-/leaf")
+        _ = try scratch.file("keep/private")
+        let anchor = try DirectoryAnchor.open(path: scratch.selected.path)
+        let tree = try ReviewedTree.capture(anchor: anchor, excluding: ["keep"], maxNodesPerBatch: 1)
+        // Establish the helper's real canonical digest against capture before
+        // any negative assertion; stale digests cannot explain these failures.
+        let rebuilt = try rehashedTree(tree)
+        try #require(rebuilt.digest == tree.digest)
+        try #require(rebuilt.validateDigest(tree.digest))
+        try body(tree)
+        #expect(try String(contentsOf: scratch.selected.appendingPathComponent("a/b/leaf"),
+                           encoding: .utf8) == "reviewed")
+    }
+}
+
 @Suite struct GuardedDeletionTests {
+    @Test func correctlyHashedNonDirectoryHeaderAncestorsAreRejected() throws {
+        try withNestedManifest { tree in
+            for index in tree.header.rootParentChain.indices {
+                var parents = tree.header.rootParentChain
+                parents[index] = changedSnapshot(parents[index], field: "type")
+                let header = ReviewedManifestHeader(schemaVersion: tree.header.schemaVersion,
+                    rootVolumeID: tree.header.rootVolumeID, canonicalRootPath: tree.header.canonicalRootPath,
+                    rootSnapshot: tree.header.rootSnapshot, rootParentChain: parents)
+                let malformed = try rehashedTree(tree, header: header) { entry in
+                    var chain = entry.parentChain
+                    chain[index] = parents[index]
+                    return ReviewedLeaf(relativePath: entry.relativePath, parentChain: chain, snapshot: entry.snapshot)
+                }
+                let accepted = malformed.validateDigest(malformed.digest)
+                #expect(!accepted)
+            }
+        }
+    }
+
+    @Test(arguments: ["type", "device", "inode", "metadata"], ["a", "a/b"])
+    func correctlyHashedInvalidNestedParentsAreRejected(field: String, parentPath: String) throws {
+        try withNestedManifest { tree in
+            let parent = try #require(tree.entry(parentPath))
+            let changed = changedSnapshot(parent.snapshot, field: field)
+            let parentIndex = tree.header.rootParentChain.count + parentPath.split(separator: "/").count
+            let malformed = try rehashedTree(tree) { entry in
+                var chain = entry.parentChain
+                if entry.relativePath.hasPrefix(parentPath + "/") { chain[parentIndex] = changed }
+                // A regular-file parent is consistently recorded as such, so
+                // rejecting it requires directory structure, not digest mismatch.
+                let snapshot = field == "type" && entry.relativePath == parentPath ? changed : entry.snapshot
+                return ReviewedLeaf(relativePath: entry.relativePath, parentChain: chain, snapshot: snapshot)
+            }
+            #expect(malformed.digest != tree.digest)
+            let accepted = malformed.validateDigest(malformed.digest)
+            #expect(!accepted)
+        }
+    }
+
+    @Test(arguments: ["a", "a/b"])
+    func correctlyHashedMissingReviewedParentIsRejected(parentPath: String) throws {
+        try withNestedManifest { tree in
+            let malformed = try rehashedTree(tree) { $0.relativePath == parentPath ? nil : $0 }
+            #expect(malformed.entry(parentPath) == nil)
+            #expect(malformed.entry("a/b/leaf") != nil)
+            let accepted = malformed.validateDigest(malformed.digest)
+            #expect(!accepted)
+        }
+    }
+
+    @Test func nestedCrossBatchManifestAllowsRootAncestorVolumeTransitions() throws {
+        try withNestedManifest { tree in
+            #expect(tree.batches.count == 5)
+            #expect(tree.batches.flatMap(\.entries).map(\.relativePath) == ["a", "a/b", "a/b/leaf", "a-", "a-/leaf"])
+            #expect(tree.validateDigest(tree.digest))
+            // Pure metadata control, not a mounted-volume integration test.
+            var parents = tree.header.rootParentChain
+            parents[0] = changedSnapshot(tree.header.rootSnapshot, field: "device")
+            let header = ReviewedManifestHeader(schemaVersion: tree.header.schemaVersion,
+                rootVolumeID: tree.header.rootVolumeID, canonicalRootPath: tree.header.canonicalRootPath,
+                rootSnapshot: tree.header.rootSnapshot, rootParentChain: parents)
+            let transitioned = try rehashedTree(tree, header: header) { entry in
+                var chain = entry.parentChain
+                chain[0] = parents[0]
+                return ReviewedLeaf(relativePath: entry.relativePath, parentChain: chain, snapshot: entry.snapshot)
+            }
+            #expect(transitioned.validateDigest(transitioned.digest))
+        }
+    }
+
     @Test func unavailableBytesRemainUnavailable() {
         let value = ByteObservation(bytes: nil, explanation: "Permission denied")
         #expect(value.bytes == nil)

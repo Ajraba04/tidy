@@ -42,7 +42,16 @@ Source writes were paused before the following checks. No other package/build jo
 - Production app: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO`; exit 0, no output. No launch or signing change.
 - `git diff --check` passed. Core/app source contains no temporary diagnostic prints. App-model/manual-host tests were not rerun for this core mechanism/report change; prior evidence is not relabeled as current.
 
-Independent source/spec review is pending at this checkpoint. All test outcomes above are separate from that review gate.
+Independent source/spec review of `cefbbae..149c44e` found one Important structural-validation gap: a correctly hashed manifest could contain a malformed or inconsistent ancestor chain because canonical rehashing did not fully validate parent-directory types and relationships. This is an internal malformed-value acceptance defect, not a demonstrated production authority bypass. The fix and follow-up evidence below are ready for independent re-review; the foundation is not approved yet.
+
+### Correctly hashed malformed-structure follow-up
+
+- Tests use the existing value serializer, now internal rather than private, to rebuild exact batch sizes and hashes. A valid captured-tree control proves the rebuilt digest equals the original. No malformed value is executed; the serializer adds no public API or authority.
+- Genuine behavioral RED before the validator fix: `swift test --jobs 2 --filter GuardedDeletionTests`; exit 1, 29 tests / one suite, 18 issues. Eight header ancestor positions, eight nested type/device/inode/metadata cases and two missing-parent cases were incorrectly accepted with matching hashes. Initial runner sandbox failure was environmental, not RED.
+- Header ancestors now must be directories. An O(depth) active directory-prefix stack spans batches and requires each nested parent to match the complete previously reviewed directory snapshot on the selected device. Legitimate header volume transitions remain permitted. The canonical format is unchanged.
+- Covering GREEN: same focused command, exit 0, **29 tests / one suite**, 0.032 seconds. Failed assertions bind a Boolean locally to avoid dumping complete trees; the first RED's verbose diagnostics were not retained as application output.
+- Controller post-fix full suite: `swift test --jobs 2`, exit 0, **233 tests / 39 suites**, 10.917 seconds. Controller post-fix unsigned arm64 production build: the exact command above, exit 0, no output. No launch or additional app-model/native tests.
+- `git diff --check` passed. Added validation does not change the primitive, production caller boundary, total-capture limitations or physical acceptance gates.
 
 ## Remaining acceptance
 
