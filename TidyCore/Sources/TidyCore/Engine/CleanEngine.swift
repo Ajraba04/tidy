@@ -99,6 +99,9 @@ public actor CleanEngine {
             } else {
                 status = discovery.status; reason = discovery.reason
             }
+            let normalizedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No review explanation is available."
+                : reason
 
             let measurablePaths = safeTargets.filter(\.isFilesystemPath).map(\.path)
             var estimatedBytes: Int64 = 0
@@ -117,7 +120,7 @@ public actor CleanEngine {
                 estimatedBytes: estimatedBytes,
                 action: item.action,
                 declaredRoot: declaredRoot,
-                review: ActionDescriptor(id: item.id, status: status, reason: reason, requiresPerRunOptIn: item.action.requiresPerRunOptIn)
+                review: ActionDescriptor(id: item.id, status: status, reason: normalizedReason, requiresPerRunOptIn: item.action.requiresPerRunOptIn)
             ))
         }
 
