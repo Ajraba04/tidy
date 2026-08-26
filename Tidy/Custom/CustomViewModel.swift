@@ -13,7 +13,8 @@ final class CustomViewModel {
     }
 
     private(set) var phase: Phase = .loadingPlan
-    var selectedIDs: Set<String> = []
+    private(set) var selection: PlanSelectionModel?
+    var selectedIDs: Set<String> { selection?.value.selectedIDs ?? [] }
 
     private let engine: CleanEngine
     private let environment: CleanEnvironment
@@ -27,28 +28,29 @@ final class CustomViewModel {
         phase = .loadingPlan
         await DefaultCustomActionExecutors.registerAll(on: engine)
         let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: .deep, environment: environment)
-        selectedIDs = []
+        selection = PlanSelectionModel(plan: plan, selectDefaults: false)
         phase = .selecting(plan)
     }
 
     func applyPreset(_ preset: CustomPreset) {
-        selectedIDs = preset.itemIDs
+        selection?.applyPresetIDs(preset.itemIDs)
     }
 
     var selectedEstimatedBytes: Int64 {
-        guard case .selecting(let plan) = phase else { return 0 }
-        return plan.plannedItems.filter { selectedIDs.contains($0.id) }.reduce(0) { $0 + $1.estimatedBytes }
+        selection?.value.selectedEstimatedBytes ?? 0
     }
+
+    var selectedCount: Int { selection?.value.selectedCount ?? 0 }
+
+    func setSelected(_ selected: Bool, id: String) { selection?.setSelected(selected, id: id) }
 
     /// Only reachable from the confirmation dialog on the selection
     /// screen. There is no other path from a selection to a deletion.
     func executeSelected() async {
-        guard case .selecting(let plan) = phase else { return }
-        let filteredItems = plan.plannedItems.filter { selectedIDs.contains($0.id) }
-        let filteredPlan = CleanPlan(tier: plan.tier, plannedItems: filteredItems)
+        guard case .selecting = phase, let selection, selection.value.selectedCount > 0 else { return }
 
         phase = .executing
-        let report = await engine.execute(plan: filteredPlan, environment: environment)
+        let report = await engine.execute(plan: selection.value.selectedPlan, environment: environment)
         RunLog.append(report)
         phase = .complete(report)
     }

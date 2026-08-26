@@ -56,4 +56,12 @@ public enum CleanAction: Sendable {
     /// consistent (e.g. `npm cache clean --force`).
     case runTool(ToolCommand)
     case custom(CustomOperationID)
+    case unavailable(reason: String)
+
+    public var requiresPerRunOptIn: Bool {
+        switch self {
+        case .custom(.purgeInactiveMemory), .custom(.restartToReclaimSwap): true
+        default: false
+        }
+    }
 }

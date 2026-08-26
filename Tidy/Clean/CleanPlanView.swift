@@ -2,18 +2,18 @@ import SwiftUI
 import TidyCore
 
 struct CleanPlanView: View {
-    let plan: CleanPlan
+    @Bindable var selection: PlanSelectionModel
     let onConfirm: () -> Void
 
     @State private var showingConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if plan.nonEmptyItems.isEmpty {
+            if selection.value.reviewItems.isEmpty {
                 ContentUnavailableView(
                     "Nothing to Clean",
                     systemImage: "checkmark.circle",
-                    description: Text("\(plan.tier.title) found nothing on this machine right now.")
+                    description: Text("\(selection.value.plan.tier.title) found nothing on this machine right now.")
                 )
             } else {
                 List {
@@ -21,14 +21,14 @@ struct CleanPlanView: View {
                         HStack {
                             Text("Estimated space to free")
                             Spacer()
-                            Text(ByteFormat.human(plan.totalEstimatedBytes))
+                            Text(ByteFormat.human(selection.value.selectedEstimatedBytes))
                                 .bold()
                         }
                     }
 
-                    Section("Items (\(plan.nonEmptyItems.count))") {
-                        ForEach(plan.nonEmptyItems) { item in
-                            PlannedItemRow(item: item)
+                    Section("Items (\(selection.value.reviewItems.count))") {
+                        ForEach(selection.value.reviewItems) { item in
+                            PlanReviewRow(item: item, isSelected: selectionBinding(for: item.id))
                         }
                     }
                 }
@@ -40,13 +40,14 @@ struct CleanPlanView: View {
                     Button("Clean Now") {
                         showingConfirmation = true
                     }
+                    .disabled(selection.value.selectedCount == 0)
                     .keyboardShortcut(.defaultAction)
                 }
                 .padding()
             }
         }
         .confirmationDialog(
-            "Delete \(plan.nonEmptyItems.count) item(s), freeing about \(ByteFormat.human(plan.totalEstimatedBytes))?",
+            "Delete \(selection.value.selectedCount) item(s), freeing about \(ByteFormat.human(selection.value.selectedEstimatedBytes))?",
             isPresented: $showingConfirmation,
             titleVisibility: .visible
         ) {
@@ -56,30 +57,8 @@ struct CleanPlanView: View {
             Button("Cancel", role: .cancel) {}
         }
     }
-}
 
-private struct PlannedItemRow: View {
-    let item: PlannedItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(item.title)
-                Spacer()
-                Text(ByteFormat.human(item.estimatedBytes))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            if let dangerNote = item.dangerNote {
-                Label(dangerNote, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-            if let costNote = item.costNote {
-                Text(costNote)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
+    private func selectionBinding(for id: String) -> Binding<Bool> {
+        Binding(get: { selection.value.selectedIDs.contains(id) }, set: { selection.setSelected($0, id: id) })
     }
 }

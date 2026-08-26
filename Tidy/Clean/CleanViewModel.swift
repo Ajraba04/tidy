@@ -15,6 +15,7 @@ final class CleanViewModel {
 
     let tier: Tier
     private(set) var phase: Phase = .loadingPlan
+    private(set) var selection: PlanSelectionModel?
     private let engine: CleanEngine
     private let environment: CleanEnvironment
 
@@ -28,14 +29,16 @@ final class CleanViewModel {
         phase = .loadingPlan
         await DefaultCustomActionExecutors.registerAll(on: engine)
         let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier, environment: environment)
+        selection = PlanSelectionModel(plan: plan, selectDefaults: true)
         phase = .reviewingPlan(plan)
     }
 
     /// Only reachable after the plan screen's confirmation dialog.
     /// There is no other path from a plan to a deletion.
-    func executeConfirmedPlan(_ plan: CleanPlan) async {
+    func executeConfirmedSelection() async {
+        guard let selection, selection.value.selectedCount > 0 else { return }
         phase = .executing
-        let report = await engine.execute(plan: plan, environment: environment)
+        let report = await engine.execute(plan: selection.value.selectedPlan, environment: environment)
         RunLog.append(report)
         phase = .complete(report)
     }

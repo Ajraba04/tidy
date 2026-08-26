@@ -12,6 +12,7 @@ public struct PlannedItem: Identifiable, Sendable {
     public let targets: [TargetPath]
     public let estimatedBytes: Int64
     public let action: CleanAction
+    public let review: ActionDescriptor
     /// The declared root this item's targets were validated against at plan
     /// time, carried so `CleanEngine.execute` can re-check the same rule
     /// rather than a weaker one. Without this the execute-time check is
@@ -28,7 +29,8 @@ public struct PlannedItem: Identifiable, Sendable {
         targets: [TargetPath],
         estimatedBytes: Int64,
         action: CleanAction,
-        declaredRoot: String? = nil
+        declaredRoot: String? = nil,
+        review: ActionDescriptor? = nil
     ) {
         self.id = id
         self.title = title
@@ -39,6 +41,7 @@ public struct PlannedItem: Identifiable, Sendable {
         self.estimatedBytes = estimatedBytes
         self.action = action
         self.declaredRoot = declaredRoot
+        self.review = review ?? ActionDescriptor(id: id, status: .unavailable, reason: CapabilityRegistry.quarantineReason, requiresPerRunOptIn: action.requiresPerRunOptIn)
     }
 
     public var isEmpty: Bool { targets.isEmpty }
@@ -65,4 +68,6 @@ public struct CleanPlan: Sendable {
     public var nonEmptyItems: [PlannedItem] {
         plannedItems.filter { !$0.isEmpty }
     }
+
+    public var reviewItems: [PlannedItem] { plannedItems }
 }

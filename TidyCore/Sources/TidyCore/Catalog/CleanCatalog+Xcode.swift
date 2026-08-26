@@ -126,11 +126,10 @@ extension CleanCatalog {
                 id: "deep.simulator.erase-all",
                 title: "Erase all simulator app data and settings",
                 tier: .deep,
-                requires: .xcode,
                 dangerNote: "Wipes installed apps and data from every simulator device, including ones you're keeping",
                 declaredRoot: { env in env.homeDirectory },
                 locate: { _ in [] },
-                action: .runTool(ToolCommand(.xcrun, ["simctl", "erase", "all"]))
+                action: .unavailable(reason: "Broad simulator erase-all is unavailable. Review individual devices when supported.")
             ),
             CleanItem(
                 id: "deep.simulator.delete-approved",

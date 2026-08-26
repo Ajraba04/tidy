@@ -72,6 +72,7 @@ struct LegacyQuarantineTests {
             case .runTool: targets = []
             case .custom: targets = [TargetPath(path: "fixture-opaque-id", isFilesystemPath: false)]
             case .deletePath, .deleteContents: targets = [TargetPath(path: scratch.target.path)]
+            case .unavailable: targets = []
             }
             let row = PlannedItem(id: id, title: id, tier: .deep, dangerNote: nil, costNote: nil,
                                   targets: targets, estimatedBytes: 999, action: action,
