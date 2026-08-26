@@ -23,9 +23,9 @@ Design S01–S16 and every registry/default row apply. Performance values are pr
 
 ## Delivery boundaries and architectural stop
 
-T01.A/B and T02 are dependencies, not implemented facts. Consume T02's proposed `ResourceIdentity`, `FileResourceIdentity`, `FileNodeIdentity`, `ReviewedManifestIdentity`, opaque `ConfirmedPlan`, private registered selection and single coordinator reservation. Consume its revised **synchronous policy-generation barrier**: actual leaf syscall must occur within `withCurrentPolicy(revision:body:)`, not after a returned Boolean/permit. The incoming T02 card is under review; reconcile its final names before editing source. No duplicate policy store or permissive compatibility overload.
+T01.A/B scoped foundation units are approved. T02 foundation source through checkpoint `10616b3` is independently spec/quality approved after its FIFO admission fix; post-fix controller checks passed 204 core tests / 38 suites and the unsigned production arm64 build. App-model evidence is 15/15 before the one-line FIFO fix. T03.A may now reconcile the approved source and begin its bounded mechanism work. Consume T02's actual `ResourceIdentity`, `FileResourceIdentity`, `FileNodeIdentity`, `ReviewedManifestIdentity`, opaque `ConfirmedPlan`, private registered selection and single coordinator reservation. Consume its **synchronous policy-generation barrier**: actual leaf syscall must occur within `withCurrentPolicy(revision:body:)`, not after a returned Boolean/permit. Reconcile final source names before editing. No duplicate policy store or permissive compatibility overload.
 
-**T03.A entry is implementable:** read-only manifest/protection checks, bounded representations, metadata comparisons, result semantics and safe internal primitive tests below. **T03.B production integration is not yet executable:** no accepted `.M` filesystem adapter currently supplies the required exclusion/ownership proof, and T02's coordinator/identity source is not present. This is a real dependency, not a reason to invent a trusted test adapter, flip `CapabilityRegistry`, create a test-only allowlist or accept an arbitrary supplied root as app authority.
+**T03.A entry is implementable after its dependency approval:** read-only manifest/protection checks, bounded representations, metadata comparisons, result semantics and safe internal primitive tests below. **T03.B production integration is not yet executable:** no accepted `.M` filesystem adapter currently supplies the required exclusion/ownership proof, and T02's foundation is not positive mutation/recovery integration. This is a real dependency, not a reason to invent a trusted test adapter, flip `CapabilityRegistry`, create a test-only allowlist or accept an arbitrary supplied root as app authority.
 
 Darwin `fstatat(parentFD,name,AT_SYMLINK_NOFOLLOW)` followed by `unlinkat(parentFD,name,flags)` is **not atomic inode-conditional unlink**. A concurrent writer can replace the final name between them. Keeping a directory FD open also does not prevent its rename/reparenting. Post-effect checks cannot undo an unintended unlink or prove which inode was removed. No use of `flock` owned only by Tidy excludes external writers, and rename-to-quarantine is itself an effect on a potentially replaced name, not a repair for this problem.
 
@@ -222,7 +222,13 @@ private struct DeletionScratch {
     let selected: URL
     let sentinel: URL
     init() throws {
-        let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        // Canonicalize the known existing temp base only. T02 confirmed that
+        // Foundation normalization may leave the /var ancestor symlink intact.
+        guard let canonical = realpath(FileManager.default.temporaryDirectory.path, nil) else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { free(canonical) }
+        let temporary = URL(fileURLWithPath: String(cString: canonical), isDirectory: true)
         root = temporary.appendingPathComponent("tidy-t03-" + UUID().uuidString)
         selected = root.appendingPathComponent("selected")
         sentinel = root.appendingPathComponent("outside/sentinel")

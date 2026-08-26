@@ -68,7 +68,7 @@ All following runs used final paused source after shared-session extraction, ret
 
 The final test command emitted an Xcode IDEFoundation warning: `setRunnablePIDWithDiagnostics:logSection:andCompletionHandler:` was called without a completion handler and blocked for diagnostics setup. Tests completed successfully, but output is not pristine. This is retained for T23/T24 toolchain/stable-OS review alongside the prior scheme warning; no claim that changing app source fixes it. `xcresulttool` initially hit a sandbox report-cache permission error, then succeeded with approved access.
 
-Independent source/spec review found one Important issue: the journal reader opened bootstrap/ledger entries with blocking O_RDONLY before validating regular-file type. A FIFO without a writer could hang admission while holding the installation lock. The follow-up adds O_NONBLOCK to that anchored open, retaining all opened-FD validation. Independent re-review remains required; no positive cleanup or complete T02 acceptance follows from these results.
+Independent source/spec review found one Important issue: the journal reader opened bootstrap/ledger entries with blocking O_RDONLY before validating regular-file type. A FIFO without a writer could hang admission while holding the installation lock. The follow-up adds O_NONBLOCK to that anchored open, retaining all opened-FD validation. Independent re-review approved the bounded foundation through `10616b3`, with no remaining Critical/Important finding. The existing toolchain warning remains Minor. No positive cleanup or complete T02 acceptance follows from these results.
 
 ### FIFO review regression and final follow-up verification
 
@@ -81,7 +81,7 @@ Independent source/spec review found one Important issue: the journal reader ope
 
 ## Required follow-up
 
-- Independent spec and quality review of the complete source range.
+- Independent whole-branch review after the remaining program is implemented; the bounded T02 foundation source/spec gate is approved.
 - T03/T04 accepted-adapter dispatch, retained manifests, mutation serialization, cancellation and durable recovery integration.
 - T05 positive native dialog ordering, shared-window active-run lifecycle and historical settings/UI integration.
 - T08 bounded explicit tool discovery; the empty bootstrap snapshot is unknown, not verified absence or complete inventory.
