@@ -58,19 +58,46 @@ public actor CleanEngine {
     /// Deep plan includes Safe and Normal. `Tier` is `Comparable` in
     /// exactly this order for that reason.
     public func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment) async -> CleanPlan {
-        let relevantItems = items.filter { $0.tier <= tier && $0.isRelevant(in: environment) }
+        let relevantItems = items.filter { $0.tier <= tier }
 
         var plannedItems: [PlannedItem] = []
         plannedItems.reserveCapacity(relevantItems.count)
 
         for item in relevantItems {
             let declaredRoot = item.declaredRoot(environment)
-            let rawTargets = item.locate(environment)
+            let discovery: ActionDiscovery
+            if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
+                discovery = ActionDiscovery(status: .unavailable, reason: "Required toolchain is not available.", targets: [])
+            } else if case .unavailable(let reason) = item.action {
+                discovery = ActionDiscovery(status: .unavailable, reason: reason, targets: [])
+            } else if let explicitDiscovery = item.discover {
+                discovery = explicitDiscovery(environment)
+            } else {
+                switch item.action {
+                case .deletePath, .deleteContents:
+                    let targets = item.locate(environment)
+                    discovery = targets.isEmpty
+                        ? ActionDiscovery(status: .unavailable, reason: CapabilityRegistry.quarantineReason, targets: [])
+                        : ActionDiscovery(status: .available, reason: "Path found; execution requires an accepted contract.", targets: targets)
+                case .runTool, .custom, .unavailable:
+                    discovery = ActionDiscovery(status: .unavailable, reason: CapabilityRegistry.quarantineReason, targets: [])
+                }
+            }
 
             let guardian = PathGuard(protectedRoots: environment.protectedRoots)
-            let safeTargets = rawTargets.filter { target in
+            let safeTargets = discovery.targets.filter { target in
                 guard target.isFilesystemPath else { return true }
                 return guardian.isSafe(target.path, mustBeUnder: declaredRoot, home: environment.homeDirectory)
+            }
+            let rejectedTarget = discovery.targets.filter(\.isFilesystemPath).count != safeTargets.filter(\.isFilesystemPath).count
+            let status: ReviewStatus
+            let reason: String
+            if rejectedTarget {
+                status = .blocked; reason = "One or more targets failed path protection checks."
+            } else if discovery.status == .available, CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil {
+                status = .unavailable; reason = CapabilityRegistry.quarantineReason
+            } else {
+                status = discovery.status; reason = discovery.reason
             }
 
             let measurablePaths = safeTargets.filter(\.isFilesystemPath).map(\.path)
@@ -89,7 +116,8 @@ public actor CleanEngine {
                 targets: safeTargets,
                 estimatedBytes: estimatedBytes,
                 action: item.action,
-                declaredRoot: declaredRoot
+                declaredRoot: declaredRoot,
+                review: ActionDescriptor(id: item.id, status: status, reason: reason, requiresPerRunOptIn: item.action.requiresPerRunOptIn)
             ))
         }
 
@@ -138,6 +166,8 @@ public actor CleanEngine {
                               reclaimedMemoryBytes: 0, succeeded: false, message: reason)
         }
         switch item.action {
+        case .unavailable(let reason):
+            return ItemResult(id: item.id, title: item.title, freedBytes: 0, reclaimedMemoryBytes: 0, succeeded: false, message: reason)
         case .deletePath:
             return await deleteTargets(item, guardian: guardian, environment: environment, keepDirectory: false)
 

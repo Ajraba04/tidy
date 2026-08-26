@@ -16,9 +16,13 @@ struct CleanView: View {
             switch model.phase {
             case .loadingPlan:
                 ProgressView("Building plan…")
-            case .reviewingPlan(let plan):
-                CleanPlanView(plan: plan) {
-                    Task { await model.executeConfirmedPlan(plan) }
+            case .reviewingPlan:
+                if let selection = model.selection {
+                    CleanPlanView(selection: selection) {
+                        Task { await model.executeConfirmedSelection() }
+                    }
+                } else {
+                    ProgressView("Building plan…")
                 }
             case .executing:
                 ProgressView("Cleaning…")

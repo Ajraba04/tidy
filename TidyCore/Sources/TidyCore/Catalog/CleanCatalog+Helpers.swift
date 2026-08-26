@@ -25,7 +25,18 @@ extension CleanCatalog {
                 guard FileManager.default.fileExists(atPath: path) else { return [] }
                 return [TargetPath(path: path, label: "~/" + relativePath)]
             },
-            action: action
+            action: action,
+            discover: { env in
+                let path = env.homeDirectory + "/" + relativePath
+                do {
+                    _ = try FileManager.default.attributesOfItem(atPath: path)
+                    return ActionDiscovery(status: .available, reason: "Path found; execution requires an accepted contract.", targets: [TargetPath(path: path, label: "~/" + relativePath)])
+                } catch let error as NSError where error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError {
+                    return ActionDiscovery(status: .noWork, reason: "No matching path exists.", targets: [])
+                } catch {
+                    return ActionDiscovery(status: .unavailable, reason: "The path could not be inspected.", targets: [])
+                }
+            }
         )
     }
 
@@ -59,7 +70,17 @@ extension CleanCatalog {
                 guard FileManager.default.fileExists(atPath: path) else { return [] }
                 return [TargetPath(path: path, label: title)]
             },
-            action: .runTool(ToolCommand(tool, arguments))
+            action: .runTool(ToolCommand(tool, arguments)),
+            discover: { env in
+                let targets: [TargetPath]
+                if let estimateRelativePath {
+                    let path = env.homeDirectory + "/" + estimateRelativePath
+                    targets = FileManager.default.fileExists(atPath: path) ? [TargetPath(path: path, label: title)] : []
+                } else {
+                    targets = []
+                }
+                return ActionDiscovery(status: .available, reason: "Tool action requires an accepted exact-scope contract.", targets: targets)
+            }
         )
     }
 
