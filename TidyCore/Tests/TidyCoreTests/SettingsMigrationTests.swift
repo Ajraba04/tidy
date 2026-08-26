@@ -383,58 +383,10 @@ extension SettingsMigrationTests {
     }
 }
 
-private final class SettingsFIFOReadWatchdog {
-    private final class Outcome: @unchecked Sendable {
-        private let lock = NSLock()
-        private var fired = false
-        func markFired() { lock.lock(); fired = true; lock.unlock() }
-        func didFire() -> Bool { lock.lock(); defer { lock.unlock() }; return fired }
-    }
-    private let completed = DispatchSemaphore(value: 0)
-    private let drained = DispatchSemaphore(value: 0)
-    private let outcome = Outcome()
-    private let worker: Thread
-
-    init(fifo: URL) throws {
-        let reader = open(fifo.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard reader >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        // Prove rescue is possible, then leave NO writer alive during the call.
-        let probe = open(fifo.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard probe >= 0 else {
-            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            close(reader); throw error
-        }
-        close(probe)
-        let completed = self.completed, drained = self.drained, outcome = self.outcome
-        let path = fifo.path
-        worker = Thread {
-            var writer: Int32 = -1
-            if completed.wait(timeout: .now() + .seconds(5)) == .timedOut {
-                outcome.markFired()
-                writer = open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-                guard writer >= 0 else {
-                    fatalError("Settings FIFO rescue failed (errno \(errno)); retaining scratch at \(path) because settings I/O may still be active")
-                }
-                completed.wait()
-            }
-            if writer >= 0 { close(writer) }
-            close(reader) // ownership transferred after successful initialization
-            drained.signal()
-        }
-        worker.start()
-    }
-    func finishAndDrain() -> Bool {
-        completed.signal()
-        drained.wait()
-        while !worker.isFinished { Thread.sleep(forTimeInterval: 0.001) }
-        return outcome.didFire()
-    }
-}
-
 private func withSettingsFIFORescue<Value>(
     _ fifo: URL, operation: () async throws -> Value
 ) async throws -> Result<Value, Error> {
-    let watchdog = try SettingsFIFOReadWatchdog(fifo: fifo)
+    let watchdog = try FIFOReadWatchdog(fifo: fifo)
     let result: Result<Value, Error>
     do { result = .success(try await operation()) }
     catch { result = .failure(error) }

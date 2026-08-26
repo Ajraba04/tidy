@@ -90,55 +90,6 @@ private func event(_ run: UUID, _ seq: UInt64, _ phase: JournalPhase,
     JournalEvent(runID: run, sequence: seq, phase: phase,
                  operationID: operation, status: nil, reason: nil)
 }
-/// T04-local adaptation of T02's tested FIFOAdmissionWatchdog. T02 retains
-/// ownership of its helper; this duplicate exercises the new journal reader,
-/// rather than creating test or production admission authority.
-private final class JournalFIFOReadWatchdog {
-    private final class Outcome: @unchecked Sendable {
-        private let lock = NSLock()
-        private var fired = false
-        func markFired() { lock.lock(); fired = true; lock.unlock() }
-        func didFire() -> Bool { lock.lock(); defer { lock.unlock() }; return fired }
-    }
-    private let completed = DispatchSemaphore(value: 0)
-    private let drained = DispatchSemaphore(value: 0)
-    private let outcome = Outcome()
-    private let worker: Thread
-
-    init(fifo: URL) throws {
-        let reader = open(fifo.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard reader >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        let probe = open(fifo.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard probe >= 0 else {
-            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            close(reader); throw error
-        }
-        close(probe) // Leave no writer that could mask a blocking reader open.
-        let completed = self.completed, drained = self.drained, outcome = self.outcome
-        let path = fifo.path
-        worker = Thread {
-            var writer: Int32 = -1
-            if completed.wait(timeout: .now() + .seconds(5)) == .timedOut {
-                outcome.markFired()
-                writer = open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-                guard writer >= 0 else {
-                    fatalError("FIFO rescue open failed (errno \(errno)); retaining scratch containing \(path) because journal read may still be active")
-                }
-                completed.wait() // Keep writer alive until the actual read has returned.
-            }
-            if writer >= 0 { close(writer) }
-            close(reader); drained.signal()
-        }
-        worker.start()
-    }
-
-    /// Call immediately after the reader returns, before any throwing check or cleanup.
-    func finishAndDrain() -> Bool {
-        completed.signal(); drained.wait()
-        while !worker.isFinished { Thread.sleep(forTimeInterval: 0.001) }
-        return outcome.didFire()
-    }
-}
 @Suite struct RunRecoveryTests {
     @Test func transitionAndRoundTrip() throws {
         try journalScratch { root in
@@ -359,7 +310,7 @@ private final class JournalFIFOReadWatchdog {
             var before = stat()
             try #require(lstat(target.path, &before) == 0)
             try #require(before.st_mode & S_IFMT == S_IFIFO)
-            let watchdog = try JournalFIFOReadWatchdog(fifo: target)
+            let watchdog = try FIFOReadWatchdog(fifo: target)
             // No cancellation, task race, throwing check or scratch cleanup between
             // the actual proposed reader call and draining its owned watchdog.
             let received: JournalError?
