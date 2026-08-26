@@ -53,6 +53,21 @@ public struct TidyConfig: Sendable, Codable, Equatable {
         self.presets = presets
     }
 
+    public func makePolicyEnvironment(homeDirectory: String, detectedTools: Set<ToolchainID>) -> CleanEnvironment {
+        CleanEnvironment(
+            homeDirectory: homeDirectory,
+            detectedTools: detectedTools,
+            gitRoots: gitRoots,
+            protectedRoots: CleanEnvironment.defaultProtectedRoots(homeDirectory: homeDirectory),
+            keepCookieDomains: keepCookieDomains,
+            simulatorsApprovedForDeletion: simulatorsApprovedForDeletion,
+            staleNodeModulesThresholdDays: staleNodeModulesThresholdDays,
+            transcriptAgeThresholdDays: transcriptAgeThresholdDays,
+            appsApprovedForQuit: appsApprovedForQuit,
+            allowRestartToReclaimSwap: allowRestartToReclaimSwap
+        )
+    }
+
     public func makeEnvironment(homeDirectory: String = NSHomeDirectory()) -> CleanEnvironment {
         CleanEnvironment(
             homeDirectory: homeDirectory,

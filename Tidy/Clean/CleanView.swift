@@ -3,23 +3,27 @@ import TidyCore
 
 struct CleanView: View {
     @State private var model: CleanViewModel
+    private let services: AppExecutionServices
 
-    init(tier: Tier) {
-        let home = NSHomeDirectory()
-        let environment = ConfigStore.load().makeEnvironment(homeDirectory: home)
-        let engine = CleanEngine(sizeScanner: SizeScanner())
-        _model = State(initialValue: CleanViewModel(tier: tier, engine: engine, environment: environment))
+    init(tier: Tier, services: AppExecutionServices) {
+        self.services = services
+        _model = State(initialValue: CleanViewModel(tier: tier, services: services))
     }
 
     var body: some View {
-        Group {
+        VStack {
+            if let message = services.persistenceError {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .padding()
+            }
             switch model.phase {
             case .loadingPlan:
                 ProgressView("Building plan…")
             case .reviewingPlan:
                 if let selection = model.selection {
                     CleanPlanView(selection: selection) {
-                        Task { await model.executeConfirmedSelection() }
+                        model.confirm()
                     }
                 } else {
                     ProgressView("Building plan…")
@@ -30,10 +34,14 @@ struct CleanView: View {
                 CleanResultsView(report: report)
             case .failed(let message):
                 ContentUnavailableView("Something Went Wrong", systemImage: "exclamationmark.triangle", description: Text(message))
+                Button("Review Again") { _ = model.requestLoad() }
+                    .disabled(!services.isExecutionEnabled || services.policyUpdatePending)
             }
         }
         .navigationTitle("\(model.tier.title) Clean")
         .frame(minWidth: 420, idealWidth: 480, minHeight: 480, idealHeight: 640)
         .task { await model.loadPlan() }
+        .onChange(of: services.policyBridge.updateGeneration) { _, _ in model.policyDidChange() }
+        .onDisappear { _ = model.teardown() }
     }
 }

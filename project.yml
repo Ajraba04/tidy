@@ -53,7 +53,35 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         MACOSX_DEPLOYMENT_TARGET: "14.0"
 
+  TidyAppModelTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: TidyAppModelTests/ConfirmationLifecycleTests.swift
+      - path: Tidy/Clean/PlanSelectionModel.swift
+      - path: Tidy/Clean/CleanViewModel.swift
+      - path: Tidy/Custom/CustomViewModel.swift
+      - path: Tidy/Execution/AppExecutionServices.swift
+      - path: Tidy/Settings/AppConfigStore.swift
+    dependencies:
+      - package: TidyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy.AppModelTests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+
 schemes:
+  TidyAppModelTests:
+    build:
+      targets:
+        TidyAppModelTests: all
+    test:
+      targets:
+        - TidyAppModelTests
   TidyUITestHost:
     build:
       targets:

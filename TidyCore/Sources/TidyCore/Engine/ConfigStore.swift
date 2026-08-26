@@ -1,5 +1,9 @@
 import Foundation
 
+public enum ConfigSaveError: Error, Equatable, Sendable {
+    case unavailableLocation, encodingFailed, directoryCreationFailed, writeFailed
+}
+
 /// Loads and saves `TidyConfig` as versioned JSON at
 /// `~/Library/Application Support/Tidy/config.json`.
 public enum ConfigStore: Sendable {
@@ -20,10 +24,15 @@ public enum ConfigStore: Sendable {
         return config
     }
 
-    public static func save(_ config: TidyConfig, to url: URL? = ConfigStore.defaultURL) {
-        guard let url else { return }
-        guard let data = try? JSONEncoder().encode(config) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+    public static func save(_ config: TidyConfig, to url: URL? = ConfigStore.defaultURL) throws {
+        guard let url else { throw ConfigSaveError.unavailableLocation }
+        let data: Data
+        do { data = try JSONEncoder().encode(config) }
+        catch { throw ConfigSaveError.encodingFailed }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch { throw ConfigSaveError.directoryCreationFailed }
+        do { try data.write(to: url, options: .atomic) }
+        catch { throw ConfigSaveError.writeFailed }
     }
 }

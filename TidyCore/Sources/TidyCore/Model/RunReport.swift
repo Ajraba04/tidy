@@ -39,6 +39,8 @@ public struct RunReport: Sendable, Codable {
     public let finishedAt: Date
     public let freeSpaceBeforeBytes: Int64
     public let freeSpaceAfterBytes: Int64
+    public let disposition: RunDisposition
+    public let coordinatorMeasurementsAvailable: Bool?
 
     public init(
         tier: Tier,
@@ -46,7 +48,9 @@ public struct RunReport: Sendable, Codable {
         startedAt: Date,
         finishedAt: Date,
         freeSpaceBeforeBytes: Int64,
-        freeSpaceAfterBytes: Int64
+        freeSpaceAfterBytes: Int64,
+        disposition: RunDisposition = .completed,
+        coordinatorMeasurementsAvailable: Bool? = nil
     ) {
         self.tier = tier
         self.results = results
@@ -54,10 +58,29 @@ public struct RunReport: Sendable, Codable {
         self.finishedAt = finishedAt
         self.freeSpaceBeforeBytes = freeSpaceBeforeBytes
         self.freeSpaceAfterBytes = freeSpaceAfterBytes
+        self.disposition = disposition
+        self.coordinatorMeasurementsAvailable = coordinatorMeasurementsAvailable
     }
 
     public var totalFreedBytes: Int64 {
         results.reduce(0) { $0 + $1.freedBytes }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tier, results, startedAt, finishedAt, freeSpaceBeforeBytes, freeSpaceAfterBytes
+        case disposition, coordinatorMeasurementsAvailable
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        tier = try values.decode(Tier.self, forKey: .tier)
+        results = try values.decode([ItemResult].self, forKey: .results)
+        startedAt = try values.decode(Date.self, forKey: .startedAt)
+        finishedAt = try values.decode(Date.self, forKey: .finishedAt)
+        freeSpaceBeforeBytes = try values.decode(Int64.self, forKey: .freeSpaceBeforeBytes)
+        freeSpaceAfterBytes = try values.decode(Int64.self, forKey: .freeSpaceAfterBytes)
+        disposition = try values.decodeIfPresent(RunDisposition.self, forKey: .disposition) ?? .completed
+        coordinatorMeasurementsAvailable = try values.decodeIfPresent(Bool.self, forKey: .coordinatorMeasurementsAvailable)
     }
 
     public var measuredDeltaBytes: Int64 {
