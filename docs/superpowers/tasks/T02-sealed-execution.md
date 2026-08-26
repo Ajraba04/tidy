@@ -44,7 +44,8 @@ Modify:
 - `TidyCore/Sources/TidyCore/Engine/CleanEngine.swift`: retain discovery, internalize raw execution as denial-only compatibility, add no public mutation bypass.
 - `TidyCore/Sources/TidyCore/Engine/DefaultCustomActionExecutors.swift`: keep denial behavior; registration cannot install trusted capabilities or replace a confirmed operation.
 - `TidyCore/Sources/TidyCore/Engine/ConfigStore.swift`: make save throwing; propagate encoding/directory/write failures instead of `try?`. Full load/schema migration remains T05.
-- `TidyCore/Tests/TidyCoreTests/ConfigStoreTests.swift`: add `throws`/`try` to existing successful save tests; never suppress new save errors.
+- `TidyCore/Sources/TidyCore/Model/TidyConfig.swift`: add the pure, explicit-input `makePolicyEnvironment` projection below; keep discovery out of T02 launch/settings wiring. The legacy discovery-bearing `makeEnvironment` remains outside this path pending T08.
+- `TidyCore/Tests/TidyCoreTests/ConfigStoreTests.swift`: add `throws`/`try` to existing successful save tests; never suppress new save errors. Change the existing field-projection test to call `makePolicyEnvironment(homeDirectory: "/Users/tester", detectedTools: [])`, so the prescribed focused suite does not launch ambient tool probes through the old helper.
 - `TidyCore/Sources/TidyCore/Model/RunReport.swift`: additive admission disposition and optional coordinator measurement availability, as described below; full per-target outcomes remain T03/T04.
 - `Tidy/TidyApp.swift`, `Tidy/Clean/CleanView.swift`, `Tidy/Custom/CustomView.swift`, both view models, `Tidy/Clean/PlanSelectionModel.swift`, and `Tidy/Settings/AppConfigStore.swift`: explicit shared dependency injection, frozen confirmation binding, config invalidation.
 - `Tidy/Clean/CleanResultsView.swift`: distinguish no-work/denial from cleanup success and suppress unavailable measurements.
@@ -578,10 +579,11 @@ struct ConfirmedExecutionTests {
         }
         let c = s.coordinator(); let r = try await review(c)
         let token = try await c.confirm(binding: r.binding)
-        let bridge = ExecutionPolicyBridge(coordinator: c, configURL: impossibleConfigURL)
+        let bridge = ExecutionPolicyBridge(coordinator: c, configURL: impossibleConfigURL,
+                                           homeDirectory: s.home.path, detectedTools: [])
         var config = TidyConfig()
         config.transcriptAgeThresholdDays = 90
-        let update = bridge.submit(config: config, environment: s.environment)
+        let update = bridge.submit(config: config)
         #expect(!bridge.isExecutionEnabled)
         #expect(bridge.policyUpdatePending)
         // No await since submit: the coordinator barrier is already invalidated,
@@ -596,6 +598,71 @@ struct ConfirmedExecutionTests {
         await expectConfirmationError(.stalePolicy) { _ = try await review(c) }
         #expect(try Data(contentsOf: blocker) == blockerBytes)
         #expect(!FileManager.default.fileExists(atPath: impossibleConfigURL.path))
+        try s.intact()
+    }
+
+    @Test("Policy projection copies explicit metadata and restrictions without discovery")
+    func purePolicyProjection() throws {
+        let s = try ExecutionScratch(); defer { s.cleanup() }
+        var config = TidyConfig()
+        config.gitRoots = [s.home.appendingPathComponent("project").path]
+        config.keepCookieDomains = ["example.invalid"]
+        config.simulatorsApprovedForDeletion = ["inert legacy name"]
+        config.appsApprovedForQuit = ["inert legacy app name"]
+        config.allowRestartToReclaimSwap = true
+        config.staleNodeModulesThresholdDays = 90
+        config.transcriptAgeThresholdDays = 120
+        let unknown = config.makePolicyEnvironment(homeDirectory: s.home.path, detectedTools: [])
+        #expect(unknown.detectedTools.isEmpty)
+        #expect(!unknown.hasTool(.git))
+        let metadataOnly = config.makePolicyEnvironment(homeDirectory: s.home.path,
+                                                        detectedTools: [.git])
+        #expect(metadataOnly.detectedTools == [.git])
+        #expect(metadataOnly.homeDirectory == s.home.path)
+        #expect(metadataOnly.gitRoots == config.gitRoots)
+        #expect(metadataOnly.keepCookieDomains == config.keepCookieDomains)
+        #expect(metadataOnly.simulatorsApprovedForDeletion == config.simulatorsApprovedForDeletion)
+        #expect(metadataOnly.appsApprovedForQuit == config.appsApprovedForQuit)
+        #expect(metadataOnly.allowRestartToReclaimSwap)
+        #expect(metadataOnly.staleNodeModulesThresholdDays == 90)
+        #expect(metadataOnly.transcriptAgeThresholdDays == 120)
+        #expect(metadataOnly.protectedRoots == CleanEnvironment.defaultProtectedRoots(homeDirectory: s.home.path))
+        // This tests value projection only. A supplied tool ID is not an accepted adapter.
+        try s.intact()
+    }
+
+    @Test("Two synchronous settings submissions invalidate before queued persistence runs")
+    @MainActor
+    func settingsSubmissionHasNoDiscoveryPhase() async throws {
+        let s = try ExecutionScratch(); defer { s.cleanup() }
+        let c = s.coordinator(); let r = try await review(c)
+        let token = try await c.confirm(binding: r.binding)
+        let url = s.home.appendingPathComponent("config.json")
+        let bridge = ExecutionPolicyBridge(coordinator: c, configURL: url,
+                                           homeDirectory: s.home.path, detectedTools: [])
+        var first = TidyConfig(); first.transcriptAgeThresholdDays = 60
+        var second = first; second.transcriptAgeThresholdDays = 90
+        let a = bridge.submit(config: first)
+        #expect(c.policyAdmission() == .updating(revision: 2))
+        let b = bridge.submit(config: second)
+        #expect(c.policyAdmission() == .updating(revision: 3))
+        #expect(!bridge.isExecutionEnabled && bridge.policyUpdatePending)
+        // No await above: production MainActor persistence tasks cannot yet run.
+        // The next main-actor statement is reachable without a discovery completion.
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(await c.execute(token, currentPolicyRevision: 1).disposition == .stalePolicy)
+        await a.value; await b.value
+        #expect(ConfigStore.load(from: url) == second)
+        #expect(c.policyAdmission() == .ready(revision: 3))
+        #expect(bridge.isExecutionEnabled && !bridge.policyUpdatePending)
+        #expect(bridge.persistenceError == nil)
+        let fresh = try await review(c)
+        #expect(fresh.binding.policyRevision == 3)
+        let denied = try #require(fresh.plan.reviewItems.first { $0.id == "deep.simulator.erase-all" })
+        #expect(!denied.review.isSelectable)
+        await expectConfirmationError(.unavailableSelection) {
+            _ = try await c.setSelection(planID: fresh.binding.planID, selectedIDs: [denied.id])
+        }
         try s.intact()
     }
 
@@ -652,13 +719,41 @@ Fixture expected outputs are asserted above: actual denied erase-all row stays u
 
 ## Exact app wiring and confirmation lifecycle
 
-`AppExecutionServices` is `@Observable @MainActor final`, created once by `TidyApp` using `@State`. It owns one `let coordinator`, one or more discovery engines, one ExecutionPolicyBridge and the shared AppConfigStore. Load config once into a local value, derive initial environment, construct coordinator with the journal's canonical app-support URL, then construct bridge and AppConfigStore in that order. Add `init(tier: Tier, services: AppExecutionServices)` to CleanView and `init(services: AppExecutionServices)` to CustomView. TidyApp passes the same instance to every Clean WindowGroup and Custom window. Delete per-view `ConfigStore.load()`, `CleanEnvironment` snapshot and coordinator construction; engine instances cannot imply separate coordinator instances.
+`AppExecutionServices` is `@Observable @MainActor final`, created once by `TidyApp` using `@State`. It owns one `let coordinator`, one or more discovery engines, one ExecutionPolicyBridge and the shared AppConfigStore. Load config once into a local value, capture `homeDirectory` once, and use `let detectedTools: Set<ToolchainID> = []` for this foundation's unknown discovery state. Derive the initial environment with `config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: detectedTools)`, construct coordinator with the journal's canonical app-support URL, then construct bridge with the **same** home/snapshot and AppConfigStore in that order. No detector, locator, tool-cache warm-up, background discovery Task or lazy discovery getter may run during service construction. Add `init(tier: Tier, services: AppExecutionServices)` to CleanView and `init(services: AppExecutionServices)` to CustomView. TidyApp passes the same instance to every Clean WindowGroup and Custom window. Delete per-view `ConfigStore.load()`, `CleanEnvironment` snapshot and coordinator construction; engine instances cannot imply separate coordinator instances.
 
 Both view models receive `services`, store `RegisteredReview?` plus local display selection, and call `prepareReview` during load. Toggle/preset handlers compute requested eligible IDs through T01 `PlanSelection`, then await coordinator `setSelection`; replace the UI projection with its returned registration. Disable confirmation while this update is pending; never allow an old returned async response to overwrite a newer interaction (use a monotonically increasing UI request generation and accept only the latest). For invalid selection errors reload the held projection and show the reason; do not fabricate a successful selection.
 
 When opening the confirmation dialog, freeze its displayed `ReviewBinding`. Confirm button sends that frozen binding to `confirm`, then calls `execute(token,currentPolicyRevision:)` with the shared current revision. Do not reconstruct binding from mutable current toggles inside the dialog action. Any toggle/config mutation dismisses the dialog; an already submitted operation is protected by coordinator checks. Catch ConfirmationError in both view models (add Custom `.failed(String)`); do not append RunLog as a successful run on confirmation failure. A RunReport admission denial can be logged as denial with its explicit disposition. Keep advanced memory confirmation separate and unavailable until accepted.
 
-`AppConfigStore.config.didSet` must stop calling the current fire-and-forget save. Its exact app interface becomes `init(config: TidyConfig, bridge: ExecutionPolicyBridge, homeDirectory: String)`, storing those dependencies; didSet calls `bridge.submit(config: config, environment: config.makeEnvironment(homeDirectory: homeDirectory))`. AppExecutionServices creates the coordinator and bridge first, then this store from the initially loaded config. AppConfigStore does not own a second bridge. Services forwards bridge's `isExecutionEnabled`, `policyUpdatePending` and `persistenceError`; every review/confirm button and both view-model confirmation entry points require enabled and not pending. Show persistenceError visibly; no force-enable/retry-cleanup button. An explicit subsequent settings save may restore availability only after actual persistence and policy-update success, never by clearing a UI error.
+`AppConfigStore.config.didSet` must stop calling the current fire-and-forget save. Its exact app interface becomes `init(config: TidyConfig, bridge: ExecutionPolicyBridge)`, storing those dependencies; didSet calls only `bridge.submit(config: config)`. Do not compute an environment or discovery snapshot as a call argument: Swift evaluates arguments before entering submit and hence before its invalidation. AppExecutionServices creates the coordinator and bridge first, then this store from the initially loaded config. AppConfigStore does not own a second bridge. Services forwards bridge's `isExecutionEnabled`, `policyUpdatePending` and `persistenceError`; every review/confirm button and both view-model confirmation entry points require enabled and not pending. Show persistenceError visibly; no force-enable/retry-cleanup button. An explicit subsequent settings save may restore availability only after actual persistence and policy-update success, never by clearing a UI error.
+
+### Pure policy projection; discovery remains a separate gated responsibility
+
+The existing `TidyConfig.makeEnvironment` calls `ToolchainDetector.detect`, which calls `ToolLocator`; an uncached locator first tries `xcrun --find` and synchronously `waitUntilExit`, behind its own four-job semaphore rather than the shared runner budget. Therefore the earlier proposed didSet expression and eager initial environment derivation would block before invalidation/on launch. This corrects that **task-card mechanism**, not an already implemented T02 bridge. Moving the same discovery into a MainActor Task, into submit before beginPolicyUpdate, or behind a computed snapshot property does not fix it.
+
+Add this method inside TidyConfig. Both inputs are explicit values, with no discovery-bearing default or callback. It is a pure value projection: no filesystem metadata, executable resolution, process/cache access, actor hop or asynchronous work. `defaultProtectedRoots` currently only concatenates strings; preserve that purity. The legacy helper may delegate its field mapping here, but T02 startup/settings paths never call that legacy helper.
+
+```swift
+public func makePolicyEnvironment(homeDirectory: String,
+                                  detectedTools: Set<ToolchainID>) -> CleanEnvironment {
+    CleanEnvironment(
+        homeDirectory: homeDirectory,
+        detectedTools: detectedTools,
+        gitRoots: gitRoots,
+        protectedRoots: CleanEnvironment.defaultProtectedRoots(homeDirectory: homeDirectory),
+        keepCookieDomains: keepCookieDomains,
+        simulatorsApprovedForDeletion: simulatorsApprovedForDeletion,
+        staleNodeModulesThresholdDays: staleNodeModulesThresholdDays,
+        transcriptAgeThresholdDays: transcriptAgeThresholdDays,
+        appsApprovedForQuit: appsApprovedForQuit,
+        allowRestartToReclaimSwap: allowRestartToReclaimSwap
+    )
+}
+```
+
+The bridge holds an immutable already-materialized metadata snapshot and derives each committed environment from the **same config value actually saved**. Submit accepts neither an independently supplied environment nor a resolver/probe closure. This prevents saving one config while installing another policy. Tool-presence metadata never grants executable identity, registry membership, local consent, ownership/quiescence or preflight success. Unknown/unavailable tools fail closed; `[]` means not discovered here, not a verified absence or successful inventory. Old name approvals/restart visibility remain inert under quarantine.
+
+T02 deliberately performs no tool refresh: tool-dependent inventory remains unavailable even on explicit review until the separate discovery work is accepted. This is a foundation limitation, not removal of the product's complete inventory requirement or evidence that useful cleanup works. T08 must retain discovery functionality through explicit, bounded, off-main, shared-budget work; no auto-start during launch/settings. Before any future snapshot replacement can affect planning, it must be bound to a fresh coordinator invalidation/update and install coherently with the latest saved config. A late result from an older discovery/config revision must not overwrite newer state, revive old reviews or clear a pending/failed persistence update. Do not add such a refresh API or a parallel policy authority in this card. The legacy ScanViewModel/OnboardingViewModel and other locator paths still require their own T08 audit; this change does not certify them.
 
 ### Minimal throwing persistence and real production bridge
 
@@ -685,7 +780,7 @@ public static func save(_ config: TidyConfig,
 }
 ```
 
-Create `ExecutionPolicyBridge.swift` with this complete production implementation. It accepts a storage URL and real coordinator only, not an injected success/failure closure or alternate policy. The existing app bridge uses this exact type, so the deterministic regular-file-as-parent scratch test above checks production state, not a test reimplementation. Synchronous submit disables UI **and calls coordinator.beginPolicyUpdate before any Task creation or await**. Saves chain in edit order; the opaque ticket binds each completion, so a previous completion cannot reopen admission after a later submit. Only the latest edit controls visible pending/error/enabled state, but the coordinator's barrier is authoritative even if UI state is stale. T02 conservatively invalidates every config edit; T07 later separates presentation revisions. A failed save never reaches commitPolicyUpdate.
+Create `ExecutionPolicyBridge.swift` with this complete production implementation. It accepts the real coordinator, storage URL and immutable home/tool metadata values, not an injected success/failure closure or alternate policy. The app bridge uses this exact type, so the deterministic regular-file-as-parent scratch test above checks production state, not a test reimplementation. Synchronous submit disables UI **and calls coordinator.beginPolicyUpdate before environment projection, any Task creation or await**; its only argument is the edited config value. Saves chain in edit order; the opaque ticket binds each completion, so a previous completion cannot reopen admission after a later submit. Only the latest edit controls visible pending/error/enabled state, but the coordinator's barrier is authoritative even if UI state is stale. T02 conservatively invalidates every config edit; T07 later separates presentation revisions. A failed save never reaches commitPolicyUpdate.
 
 ```swift
 import Foundation
@@ -698,17 +793,21 @@ public final class ExecutionPolicyBridge {
     public private(set) var persistenceError: String?
     private let coordinator: ExecutionCoordinator
     private let configURL: URL?
+    private let homeDirectory: String
+    private let detectedTools: Set<ToolchainID> // metadata only, no lazy getter/refresh
     private var generation = UUID() // UI update identity, never execution authority
     private var pending: Task<Void, Never>?
 
-    public init(coordinator: ExecutionCoordinator, configURL: URL?) {
+    public init(coordinator: ExecutionCoordinator, configURL: URL?,
+                homeDirectory: String, detectedTools: Set<ToolchainID>) {
         self.coordinator = coordinator
         self.configURL = configURL
+        self.homeDirectory = homeDirectory
+        self.detectedTools = detectedTools
     }
 
     @discardableResult
-    public func submit(config: TidyConfig,
-                       environment: CleanEnvironment) -> Task<Void, Never> {
+    public func submit(config: TidyConfig) -> Task<Void, Never> {
         isExecutionEnabled = false
         policyUpdatePending = true
         persistenceError = nil
@@ -721,6 +820,8 @@ public final class ExecutionPolicyBridge {
             persistenceError = "Settings could not be applied. Cleanup remains disabled."
             return Task {}
         }
+        let environment = config.makePolicyEnvironment(homeDirectory: homeDirectory,
+                                                       detectedTools: detectedTools)
         let previous = pending
         let task = Task { [self] in
             await previous?.value
@@ -754,6 +855,16 @@ public final class ExecutionPolicyBridge {
 
 `beginPolicyUpdate` failure (including revision overflow) itself leaves the barrier unavailable; never make invalidation failure a ready state. Ticket construction is inaccessible to app callers, and commit is internal to the core production bridge; no UI reset/force-enable method exists. The bridge's returned task is a completion handle for app lifecycle/tests only; callers must not cancel it to revert policy. App shutdown drains pending persistence or retains disabled state; no cleanup is submitted until this bridge is enabled. This is minimal persistence failure propagation with synchronous invalidation, not T05's migration/backup/recovery implementation and not T07's full settings authority store.
 
+### Deterministic no-probe wiring acceptance and responsiveness boundary
+
+Before executing the new tests, independently inspect the real source call graph for the complete service-construction and didSet/submit paths (including default arguments and lazy properties). Required source evidence: the startup snapshot is a literal empty value, the only didSet call is `bridge.submit(config: config)`, the pure projection has exactly the field mapping above, and beginPolicyUpdate precedes that projection in submit. No path to `makeEnvironment`, `ToolchainDetector`, `ToolLocator`, Process, a scan or cache warm-up is permitted. Do not use a warm global locator cache as evidence of zero probes. Record the old proposed expression as the source-wiring RED and the revised production call graph as GREEN; a grep with no direct matches alone cannot prove transitive purity.
+
+`purePolicyProjection`, `settingsSubmissionHasNoDiscoveryPhase` and the updated ConfigStore field test are complete deterministic RED inputs above: the new API initially does not exist; after implementation they use explicit scratch homes and metadata only. The two-submit test checks real synchronous barrier revisions before either persistence task can run, then real disk ordering/latest commit and continued registry denial. The existing failure test still proves invalidation before a failed save completes. No test starts an ambient executable, hangs a real xcrun, invents an accepted capability, replaces policy or claims a fake successful mutation. Projection values plus source-wiring inspection establish no discovery on this path; value assertions alone are not a probe-count test.
+
+The app source acceptance must additionally trace TidyApp's one shared AppExecutionServices initialization and the actual AppConfigStore setter used by Settings, Clean and Custom. In the later app/UI harness, use loaded scratch config and scratch journal/config URLs only; construct the real services without requesting a scan/onboarding discovery, edit settings twice, and verify launch completion, immediate updating state, disabled confirmation across windows and a subsequent main-actor UI event without waiting for any discovery result. This is a required app-wiring gate, not satisfied by constructing only the core bridge; add complete app-harness test code at that gate before claiming it verified. No production probe injection or allow-all registry is needed because this path intentionally has no discovery dependency.
+
+This correction removes the discovery-caused startup/pre-invalidation stall only. The shown save Task still inherits MainActor and calls synchronous ConfigStore.save; initial ConfigStore.load and mandatory journal setup also involve I/O. Their slow-storage latency and future lock-held real-effect boundedness are **not** established by these no-probe tests. A serialized off-main persistence/startup-I/O design needs separate reviewed T05 integration before claiming full launch/settings responsiveness; do not silently change persistence ordering or claim an app latency bound here.
+
 ## Ordered implementation / verification steps
 
 - [ ] Review this card and T01 dependency interfaces before source changes. Confirm empty core reviews are a real no-op contract, never a cleanup success or adapter test bypass.
@@ -761,6 +872,7 @@ public final class ExecutionPolicyBridge {
 - [ ] Add opaque registration/token contracts and implement negative/no-op lifecycle with explicit state. Run focused tests; capture behavioral RED/GREEN for unknown bindings, stale policy/review and replay. No test claims mutated anything.
 - [ ] Add production no-follow identity capture and the minimal durable store with lock, initialized-state marker, atomic/synchronized bootstrap/intent writes, corrupt-file preservation. Run first-initialization, missing-initialized-ledger, zero-byte and unknown-schema tests as well as existing uncertainty tests; inspect owner-only modes. Disk-write failure must return storageUnavailable; never swallow it as ready or recreate a missing initialized ledger.
 - [ ] Wire the one app-owned coordinator and frozen dialog binding through both surfaces, including config bridge and report availability. Internalize raw execution as denial-only. Search `rg 'execute\(plan:|ExecutionCoordinator\(' Tidy TidyCore/Sources` and review every match; app has exactly one coordinator construction and no raw execute caller. Core raw compatibility entry has no effect body.
+- [ ] Add pure makePolicyEnvironment and migrate the existing ConfigStore field test before running the prescribed focused suite. Review `rg 'makeEnvironment|makePolicyEnvironment|ToolchainDetector|ToolLocator|submit\(config:' Tidy TidyCore/Sources TidyCore/Tests/TidyCoreTests/ConfigStoreTests.swift` plus transitive/default/lazy call paths against the no-probe wiring gate above. Record source-wiring RED/GREEN and run the supplied pure projection/two-submit tests. Bootstrap uses unknown metadata; no automatic/background discovery is introduced. Leave full T08 discovery/refresh and T05 app latency acceptance explicitly open.
 - [ ] Replace ConfigStore.save with its throwing API, adjust existing successful-save tests and connect the exact ExecutionPolicyBridge and coordinator-owned synchronous barrier. Run `cd TidyCore && swift test --filter 'ConfirmedExecutionTests|ConfigStoreTests'`; the deterministic non-directory-parent test must observe `.updating` without an intervening await after submit, reject the old token before awaiting persistence completion, and retain disabled/error state. Run overlappingPolicyUpdates: a saved older ticket must leave the newer update pending until its own save/commit. Inspect final no-op admission and future dispatch contract to reject check-then-dispatch permits; UI disabling alone is not evidence. Full T05 migration and T03/T04 actual effect-race/boundedness acceptance are not asserted here.
 - [ ] Compile-negative public API check: in a temporary external Swift client importing TidyCore (without `@testable`), independently verify `ConfirmedPlan()`, `ConfirmedPlan(coordinatorID: UUID(), nonce: UUID())`, reading an issued token's `nonce`, and `engine.execute(plan: plan, environment: environment)` fail for inaccessible API. Obtain module search flags from the local build, do not assert rejection based on missing import/module. The real no-op token tests demonstrate the public execute API remains usable with legitimately issued tokens; the coordinator source in another file can read internal immutable issuer/nonce without exposing them to external clients.
 - [ ] Run `cd TidyCore && swift test --filter ConfirmedExecutionTests`, then controller-approved full suite after T01 host-effect audit. Expected focused GREEN for the supplied cases; record that positive mutation gates below are still open. Do not disable old quarantine tests to make this pass.
