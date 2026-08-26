@@ -90,9 +90,9 @@ Families expand to individual entries. Listed enum members are exhaustive; new m
 | `maintenance.minimumAgeDays` | Int / 30 | 30...365 | A / consent |
 | `maintenance.minimumIntervalHours` | Int / 24 | 24...168 | A / consent |
 | `app.launchAtLogin` | Bool / false | macOS registration/consent separate | A / consent |
-| `history.enabled` | Bool / true | Unfinished-effect ledger remains mandatory | P / none |
+| `history.enabled` | Bool / true | Off removes only eligible optional completed reports; mandatory recovery persistence remains enabled | P / none |
 | `history.retentionDays` | Int / 30 | 1...90; never evict unfinished effects | P / none |
-| `history.maxMiB` | Int / 10 | 1...50; reserve 1 MiB for unfinished ledger | P / none |
+| `history.maxMiB` | Int / 10 | 1...50 for optional completed reports only; separate 1 MiB unfinished-ledger allowance; never evict recovery evidence | P / none |
 | `ui.density` | enum / compact | compact,detailed | P / none |
 | `ui.units` | enum / binary | binary,decimal; correct GiB/GB label | P / none |
 | `ui.cards` | ordered IDs / [disk,memoryPressure,swap,thermal,power] | Permutation/subset; unavailable visible card retains status | P / none |
@@ -101,6 +101,8 @@ Families expand to individual entries. Listed enum members are exhaustive; new m
 | `ui.showBadges` | Bool / true | No fabricated health score | P / none |
 | `ui.advancedSettings` | Bool / false | Search still finds advanced controls | P / none |
 | `export.redactDiagnostics` | Bool / true | False still excludes credentials/cookies/env/argv/remotes | P / none |
+
+The user-approved history interpretation and proposed implementation bounds are specified in `docs/superpowers/tasks/T04-A-approved-budget-contract.md`: separate 1 MiB ledger and eight 1 MiB active-diagnostic slots, bounded finalization/staging, and a mandatory T03.B/T04.C aggregate manifest/proof admission gate. The 1 MiB history minimum permits initial work; history off never disables safety persistence. This records the decision, not implementation or source-entry approval.
 
 Minimum sizes/ages/retention may be overridden per accepted item with the same validation. Unknown item keys never create capabilities. Non-applicable fields display “not applicable.” Existing cookie keep-domains remain an empty preference list; simulator-delete approvals remain empty local UDID authority, old name approvals are preserved inert pending device reassociation. Old restart enablement migrates into visibility only, not consent.
 

@@ -23,11 +23,13 @@ All design S01–S16 and every policy/default row in `docs/superpowers/specs/202
 
 ## Readiness and delivery boundaries
 
+**Budget decision resolved; source entry still gated:** the user approved `history.maxMiB` (1…50/default 10) for optional completed reports only, with mandatory recovery separately bounded and never history-evicted. `T04-A-approved-budget-contract.md` controls exact accounting, eight reserved active-diagnostic slots, disabled-history API, completion/pruning and replacement/additional tests. The earlier inclusive equation/tests in `.superpowers/sdd/T04.A-entry-proposal.md` are superseded. Corrections 2–3 remain accepted at proposal level. Controller and independent review must approve this supplement and assign the actual source BASE before T04.A implementation. T03.B/T04.C also require numeric aggregate manifest/proof/staging admission and terminal-growth tests before positive effects; T04.D must account all optional writers under one shared history limit.
+
 Read `.superpowers/sdd/T04-brief.md` and the final independently reviewed T02/T03 cards before execution. T02 foundation source through `10616b3` is independently approved, including the FIFO admission reader correction: `MutationAdmissionStore`, `PendingEffectIntent`, the synchronous `PolicyInvalidationBarrier`, schema-1 envelope and stable installation lock are real dependencies to extend rather than recreate. T03.A's internal mechanism foundation through `ec9dbc5` is independently approved; its `EffectStatus`/`TargetEffectOutcome` are real dependencies, but production integration remains gated. T01 legacy quarantine remains mandatory.
 
 | Unit | Entry boundary | What passing means |
 |---|---|---|
-| T04.A | T02 admission store accepted and file ownership assigned | Durable state/replay/fault behavior tested using real scratch persistence; simulated records are expressly not process recovery proof |
+| T04.A | T02 admission store accepted, approved-budget supplement independently reviewed, actual BASE and file ownership assigned | Durable state/replay/fault behavior tested using real scratch persistence; simulated records are expressly not process recovery proof |
 | T04.B | T04.A plus reviewed low-level launcher design | Real compiled disposable children, oversized output, inherited pipes, surviving work and abandonment windows exercise production mechanisms; no cleanup authority is granted |
 | T04.C | First existing-scope `.M` with supported start/recovery protocol; separate complete integration test card reviewed | Real coordinator token→accepted effect→app-process crash→relaunch→positive adapter reconciliation; useful cleanup and S16 acceptance |
 | T04.D | T03 report schema and assigned app integration owner | Typed results, graceful verified-instance app quit integration and compatibility; restart/purge remain separately quarantined without accepted contracts |

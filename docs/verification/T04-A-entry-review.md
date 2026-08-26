@@ -1,4 +1,18 @@
-# T04.A entry review — decision pending
+# T04.A entry review — approved implementation contract
+
+## Final independent entry verdict — 2026-08-26
+
+Independent reviewer `t04a_entry_review` approved the final 362-line approved-budget supplement for T04.A source entry: spec compliant and entry quality Approved, with no remaining Critical, Important or Minor findings. Controller read the complete contract, replacement/additional test code and report. Separate 1 MiB ledger, eight reserved 1 MiB active slots, optional-only history, bounded durable-finish/retention ordering and disabled-history behavior are accepted. Prior corrections 2–3 remain binding. The original budget finding is closed.
+
+Nine proposed test methods (twelve executions with parameters) cover the new minimum/disabled/capacity/retention/overage boundaries. They have not yet executed. This is implementation-contract approval, not source approval, completed recovery or a release. The controller assigns the source BASE after this documentation checkpoint; T03.B/C manifest/proof aggregate admission, real effects, B process recovery, D joint report accounting/settings binding and hardware acceptance remain open.
+
+## User decision — 2026-08-26
+
+The user approved the recommended interpretation: `history.maxMiB` caps optional completed reports only. Mandatory recovery storage has separate explicit hard bounds; unfinished evidence is never evicted to satisfy a history preference, and history off never disables safety persistence. The prior inclusive equation is superseded, not an implementation requirement. Exact accounting, hard bounds and replacement acceptance tests are being reconciled in `../superpowers/tasks/T04-A-approved-budget-contract.md` before independent source-entry review.
+
+The user also clarified that GitHub push, README update and DMG release are to happen **after the full implementation and release checks**, not as an intermediate preview release. No remote Git or release changes were made during the read-only release inspection.
+
+The review below records the original finding and subsequent independent corrections. Its request for a product choice is historical and no longer blocks execution. T04.A source still requires approval of the reconciled implementation contract.
 
 Reviewed proposal: `.superpowers/sdd/T04.A-entry-proposal.md`, 645 lines, against approved T02/T03.A foundations and the T04 task card. No T04 source or test implementation is authorized yet.
 
