@@ -492,6 +492,8 @@ final class SharedSettingsWiringTests: XCTestCase {
             ])])
         try await run(seed: legacy) { s, services, io in
             XCTAssertEqual(services.settingsLoad.disposition, .migrated)
+            XCTAssertTrue(services.isExecutionEnabled)
+            XCTAssertEqual(services.coordinator.policyAdmission(), .ready(revision: 1))
             XCTAssertEqual(services.settingsLoad.envelope?.schemaVersion, 2)
             XCTAssertEqual(services.settingsLoad.envelope?.revision, 0)
             XCTAssertEqual(services.settingsLoad.envelope?.config, migrated)
