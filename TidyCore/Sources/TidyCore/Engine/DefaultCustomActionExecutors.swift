@@ -4,7 +4,7 @@ import Foundation
 /// implementation. Kept separate from `CleanEngine` itself so the engine
 /// never has to import browser- or git-specific logic directly.
 public enum DefaultCustomActionExecutors: Sendable {
-    public static func registerAll(on engine: CleanEngine) async {
+    public static func registerAll(on engine: CleanEngine, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) async {
         await engine.register(.chromeCookies) { target, environment in
             await Task.detached(priority: .utility) {
                 let profile = ChromeProfile(name: (target.path as NSString).lastPathComponent, path: target.path)
@@ -18,12 +18,12 @@ public enum DefaultCustomActionExecutors: Sendable {
         }
 
         await engine.register(.gitRepoGC) { target, _ in
-            let result = await GitHousekeeper.runConservative(repoPath: target.path)
+            let result = await GitHousekeeper.runConservative(repoPath: target.path, commandRunner: commandRunner)
             return CustomActionOutcome(freedBytes: 0, succeeded: result.succeeded, message: result.message)
         }
 
         await engine.register(.gitReflogExpireAggressive) { target, _ in
-            let result = await GitHousekeeper.runAggressiveReflogExpiry(repoPath: target.path)
+            let result = await GitHousekeeper.runAggressiveReflogExpiry(repoPath: target.path, commandRunner: commandRunner)
             return CustomActionOutcome(freedBytes: 0, succeeded: result.succeeded, message: result.message)
         }
 
@@ -31,37 +31,27 @@ public enum DefaultCustomActionExecutors: Sendable {
             // target.path carries the device UDID, not a filesystem path.
             // See CleanCatalog+Xcode.swift, which sets isFilesystemPath:
             // false for exactly this reason.
-            let succeeded = await SimulatorPruner.deleteDevice(udid: target.path)
+            let succeeded = await SimulatorPruner.deleteDevice(udid: target.path, commandRunner: commandRunner)
             return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: succeeded ? nil : "could not delete \(target.label)")
         }
 
         await engine.register(.apfsSnapshots) { _, _ in
-            // Re-lists rather than trusting the plan-time snapshot count,
-            // since time may have passed; deletes everything found in one
-            // administrator-privileged call so only one password prompt
-            // appears regardless of how many snapshots exist.
-            let snapshots = await SnapshotLister.listLocalSnapshots()
-            guard !snapshots.isEmpty else {
-                return CustomActionOutcome(freedBytes: 0, succeeded: true, message: "no snapshots to delete")
-            }
-            let succeeded = await SnapshotDeleter.deleteSnapshots(snapshots)
-            let message = succeeded ? "deleted \(snapshots.count) snapshot(s)" : "snapshot deletion failed or was cancelled"
-            return CustomActionOutcome(freedBytes: 0, succeeded: succeeded, message: message)
+            return CustomActionOutcome(freedBytes: 0, succeeded: false, message: CapabilityRegistry.quarantineReason)
         }
 
         await engine.register(.purgeInactiveMemory) { _, _ in
-            let outcome = await MemoryReclaimer.purgeInactiveMemory()
+            let outcome = await MemoryReclaimer.purgeInactiveMemory(commandRunner: commandRunner)
             return mapMemoryOutcome(outcome)
         }
 
         await engine.register(.quitMemoryHog) { target, _ in
             // target.path carries the application name, not a path.
-            let outcome = await MemoryReclaimer.quitApplication(named: target.path)
+            let outcome = await MemoryReclaimer.quitApplication(named: target.path, commandRunner: commandRunner)
             return mapMemoryOutcome(outcome)
         }
 
         await engine.register(.restartToReclaimSwap) { _, _ in
-            let outcome = await MemoryReclaimer.restartToReclaimSwap()
+            let outcome = await MemoryReclaimer.restartToReclaimSwap(commandRunner: commandRunner)
             return mapMemoryOutcome(outcome)
         }
     }

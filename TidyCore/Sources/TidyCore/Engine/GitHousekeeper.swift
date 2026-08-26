@@ -6,65 +6,25 @@ public struct GitHousekeepingResult: Sendable {
     public let message: String?
 }
 
-/// Per-repo git maintenance: prune remote-tracking refs for branches
-/// deleted upstream (so their objects become unreachable and `gc` can
-/// actually reclaim them), expire reflogs, `gc --prune=now`, prune stale
-/// worktrees, and clean up lock files left behind by an interrupted
-/// operation, matching the shell script's git housekeeping.
+/// Git housekeeping is quarantined. The public entry points preserve their
+/// result shape but do not invoke Git or mutate repository files.
 public enum GitHousekeeper: Sendable {
-    /// Normal tier: reflogs expire on the usual schedule (90 days
-    /// reachable, 30 days unreachable), so `git reset`-based undo survives
-    /// for a while.
-    public static func runConservative(repoPath: String) async -> GitHousekeepingResult {
-        await run(repoPath: repoPath, reflogArguments: ["--expire=90.days", "--expire-unreachable=30.days", "--all"])
+    /// Normal-tier legacy entry point; always denied pending an accepted
+    /// exact-scope Git adapter contract.
+    public static func runConservative(repoPath: String, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) async -> GitHousekeepingResult {
+        await run(repoPath: repoPath, reflogArguments: ["--expire=90.days", "--expire-unreachable=30.days", "--all"], commandRunner: commandRunner)
     }
 
-    /// Deep tier, opt-in: nothing survives. There is no `git reset` rescue
-    /// after this.
-    public static func runAggressiveReflogExpiry(repoPath: String) async -> GitHousekeepingResult {
-        await run(repoPath: repoPath, reflogArguments: ["--expire=now", "--expire-unreachable=now", "--all"])
+    /// Deep-tier legacy entry point; always denied pending an accepted
+    /// exact-scope Git adapter contract.
+    public static func runAggressiveReflogExpiry(repoPath: String, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) async -> GitHousekeepingResult {
+        await run(repoPath: repoPath, reflogArguments: ["--expire=now", "--expire-unreachable=now", "--all"], commandRunner: commandRunner)
     }
 
-    private static func run(repoPath: String, reflogArguments: [String]) async -> GitHousekeepingResult {
-        guard let gitPath = ToolLocator.locate("git") else {
-            return GitHousekeepingResult(repoPath: repoPath, succeeded: false, message: "git not found")
-        }
-        let git = URL(fileURLWithPath: gitPath)
-
-        func runGit(_ arguments: [String]) async -> ProcessRunner.Output? {
-            try? await ProcessRunner.run(executableURL: git, arguments: ["-C", repoPath] + arguments)
-        }
-
-        guard let remoteList = await runGit(["remote"]), remoteList.succeeded else {
-            return GitHousekeepingResult(repoPath: repoPath, succeeded: false, message: "not a usable git repository")
-        }
-
-        let remotes = remoteList.standardOutput
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        for remote in remotes {
-            _ = await runGit(["remote", "prune", remote])
-        }
-
-        _ = await runGit(["reflog", "expire"] + reflogArguments)
-        let gcResult = await runGit(["gc", "--prune=now", "--quiet"])
-        _ = await runGit(["worktree", "prune"])
-
-        let fm = FileManager.default
-        try? fm.removeItem(atPath: repoPath + "/.git/gc.log")
-        try? fm.removeItem(atPath: repoPath + "/.git/index.lock")
-
-        let succeeded = gcResult?.succeeded ?? false
-        let message: String?
-        if succeeded {
-            message = nil
-        } else if let stderr = gcResult?.standardError, !stderr.isEmpty {
-            message = stderr
-        } else {
-            message = "git gc failed"
-        }
-
-        return GitHousekeepingResult(repoPath: repoPath, succeeded: succeeded, message: message)
+    private static func run(repoPath: String, reflogArguments: [String], commandRunner: any CleanupCommandRunning) async -> GitHousekeepingResult {
+        let action: CleanAction = reflogArguments.contains("--expire=now") ? .custom(.gitReflogExpireAggressive) : .custom(.gitRepoGC)
+        let itemID = reflogArguments.contains("--expire=now") ? "deep.git.reflog-expire-all" : "normal.git.housekeeping"
+        return GitHousekeepingResult(repoPath: repoPath, succeeded: false,
+                                     message: CapabilityRegistry.denialReason(for: action, itemID: itemID) ?? CapabilityRegistry.quarantineReason)
     }
 }

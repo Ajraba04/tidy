@@ -28,15 +28,17 @@ public struct CustomActionOutcome: Sendable {
 /// snapshots) never has to live inside the engine itself.
 public typealias CustomActionExecutor = @Sendable (TargetPath, CleanEnvironment) async -> CustomActionOutcome
 
-/// Enumerates catalog items into a confirmable plan, then executes exactly
-/// that plan. There is no other path to deletion: every mode, including a
-/// pure dry-run preview, produces a `CleanPlan` first.
+/// Enumerates catalog items into a confirmable plan. Execution currently
+/// stops at the fixed quarantine boundary; no current plan gains cleanup
+/// authority.
 public actor CleanEngine {
     private let sizeScanner: SizeScanner
+    private let commandRunner: any CleanupCommandRunning
     private var customExecutors: [CustomOperationID: CustomActionExecutor] = [:]
 
-    public init(sizeScanner: SizeScanner) {
+    public init(sizeScanner: SizeScanner, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) {
         self.sizeScanner = sizeScanner
+        self.commandRunner = commandRunner
     }
 
     public func register(_ operation: CustomOperationID, executor: @escaping CustomActionExecutor) {
@@ -94,11 +96,9 @@ public actor CleanEngine {
         return CleanPlan(tier: tier, plannedItems: plannedItems)
     }
 
-    /// Executes exactly the plan handed to it. Every target is re-validated
-    /// against `PathGuard` immediately before deletion, including the
-    /// item's own `declaredRoot`: defense in depth against however much
-    /// time has passed since the plan was made. The re-check is deliberately
-    /// identical in strength to the plan-time check, not weaker.
+    /// Processes exactly the plan handed to it. Every current item is denied
+    /// before target validation, measurement, lookup, handler lookup, or an
+    /// effect-capable transport call.
     public func execute(plan: CleanPlan, environment: CleanEnvironment) async -> RunReport {
         let startedAt = Date()
         let freeBefore = (try? DiskStats.current().availableForImportantUsageBytes) ?? 0
@@ -133,6 +133,10 @@ public actor CleanEngine {
         guardian: PathGuard,
         environment: CleanEnvironment
     ) async -> ItemResult {
+        if let reason = CapabilityRegistry.denialReason(for: item.action, itemID: item.id) {
+            return ItemResult(id: item.id, title: item.title, freedBytes: 0,
+                              reclaimedMemoryBytes: 0, succeeded: false, message: reason)
+        }
         switch item.action {
         case .deletePath:
             return await deleteTargets(item, guardian: guardian, environment: environment, keepDirectory: false)
@@ -141,14 +145,12 @@ public actor CleanEngine {
             return await deleteTargets(item, guardian: guardian, environment: environment, keepDirectory: true)
 
         case .runTool(let command):
-            guard let executablePath = ToolLocator.locate(command.tool.executableName) else {
-                return ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false, message: "\(command.tool.executableName) not found")
-            }
-            let succeeded = await ProcessRunner.runDiscardingOutput(
-                executableURL: URL(fileURLWithPath: executablePath),
-                arguments: command.arguments
+            let output = await commandRunner.run(
+                executableName: command.tool.executableName,
+                arguments: command.arguments,
+                timeout: ProcessRunner.defaultTimeout
             )
-            return ItemResult(id: item.id, title: item.title, freedBytes: item.estimatedBytes, succeeded: succeeded, message: succeeded ? nil : "command failed")
+            return ItemResult(id: item.id, title: item.title, freedBytes: item.estimatedBytes, succeeded: output.succeeded, message: output.succeeded ? nil : "command failed")
 
         case .custom(let operationID):
             guard let executor = customExecutors[operationID] else {

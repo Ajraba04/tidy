@@ -20,11 +20,7 @@ public enum SimulatorPruner: Sendable {
 
     /// Shuts the device down first (delete can fail on a booted device),
     /// then deletes it. Returns whether the delete itself succeeded.
-    public static func deleteDevice(udid: String) async -> Bool {
-        guard let xcrunPath = ToolLocator.locate("xcrun") else { return false }
-        let xcrun = URL(fileURLWithPath: xcrunPath)
-        _ = try? await ProcessRunner.run(executableURL: xcrun, arguments: ["simctl", "shutdown", udid])
-        let result = try? await ProcessRunner.run(executableURL: xcrun, arguments: ["simctl", "delete", udid])
-        return result?.succeeded ?? false
+    public static func deleteDevice(udid: String, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) async -> Bool {
+        CapabilityRegistry.denialReason(for: .custom(.simulatorPrune), itemID: "safe.simulator.delete-unavailable") == nil
     }
 }

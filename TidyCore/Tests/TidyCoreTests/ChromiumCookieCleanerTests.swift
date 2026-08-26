@@ -117,43 +117,8 @@ struct ChromiumCookieCleanerTests {
 
     // MARK: - clean()
 
-    @Test("deletes cookies outside the keep-list, keeps exact and subdomain matches")
-    func deletesOutsideKeepList() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: [
-            "apple.com", "www.apple.com", ".apple.com", "developer.apple.com",
-            "evil.com", "tracker.example.com", "notapple.com"
-        ])
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["apple.com"],
-            homeDirectory: scratch.path
-        )
-
-        guard case .cleaned(let total, let kept, let deleted) = outcome else {
-            Issue.record("expected .cleaned, got \(outcome)")
-            return
-        }
-        #expect(total == 7)
-        #expect(kept == 4)
-        #expect(deleted == 3)
-
-        let remaining = try CookieFixture.hostKeys(at: dbPath)
-        #expect(Set(remaining) == ["apple.com", "www.apple.com", ".apple.com", "developer.apple.com"])
-        // "notapple.com" sharing a suffix with "apple.com" must not survive.
-        #expect(!remaining.contains("notapple.com"))
-
-        #expect(!FileManager.default.fileExists(atPath: dbPath + ".tidy-backup"))
-    }
-
-    @Test("an empty keep-list is skipped, never reaches SQL, file is untouched")
-    func emptyKeepListIsSkipped() throws {
+    @Test("clean is quarantined and preserves a disposable database and existing backup")
+    func cleanDeniesWithoutMutatingDatabaseOrBackup() throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
@@ -161,7 +126,35 @@ struct ChromiumCookieCleanerTests {
         try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
         let dbPath = profileDir.appendingPathComponent("Cookies").path
         try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["apple.com", "evil.com"])
-        let before = try Data(contentsOf: URL(fileURLWithPath: dbPath))
+        let databaseBefore = try Data(contentsOf: URL(fileURLWithPath: dbPath))
+        let backup = URL(fileURLWithPath: dbPath + ".tidy-backup")
+        let backupBefore = Data("retain existing backup bytes".utf8)
+        try backupBefore.write(to: backup)
+
+        let outcome = ChromiumCookieCleaner.clean(
+            profile: ChromeProfile(name: "Default", path: profileDir.path),
+            keepDomains: ["apple.com"],
+            homeDirectory: scratch.path
+        )
+
+        #expect(outcome == .failed(reason: CapabilityRegistry.quarantineReason))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: dbPath)) == databaseBefore)
+        #expect(try Data(contentsOf: backup) == backupBefore)
+    }
+
+    @Test("clean denies an empty keep list and preserves a disposable database and backup")
+    func cleanDeniesEmptyKeepListWithoutMutatingDatabaseOrBackup() throws {
+        let scratch = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
+        let database = profileDir.appendingPathComponent("Cookies")
+        try CookieFixture.makeDatabase(at: database.path, hostKeys: ["apple.com", "evil.com"])
+        let databaseBefore = try Data(contentsOf: database)
+        let backup = URL(fileURLWithPath: database.path + ".tidy-backup")
+        let backupBefore = Data("retain empty-list backup bytes".utf8)
+        try backupBefore.write(to: backup)
 
         let outcome = ChromiumCookieCleaner.clean(
             profile: ChromeProfile(name: "Default", path: profileDir.path),
@@ -169,193 +162,27 @@ struct ChromiumCookieCleanerTests {
             homeDirectory: scratch.path
         )
 
-        guard case .skipped = outcome else {
-            Issue.record("expected .skipped, got \(outcome)")
-            return
-        }
-        let after = try Data(contentsOf: URL(fileURLWithPath: dbPath))
-        #expect(before == after)
+        #expect(outcome == .failed(reason: CapabilityRegistry.quarantineReason))
+        #expect(try Data(contentsOf: database) == databaseBefore)
+        #expect(try Data(contentsOf: backup) == backupBefore)
     }
 
-    @Test("a keep-domain containing an underscore does not over-match via the LIKE wildcard")
-    func underscoreDoesNotActAsWildcard() throws {
+    @Test("clean denies with SingletonLock present and preserves a disposable database and backup")
+    func cleanDeniesSingletonLockWithoutMutatingDatabaseOrBackup() throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
         try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        // "my_site.com" as a keep-domain: unescaped, '_' in LIKE matches any
-        // single character, so "myXsite.com" must NOT be kept unless the
-        // escape is applied correctly.
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["sub.my_site.com", "sub.myXsite.com"])
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["my_site.com"],
-            homeDirectory: scratch.path
-        )
-
-        guard case .cleaned(_, let kept, _) = outcome else {
-            Issue.record("expected .cleaned, got \(outcome)")
-            return
-        }
-        #expect(kept == 1)
-        let remaining = try CookieFixture.hostKeys(at: dbPath)
-        #expect(remaining == ["sub.my_site.com"])
-    }
-
-    @Test("domain matching is case-insensitive on both the exact and subdomain branches")
-    func matchingIsCaseInsensitive() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["APPLE.COM", "Sub.Apple.Com", "evil.com"])
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["apple.com"],
-            homeDirectory: scratch.path
-        )
-
-        guard case .cleaned(_, let kept, let deleted) = outcome else {
-            Issue.record("expected .cleaned, got \(outcome)")
-            return
-        }
-        #expect(kept == 2)
-        #expect(deleted == 1)
-    }
-
-    @Test("does nothing and reports zero deleted when every cookie is already in the keep-list")
-    func noOpWhenEverythingIsKept() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["apple.com"])
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["apple.com"],
-            homeDirectory: scratch.path
-        )
-
-        guard case .cleaned(let total, let kept, let deleted) = outcome else {
-            Issue.record("expected .cleaned, got \(outcome)")
-            return
-        }
-        #expect(total == 1)
-        #expect(kept == 1)
-        #expect(deleted == 0)
-        #expect(!FileManager.default.fileExists(atPath: dbPath + ".tidy-backup"))
-    }
-
-    @Test("is skipped when there is no cookie database at the profile")
-    func skippedWhenNoDatabase() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["apple.com"],
-            homeDirectory: scratch.path
-        )
-        guard case .skipped = outcome else {
-            Issue.record("expected .skipped, got \(outcome)")
-            return
-        }
-    }
-
-    @Test("fails without modifying the file when the database cannot be opened")
-    func failsWithoutModifyingUnopenableFile() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        let garbage = Data("not a sqlite database".utf8)
-        try garbage.write(to: URL(fileURLWithPath: dbPath))
-
-        let outcome = ChromiumCookieCleaner.clean(
-            profile: ChromeProfile(name: "Default", path: profileDir.path),
-            keepDomains: ["apple.com"],
-            homeDirectory: scratch.path
-        )
-
-        guard case .failed = outcome else {
-            Issue.record("expected .failed, got \(outcome)")
-            return
-        }
-        let after = try Data(contentsOf: URL(fileURLWithPath: dbPath))
-        #expect(after == garbage)
-        #expect(!FileManager.default.fileExists(atPath: dbPath + ".tidy-backup"))
-    }
-
-    @Test("restores the original database if it is corrupted between backup and integrity check")
-    func restoresOriginalOnPostDeleteCorruption() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["apple.com", "evil.com", "tracker.com"])
-        let originalHostKeys = try CookieFixture.hostKeys(at: dbPath)
-
-        // Hand-replicates the cleaner's backup and restore steps instead of
-        // racing its real internal timing: take a VACUUM INTO backup,
-        // truncate the file to simulate corruption, then restore from that
-        // backup and confirm the host keys match the original. This proves
-        // a real restore from the same kind of backup file recovers
-        // cleanly.
-        var db: OpaquePointer?
-        sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READWRITE, nil)
-        var backupStmt: OpaquePointer?
-        let backupPath = dbPath + ".manual-backup"
-        sqlite3_prepare_v2(db, "VACUUM INTO ?", -1, &backupStmt, nil)
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(backupStmt, 1, backupPath, -1, transient)
-        #expect(sqlite3_step(backupStmt) == SQLITE_DONE)
-        sqlite3_finalize(backupStmt)
-        sqlite3_close_v2(db)
-
-        try Data("corrupted".utf8).write(to: URL(fileURLWithPath: dbPath))
-
-        for suffix in ["-journal", "-wal", "-shm"] {
-            try? FileManager.default.removeItem(atPath: dbPath + suffix)
-        }
-        _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: dbPath), withItemAt: URL(fileURLWithPath: backupPath))
-
-        let restoredHostKeys = try CookieFixture.hostKeys(at: dbPath)
-        #expect(restoredHostKeys == originalHostKeys)
-    }
-
-    @Test("is skipped when Chrome's SingletonLock is present, file untouched")
-    func skippedWhenSingletonLockPresent() throws {
-        let scratch = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
-        let dbPath = profileDir.appendingPathComponent("Cookies").path
-        try CookieFixture.makeDatabase(at: dbPath, hostKeys: ["apple.com", "evil.com"])
-        let before = try Data(contentsOf: URL(fileURLWithPath: dbPath))
-
+        let database = profileDir.appendingPathComponent("Cookies")
+        try CookieFixture.makeDatabase(at: database.path, hostKeys: ["apple.com", "evil.com"])
+        let databaseBefore = try Data(contentsOf: database)
+        let backup = URL(fileURLWithPath: database.path + ".tidy-backup")
+        let backupBefore = Data("retain lock backup bytes".utf8)
+        try backupBefore.write(to: backup)
         let root = ChromiumCookieCleaner.chromeRoot(homeDirectory: scratch.path)
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(
-            atPath: root + "/SingletonLock",
-            withDestinationPath: "some-host-12345"
-        )
+        try FileManager.default.createSymbolicLink(atPath: root + "/SingletonLock", withDestinationPath: "fixture-lock")
         #expect(ChromiumCookieCleaner.hasSingletonLock(homeDirectory: scratch.path))
 
         let outcome = ChromiumCookieCleaner.clean(
@@ -364,11 +191,31 @@ struct ChromiumCookieCleanerTests {
             homeDirectory: scratch.path
         )
 
-        guard case .skipped = outcome else {
-            Issue.record("expected .skipped, got \(outcome)")
-            return
-        }
-        let after = try Data(contentsOf: URL(fileURLWithPath: dbPath))
-        #expect(before == after)
+        #expect(outcome == .failed(reason: CapabilityRegistry.quarantineReason))
+        #expect(try Data(contentsOf: database) == databaseBefore)
+        #expect(try Data(contentsOf: backup) == backupBefore)
+    }
+
+    @Test("clean denies a missing database and preserves an existing backup")
+    func cleanDeniesMissingDatabaseWithoutCreatingOneOrMutatingBackup() throws {
+        let scratch = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let profileDir = scratch.appendingPathComponent("Default", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
+        let database = profileDir.appendingPathComponent("Cookies")
+        let backup = URL(fileURLWithPath: database.path + ".tidy-backup")
+        let backupBefore = Data("retain missing-database backup bytes".utf8)
+        try backupBefore.write(to: backup)
+
+        let outcome = ChromiumCookieCleaner.clean(
+            profile: ChromeProfile(name: "Default", path: profileDir.path),
+            keepDomains: ["apple.com"],
+            homeDirectory: scratch.path
+        )
+
+        #expect(outcome == .failed(reason: CapabilityRegistry.quarantineReason))
+        #expect(!FileManager.default.fileExists(atPath: database.path))
+        #expect(try Data(contentsOf: backup) == backupBefore)
     }
 }
