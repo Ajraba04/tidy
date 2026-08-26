@@ -1,6 +1,6 @@
 # T04.B bounded process mechanism verification
 
-Source BASE4b4ce2a, sole writer `t04b_implement`, isolated CAJ/developer-headroom worktree. This replaces the actual public ProcessRunner mechanism; it grants no cleanup capability, accepted adapter, terminal reconciliation or app-crash recovery authority. Source/runtime acceptance is pending.
+Source BASE4b4ce2a, sole writer `t04b_implement`, isolated CAJ/developer-headroom worktree. Independent spec/quality review approved the scoped mechanism throughb770f3f with no remaining findings. This replaces the actual public ProcessRunner mechanism; it grants no cleanup capability, accepted adapter, terminal reconciliation or app-crash recovery authority.
 
 ## Controller entry audit
 
@@ -24,7 +24,9 @@ Focused regression passed1/1 in2.365s (build5.93s). Complete isolated B suite pa
 
 Complete package coverage is intentionally partitioned: B's global gate-count assertions require its prescribed isolated run; all other package tests run separately rather than changing those assertions or omitting tests. `swift test --jobs 2 --skip BoundedProcessRunnerTests`:323 tests/42 suites passed12.397s, build0.67s, exit0. Combined with isolated B,344 methods/43 suites were covered. This is not a claim of one default-parallel full-suite run. The unchanged legacy ProcessRunner tests and real read-only discovery consumers passed against the replacement. No warnings/error/recorded-issue lines in either successful log.
 
-Unsigned production arm64 app build: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO`, exit0 without output. Existing derived data reused; no app launch. Independent source acceptance remains pending.
+Unsigned production arm64 app build: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO`, exit0 without output. Existing derived data reused; no app launch.
+
+Independent reviewer `t04b_source_review` read the complete3ecb4b4..b770f3f package and B contracts, then focused unchanged checks on discovery consumers and quarantined legacy helpers. **Spec compliant; task quality Approved**, no Critical/Important/Minor findings requiring correction. No reviewer tests/builds/launches/mutations. This closes B's scoped mechanism gate only and permits the separately reviewed A2P source assignment; device/effect/recovery/T08 boundaries remain unchanged.
 
 ## Boundaries
 
