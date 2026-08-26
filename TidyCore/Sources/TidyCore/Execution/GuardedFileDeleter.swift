@@ -335,6 +335,7 @@ struct ReviewedTree: Sendable {
     private func recomputedDigest() throws -> Data {
         guard header.schemaVersion == 1, header.rootSnapshot.isDirectory,
               !header.rootParentChain.isEmpty,
+              header.rootParentChain.allSatisfy({ $0.isDirectory }),
               canonicalHeaderBytes == (try ManifestEncoding.header(header)) else { throw GuardedFileError.invalidManifest }
         _ = try PathGuard.relation(candidate: header.canonicalRootPath, protectedRoot: "/")
         guard header.canonicalRootPath != "/",
@@ -358,6 +359,9 @@ struct ReviewedTree: Sendable {
         hash.update(data: sequence.data)
         var ids = Set<UUID>()
         var previousPath: String?
+        // Canonical preorder lets us retain only the active directory prefix,
+        // including across batch boundaries, instead of searching all entries.
+        var directories: [(name: String, snapshot: NodeSnapshot)] = []
         for batch in batches {
             guard ids.insert(batch.id).inserted, (1...5_000).contains(batch.entries.count) else {
                 throw GuardedFileError.invalidManifest
@@ -379,6 +383,21 @@ struct ReviewedTree: Sendable {
                 if let previous = previousPath, !ManifestEncoding.ordered(previous, entry.relativePath) {
                     throw GuardedFileError.invalidManifest
                 }
+                var commonDepth = 0
+                while commonDepth < min(directories.count, parts.count - 1),
+                      directories[commonDepth].name == parts[commonDepth] {
+                    commonDepth += 1
+                }
+                directories.removeLast(directories.count - commonDepth)
+                guard directories.count == parts.count - 1 else { throw GuardedFileError.invalidManifest }
+                for (index, directory) in directories.enumerated() {
+                    let parent = entry.parentChain[header.rootParentChain.count + 1 + index]
+                    guard parent.isDirectory, parent.device == header.rootSnapshot.device,
+                          parent == directory.snapshot else { throw GuardedFileError.invalidManifest }
+                }
+                if entry.snapshot.isDirectory {
+                    directories.append((name: parts[parts.count - 1], snapshot: entry.snapshot))
+                }
                 previousPath = entry.relativePath
             }
             hash.update(data: encoded)
@@ -389,7 +408,8 @@ struct ReviewedTree: Sendable {
 
 /// Schema 1: fixed-width big-endian integers, UTF-8 byte lengths, explicit
 /// optional tags. Payload limits include batch UUID and entry-count bytes.
-private struct ManifestEncoding {
+/// Internal value serialization only; does not validate or authorize effects.
+struct ManifestEncoding {
     var data = Data()
     mutating func integer<T: FixedWidthInteger>(_ value: T) {
         var big = value.bigEndian
