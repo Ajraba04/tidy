@@ -22,7 +22,11 @@ public enum SettingsChange: Equatable, Sendable {
 }
 public enum SettingsStoreError: Error, Equatable, Sendable {
     case readOnlyRecovery, staleRevision, changedExternally, invalidChange
-    case unavailable, unsafeLocation, oversized, revisionOverflow, writeFailed, durabilityUncertain
+    case unavailable, unsafeLocation, oversized, revisionOverflow, writeFailed, durabilityUncertain, finalizationBlocked
+}
+struct SettingsPublicationFailure: Equatable, Sendable {
+    let stage: String
+    let errno: Int32
 }
 public struct SettingsRollbackPreview: Sendable {
     public let config: TidyConfig
@@ -33,6 +37,50 @@ public struct SettingsRollbackPreview: Sendable {
 enum SettingsDecoding {
     static let byteLimit = 1_048_576
     enum Failure: Error { case malformed, oversized, unsupportedSchema(Int) }
+
+    static func encode(_ envelope: SettingsEnvelope) throws -> Data {
+        let config = envelope.config
+        guard envelope.schemaVersion == 2, config.schemaVersion == 2,
+              (7...365).contains(config.staleNodeModulesThresholdDays),
+              (7...365).contains(config.transcriptAgeThresholdDays),
+              config.presets.count <= 50 else { throw SettingsStoreError.invalidChange }
+        var budget = 0
+        func strings(_ values: [String]) throws {
+            guard values.count <= 1000 else { throw SettingsStoreError.invalidChange }
+            for value in values {
+                guard value.count <= 4096 else { throw SettingsStoreError.invalidChange }
+                budget += value.utf8.count
+                guard budget <= byteLimit else { throw SettingsStoreError.oversized }
+            }
+        }
+        try strings(config.keepCookieDomains)
+        try strings(config.simulatorsApprovedForDeletion)
+        try strings(config.gitRoots)
+        try strings(config.appsApprovedForQuit)
+        for preset in config.presets {
+            try strings([preset.name]); try strings(Array(preset.itemIDs))
+        }
+        // The raw-string budget also bounds encoder allocation before the exact byte check.
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let bytes = try encoder.encode(envelope)
+        guard bytes.count <= byteLimit else { throw SettingsStoreError.oversized }
+        _ = try load(bytes)
+        return bytes
+    }
+
+    static func storeIdentity(_ bytes: Data) throws -> UUID {
+        guard bytes.count <= 1024, String(data: bytes, encoding: .utf8) != nil else {
+            throw Failure.malformed
+        }
+        var parser = SettingsJSON(bytes: Array(bytes))
+        let root = try parser.parse().object()
+        guard Set(root.keys) == ["schema", "storeID"],
+              try required(root, "schema").integer() == 1,
+              let id = UUID(uuidString: try required(root, "storeID").string()) else {
+            throw Failure.malformed
+        }
+        return id
+    }
 
     static func load(_ data: Data) throws -> SettingsLoadResult {
         guard data.count <= byteLimit else { throw Failure.oversized }
