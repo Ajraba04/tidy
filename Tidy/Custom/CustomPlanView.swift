@@ -7,7 +7,6 @@ struct CustomPlanView: View {
     let onSavePreset: (CustomPreset) -> Void
     let onConfirm: () -> Void
 
-    @State private var showingConfirmation = false
     @State private var showingSavePreset = false
     @State private var presetName = ""
 
@@ -62,19 +61,21 @@ struct CustomPlanView: View {
                 Text(ByteFormat.human(selection.value.selectedEstimatedBytes))
                     .foregroundStyle(.secondary)
                 Button("Clean Selected (\(selection.value.selectedCount))") {
-                    showingConfirmation = true
+                    selection.beginConfirmation()
                 }
-                .disabled(selection.value.selectedCount == 0)
+                .disabled(!selection.canConfirm)
                 .keyboardShortcut(.defaultAction)
             }
             .padding()
         }
         .confirmationDialog(
-            "Delete \(selection.value.selectedCount) selected item(s), freeing about \(ByteFormat.human(selection.value.selectedEstimatedBytes))?",
-            isPresented: $showingConfirmation, titleVisibility: .visible
+            "Delete \(selection.frozenPresentation?.selectedCount ?? 0) selected item(s), estimated at \(ByteFormat.human(selection.frozenPresentation?.estimatedBytes ?? 0))?",
+            isPresented: Binding(get: { selection.showingConfirmation }, set: { selection.showingConfirmation = $0 }),
+            titleVisibility: .visible
         ) {
             Button("Clean Now", role: .destructive) { onConfirm() }
-            Button("Cancel", role: .cancel) {}
+                .disabled(!selection.canConfirm)
+            Button("Cancel", role: .cancel) { selection.cancelConfirmation() }
         }
         .sheet(isPresented: $showingSavePreset) {
             VStack(alignment: .leading, spacing: 12) {

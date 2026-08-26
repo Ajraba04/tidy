@@ -5,8 +5,6 @@ struct CleanPlanView: View {
     @Bindable var selection: PlanSelectionModel
     let onConfirm: () -> Void
 
-    @State private var showingConfirmation = false
-
     var body: some View {
         VStack(spacing: 0) {
             if selection.value.reviewItems.isEmpty {
@@ -38,23 +36,24 @@ struct CleanPlanView: View {
                 HStack {
                     Spacer()
                     Button("Clean Now") {
-                        showingConfirmation = true
+                        selection.beginConfirmation()
                     }
-                    .disabled(selection.value.selectedCount == 0)
+                    .disabled(!selection.canConfirm)
                     .keyboardShortcut(.defaultAction)
                 }
                 .padding()
             }
         }
         .confirmationDialog(
-            "Delete \(selection.value.selectedCount) item(s), freeing about \(ByteFormat.human(selection.value.selectedEstimatedBytes))?",
-            isPresented: $showingConfirmation,
+            "Delete \(selection.frozenPresentation?.selectedCount ?? 0) item(s), estimated at \(ByteFormat.human(selection.frozenPresentation?.estimatedBytes ?? 0))?",
+            isPresented: $selection.showingConfirmation,
             titleVisibility: .visible
         ) {
             Button("Clean Now", role: .destructive) {
                 onConfirm()
             }
-            Button("Cancel", role: .cancel) {}
+            .disabled(!selection.canConfirm)
+            Button("Cancel", role: .cancel) { selection.cancelConfirmation() }
         }
     }
 

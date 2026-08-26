@@ -12,7 +12,7 @@ struct ConfigStoreTests {
     }
 
     @Test("round-trips a saved config")
-    func roundTripsSavedConfig() {
+    func roundTripsSavedConfig() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -24,18 +24,18 @@ struct ConfigStoreTests {
         config.staleNodeModulesThresholdDays = 90
         config.presets = [CustomPreset(name: "Weekly", itemIDs: ["safe.cache.homebrew-cache"])]
 
-        ConfigStore.save(config, to: url)
+        try ConfigStore.save(config, to: url)
         let loaded = ConfigStore.load(from: url)
         #expect(loaded == config)
     }
 
     @Test("creates the containing directory if it does not exist yet")
-    func createsContainingDirectory() {
+    func createsContainingDirectory() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-\(UUID().uuidString)")
         let url = dir.appendingPathComponent("config.json")
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        ConfigStore.save(TidyConfig(), to: url)
+        try ConfigStore.save(TidyConfig(), to: url)
         #expect(FileManager.default.fileExists(atPath: url.path))
     }
 
@@ -72,7 +72,7 @@ struct TidyConfigTests {
         config.staleNodeModulesThresholdDays = 12
         config.transcriptAgeThresholdDays = 34
 
-        let environment = config.makeEnvironment(homeDirectory: "/Users/tester")
+        let environment = config.makePolicyEnvironment(homeDirectory: "/Users/tester", detectedTools: [])
         #expect(environment.keepCookieDomains == ["apple.com"])
         #expect(environment.simulatorsApprovedForDeletion == ["Old Simulator"])
         #expect(environment.gitRoots == ["/Users/tester/Developer"])
