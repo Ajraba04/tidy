@@ -67,8 +67,119 @@ private func interruptedIntent(phase: SubmissionPhase) -> PendingEffectIntent {
         phase: phase)
 }
 
+/// Bounds the pre-fix blocking FIFO open without cancelling work or deleting an active fixture.
+private final class FIFOAdmissionWatchdog {
+    private final class Outcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fired = false
+        func markFired() { lock.lock(); fired = true; lock.unlock() }
+        func didFire() -> Bool { lock.lock(); defer { lock.unlock() }; return fired }
+    }
+
+    private let completed = DispatchSemaphore(value: 0)
+    private let drained = DispatchSemaphore(value: 0)
+    private let outcome = Outcome()
+    private let worker: Thread
+
+    init(fifo: URL) throws {
+        // A reader alone does not satisfy a blocking read-only open's need for a writer.
+        let reader = open(fifo.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard reader >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        // Prove rescue can open a writer while this exact reader stays alive. Close it
+        // before admission starts, leaving no writer to mask the production defect.
+        let probe = open(fifo.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard probe >= 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(reader)
+            throw error
+        }
+        close(probe)
+        let completed = self.completed
+        let drained = self.drained
+        let outcome = self.outcome
+        let path = fifo.path
+        worker = Thread {
+            var writer: Int32 = -1
+            if completed.wait(timeout: .now() + .seconds(5)) == .timedOut {
+                outcome.markFired()
+                writer = open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+                guard writer >= 0 else {
+                    // Only this owned test process terminates; never clean a live fixture.
+                    fatalError("FIFO rescue open failed (errno \(errno)); retaining scratch containing \(path) because admission may still be active")
+                }
+                // Keep the actual writer FD alive until admission has really returned.
+                completed.wait()
+            }
+            if writer >= 0 { close(writer) }
+            close(reader) // Ownership transferred to this thread after successful setup.
+            drained.signal()
+        }
+        worker.start()
+    }
+
+    /// Must run immediately after admission, before any throwing assertion or scratch cleanup.
+    func finishAndDrain() -> Bool {
+        completed.signal()
+        drained.wait()
+        // Thread has closed every FD; also wait for its closure to return completely.
+        while !worker.isFinished { Thread.sleep(forTimeInterval: 0.001) }
+        return outcome.didFire()
+    }
+}
+
 @Suite("Confirmed execution")
 struct ConfirmedExecutionTests {
+    @Test("FIFO metadata fails promptly, preserves storage and releases the installation lock",
+          arguments: ["bootstrap.json", "unfinished-effects.json"])
+    func fifoMetadataBlocksPromptly(name: String) async throws {
+        let s = try ExecutionScratch(); defer { s.cleanup() }
+        let c = s.coordinator()
+        #expect(await c.mutationAdmission() == .ready)
+        let names = try FileManager.default.contentsOfDirectory(atPath: s.journal.path).sorted()
+        let target = s.journal.appendingPathComponent(name)
+        let backup = s.root.appendingPathComponent("original-" + name)
+        let targetBytes = try Data(contentsOf: target)
+        var otherBytes: [String: Data] = [:]
+        for other in names where other != name {
+            otherBytes[other] = try Data(contentsOf: s.journal.appendingPathComponent(other))
+        }
+        try FileManager.default.moveItem(at: target, to: backup) // Exact UUID-owned fixture only.
+        #expect(mkfifo(target.path, 0o600) == 0)
+        var before = stat()
+        try #require(lstat(target.path, &before) == 0)
+        try #require(before.st_mode & S_IFMT == S_IFIFO)
+        try #require(before.st_mode & 0o777 == 0o600)
+        let lockFD = open(s.journal.appendingPathComponent("mutation.lock").path,
+                          O_RDWR | O_NOFOLLOW | O_CLOEXEC)
+        try #require(lockFD >= 0)
+        defer { close(lockFD) }
+
+        let watchdog = try FIFOAdmissionWatchdog(fifo: target)
+        // No throwing assertion, cancellation race or early return between start and drain.
+        let admission = await c.mutationAdmission()
+        let watchdogFired = watchdog.finishAndDrain()
+
+        #expect(admission == .storageUnavailable)
+        #expect(!watchdogFired, "Admission needed the FIFO rescue writer after five seconds")
+        let lockResult = flock(lockFD, LOCK_EX | LOCK_NB)
+        #expect(lockResult == 0, "Coordinator must release its transient lease on storage failure")
+        if lockResult == 0 { _ = flock(lockFD, LOCK_UN) }
+        // Keep the coordinator alive through the lock assertion: deinit must not prove release.
+        withExtendedLifetime(c) {}
+        var after = stat()
+        try #require(lstat(target.path, &after) == 0)
+        #expect(after.st_mode & S_IFMT == S_IFIFO)
+        #expect(after.st_dev == before.st_dev)
+        #expect(after.st_ino == before.st_ino)
+        #expect(after.st_mode == before.st_mode)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: s.journal.path).sorted() == names)
+        #expect(try Data(contentsOf: backup) == targetBytes)
+        for (other, bytes) in otherBytes {
+            #expect(try Data(contentsOf: s.journal.appendingPathComponent(other)) == bytes)
+        }
+        try s.intact()
+    }
+
     @Test("Journal parent symlink is rejected before bootstrap writes")
     func symlinkedJournalParent() async throws {
         let s = try ExecutionScratch(); defer { s.cleanup() }
