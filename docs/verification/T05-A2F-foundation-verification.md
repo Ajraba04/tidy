@@ -31,6 +31,12 @@ Clean controller rerun after removing all diagnostic prints: `swift test --jobs 
 
 Unsigned production arm64 app build: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO`, exit0 with no output. Existing derived data was reused. No app was launched. Independent source review remains pending.
 
+## Independent review correction
+
+Initial source review of20f2970..ab991f7 found one Important: a successful exclusive create could fail subsequent validation before recording sticky recovery state. A fresh fixer moved the latch immediately after successful open, before throwing validation; failed opens remain non-latching. The isolated inherited-mask regression observed actual0200 files and failed four assertions before correction, then passed both bootstrap/initialized cases afterward. Covering118/4 passed4.673s. See [source review](T05-A2F-source-review.md) for runner isolation, exact artifact preservation and error-classification evidence.
+
+Controller post-correction full `swift test --jobs 2`:323 tests/42 suites passed12.252s, build0.48s, exit0. Fresh unsigned arm64 app build with the command above exited0 without output. Independent corrected-source re-review is pending; these runs do not establish A2P or app cutover.
+
 ## Remaining acceptance
 
 Actual independent-process contention, bootstrap winner death, P1–P5 abrupt child exit and fault-free child reopen require A.2P after accepted T04.B. A.3 still owns atomic app cutover, off-main integration, policy noncommit, UI/import/in-flight lifetime acceptance. No physical power-loss, hostile-owner, blocked-filesystem hard latency, supported Intel/macOS14 or full-device acceptance follows from these tests. No push, tag, release, live migration or app launch was performed.

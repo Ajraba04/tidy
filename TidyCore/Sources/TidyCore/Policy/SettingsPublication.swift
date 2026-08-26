@@ -240,6 +240,7 @@ final class SettingsPublication {
     private func create(_ directory: Int32, name: String) throws -> Int32 {
         let fd = openat(directory, name, O_RDWR | O_CREAT | O_EXCL | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw SettingsFiles.posixError() }
+        recoveryRequired = true
         do {
             _ = try SettingsFiles.validateRegular(fd, ownerOnly: true)
             try SettingsFiles.requireNamed(fd, directory: directory, name: name)
@@ -309,7 +310,7 @@ final class SettingsPublication {
             guard before.lock == nil, before.metadata == nil else { throw SettingsStoreError.readOnlyRecovery }
             do {
                 lockFD = try boundary("bootstrap.lock.create") { try create(directory, name: SettingsFiles.lockName) }
-                bootstrap = true; recoveryRequired = true
+                bootstrap = true
             } catch let error as POSIXError where error.code == .EEXIST {
                 lockFD = try SettingsFiles.openRegular(directory, name: SettingsFiles.lockName, writable: true, ownerOnly: true)
             }
@@ -368,7 +369,6 @@ final class SettingsPublication {
         guard markerBytes.count <= 4096 else { throw SettingsStoreError.oversized }
         let markerFD = try boundary("marker.create") { try create(directory, name: SettingsFiles.pending) }
         defer { close(markerFD) }
-        recoveryRequired = true
         let markerImage = try writeAndSync(markerFD, directory: directory, name: SettingsFiles.pending,
                              bytes: markerBytes, stage: "marker")
         try boundary("prepared.syncDirectory") { try io.syncDirectory(fd: directory) }

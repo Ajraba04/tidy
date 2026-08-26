@@ -133,6 +133,89 @@ extension SettingsPublicationTests {
         #expect(reopened.disposition == .loaded && reopened.envelope == original)
     }
 
+    @Test(arguments: ["bootstrap", "initialized"])
+    func inheritedCreationMaskLatchesImmediatelyAfterExclusiveCreate(variant: String) async throws {
+        let s = try SettingsScratch(); defer { s.remove() }
+        // This is the test's own disposable directory; make its permissions
+        // deterministic without changing the process-wide inherited umask.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: s.root.path)
+        let observedMode = try inheritedExclusiveCreateMode(in: s)
+        print("Settings create-latch regression variant=\(variant) observedMode=\(String(observedMode, radix: 8))")
+        guard observedMode == 0o600 || observedMode == 0o200 else {
+            Issue.record("Expected inherited O_EXCL creation mode 0600 or 0200, observed \(String(observedMode, radix: 8))")
+            return
+        }
+
+        let initialized = variant == "initialized"
+        guard initialized || variant == "bootstrap" else {
+            Issue.record("Unknown settings create-latch variant \(variant)")
+            return
+        }
+        let original = SettingsEnvelope(schemaVersion: 2, revision: 41, config: TidyConfig(schemaVersion: 2))
+        var configEvidence: SettingsRegularEvidence?
+        var backupEvidence: SettingsRegularEvidence?
+        var lockEvidence: SettingsRegularEvidence?
+        var metadataEvidence: SettingsRegularEvidence?
+        if initialized {
+            try s.seed(JSONEncoder().encode(original))
+            let backup = SettingsEnvelope(schemaVersion: 2, revision: 40, config: TidyConfig(schemaVersion: 2))
+            try seedOwnedSettingsFixture(JSONEncoder().encode(backup), at: s.backup)
+            let identity = Data(#"{"schema":1,"storeID":"11111111-1111-1111-1111-111111111111"}"#.utf8)
+            try seedOwnedSettingsFixture(identity, at: s.root.appendingPathComponent("config.lock"))
+            try seedOwnedSettingsFixture(identity, at: s.root.appendingPathComponent("config.store.json"))
+            configEvidence = try SettingsRegularEvidence(s.file)
+            backupEvidence = try SettingsRegularEvidence(s.backup)
+            lockEvidence = try SettingsRegularEvidence(s.root.appendingPathComponent("config.lock"))
+            metadataEvidence = try SettingsRegularEvidence(s.root.appendingPathComponent("config.store.json"))
+        }
+
+        let expectedRevision: UInt64 = initialized ? original.revision : 0
+        let partialName = initialized ? "config.pending.json" : "config.lock"
+        let partial = s.root.appendingPathComponent(partialName)
+        let store = SettingsStore(url: s.file)
+        let loaded = await store.load()
+        if initialized {
+            #expect(loaded.disposition == .loaded && loaded.envelope == original)
+        } else {
+            #expect(loaded.disposition == .newDefaults && loaded.envelope?.revision == 0)
+        }
+
+        if observedMode == 0o600 {
+            let saved = try await store.update(expectedRevision: expectedRevision,
+                                               change: .transcriptAgeDays(60))
+            #expect(saved.revision == expectedRevision + 1)
+            #expect(await SettingsStore(url: s.file).load().envelope == saved)
+            return
+        }
+
+        await expectStoreError(.writeFailed) {
+            _ = try await store.update(expectedRevision: expectedRevision, change: .transcriptAgeDays(60))
+        }
+        let retainedPartial = try SettingsFileStat(partial)
+        #expect(retainedPartial.size == 0 && retainedPartial.mode == 0o200)
+        // This invalid change must be rejected by the already-latched actor before
+        // any reload can observe the retained unsafe partial file.
+        await expectStoreError(.readOnlyRecovery) {
+            _ = try await store.update(expectedRevision: expectedRevision, change: .transcriptAgeDays(6))
+        }
+
+        let fresh = SettingsStore(url: s.file)
+        #expect(await fresh.load().disposition == .recoveryReadOnly)
+        await expectStoreError(.readOnlyRecovery) {
+            _ = try await fresh.update(expectedRevision: expectedRevision, change: .transcriptAgeDays(60))
+        }
+        #expect(await store.load().disposition == .recoveryReadOnly)
+        #expect(try SettingsFileStat(partial) == retainedPartial)
+        if let configEvidence, let backupEvidence, let lockEvidence, let metadataEvidence {
+            #expect(try SettingsRegularEvidence(s.file) == configEvidence)
+            #expect(try SettingsRegularEvidence(s.backup) == backupEvidence)
+            #expect(try SettingsRegularEvidence(s.root.appendingPathComponent("config.lock")) == lockEvidence)
+            #expect(try SettingsRegularEvidence(s.root.appendingPathComponent("config.store.json")) == metadataEvidence)
+        } else {
+            #expect(try FileManager.default.contentsOfDirectory(atPath: s.root.path).sorted() == [partialName])
+        }
+    }
+
     @Test func changedMarkerBytesCannotBeDeletedDuringFinalization() async throws {
         let s = try SettingsScratch(); defer { s.remove() }
         let original = try fixture("v1-original"); try s.seed(original)
@@ -1064,6 +1147,37 @@ private struct SettingsScratch {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
     func remove() { try? FileManager.default.removeItem(at: root) }
+}
+private struct SettingsFileStat: Equatable {
+    let device: dev_t
+    let inode: ino_t
+    let mode: mode_t
+    let size: off_t
+    init(_ url: URL) throws {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard info.st_mode & S_IFMT == S_IFREG else { throw POSIXError(.EINVAL) }
+        device = info.st_dev; inode = info.st_ino; mode = info.st_mode & 0o777; size = info.st_size
+    }
+}
+private struct SettingsRegularEvidence: Equatable {
+    let stat: SettingsFileStat
+    let bytes: Data
+    init(_ url: URL) throws { stat = try SettingsFileStat(url); bytes = try Data(contentsOf: url) }
+}
+private func seedOwnedSettingsFixture(_ bytes: Data, at url: URL) throws {
+    try bytes.write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+}
+private func inheritedExclusiveCreateMode(in scratch: SettingsScratch) throws -> Int {
+    let directory = open(scratch.root.path, O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard directory >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    defer { close(directory) }
+    let name = ".settings-creation-mode-\(UUID().uuidString)"
+    let probe = openat(directory, name, O_RDWR | O_CREAT | O_EXCL | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard probe >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    defer { close(probe); _ = unlinkat(directory, name, 0) }
+    return Int(try SettingsFileStat(scratch.root.appendingPathComponent(name)).mode)
 }
 private func fixture(_ name: String) throws -> Data {
     let url = try #require(Bundle.module.url(forResource: name, withExtension: "json",
