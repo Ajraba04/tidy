@@ -1,4 +1,4 @@
-# T02 foundation verification — awaiting independent source review
+# T02 foundation verification — review fix in progress
 
 Date: 2026-08-26. Worktree: `/private/tmp/tidy-headroom.wUbV9h`, branch `CAJ/developer-headroom`, source base `10f6901`. The approved app-entry documentation checkpoint is `1ad8ca8`; it contains no implementation source. Source is currently uncommitted and has not received its final independent review.
 
@@ -68,7 +68,16 @@ All following runs used final paused source after shared-session extraction, ret
 
 The final test command emitted an Xcode IDEFoundation warning: `setRunnablePIDWithDiagnostics:logSection:andCompletionHandler:` was called without a completion handler and blocked for diagnostics setup. Tests completed successfully, but output is not pristine. This is retained for T23/T24 toolchain/stable-OS review alongside the prior scheme warning; no claim that changing app source fixes it. `xcresulttool` initially hit a sandbox report-cache permission error, then succeeded with approved access.
 
-Independent source/spec review is still required before this scoped foundation is approved. No positive cleanup or complete T02 acceptance follows from these results.
+Independent source/spec review found one Important issue: the journal reader opened bootstrap/ledger entries with blocking O_RDONLY before validating regular-file type. A FIFO without a writer could hang admission while holding the installation lock. The follow-up adds O_NONBLOCK to that anchored open, retaining all opened-FD validation. Independent re-review remains required; no positive cleanup or complete T02 acceptance follows from these results.
+
+### FIFO review regression and final follow-up verification
+
+- Behavioral RED: `swift test --jobs 2 --filter ConfirmedExecutionTests/fifoMetadataBlocksPromptly`; exit 1, one parameterized test / two cases / two issues in 5.049 seconds. Both `bootstrap.json` and `unfinished-effects.json` needed the five-second rescue writer; only the no-watchdog assertion failed. Storage-preservation and released-lock assertions passed after the real admission returned.
+- The dedicated Thread's rescue writer stays open until admission returns. The test then drains and joins the worker before any throwing assertion or scratch cleanup. Its deadline detects the regression; it is not an app performance benchmark or a cancellation-based timeout.
+- Covering GREEN: `swift test --jobs 2 --filter ConfirmedExecutionTests`; exit 0, 28 tests / one suite in 0.309 seconds. Both FIFO cases passed without rescue. The tests verify retained FIFO identity/mode, unchanged other storage bytes and directory membership, and independent lock acquisition while the coordinator remains alive.
+- Controller full-core follow-up: `swift test --jobs 2`; exit 0, **204 tests / 38 suites passed**, 13.600 seconds. Full-suite FIFO cases passed without rescue. Test durations are not low-spec acceptance measurements.
+- Controller unsigned production arm64 follow-up: the production build command above, same derived-data cache and two jobs; exit 0, no output. No app launch. The 15/15 model evidence above predates this one-line core change; models were not rerun for it.
+- `git diff --check` passed. No other production behavior, accepted adapter, settings authority, signing or remote state changed.
 
 ## Required follow-up
 

@@ -160,7 +160,7 @@ final class MutationAdmissionStore {
     }
 
     private func read<T: Decodable>(_ type: T.Type, name: String) throws -> T {
-        let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let fd = openat(directoryFD, name, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw ConfirmationError.storageUnavailable }
         defer { close(fd) }
         try Self.validate(fd, directory: false)
