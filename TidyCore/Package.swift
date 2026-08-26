@@ -19,6 +19,7 @@ let package = Package(
         .testTarget(
             name: "TidyCoreTests",
             dependencies: ["TidyCore"],
+            exclude: ["Fixtures/T04ProcessFixture.c"],
             resources: [.copy("Fixtures/Config")]
         )
     ]

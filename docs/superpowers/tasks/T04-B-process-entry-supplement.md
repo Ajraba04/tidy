@@ -366,6 +366,12 @@ System-probe fast tests permit identity present or absent; scheduler speed canno
 
 ## Inspected boundaries and unexecuted gates
 
+### Implementation-time fixture sequencing clarification
+
+The controller's actual source audit precedes child execution. During the first run, `mutatingTimeoutLeavesActualChildRunning` returned uncertainty at its unchanged0.2s deadline before the cold fixture reached its alive marker. A diagnostic-only repeat observed launch0.003528s, collection0.215808s with no marker and zero signals, then actual normal reaping after done1.923769s. Keep launch→collect→uncertain assertion first, then add the existing bounded `waitFor("alive")` before the original alive/not-done/identity assertions. Keep every original deadline/assertion and require zero signal attempts before and after the actual normal-exit proof. This is post-timeout readiness observation, not marker-based teardown or a raised command deadline. Original done/exact reap/descendant teardown requirements stand.
+
+The Foundation coexistence method now runs exactly two parameterized cases, Foundation-first and POSIX-first, with one shared assertion body and separate retained roots; no repeated stress loop. Current-host success is not all-runtime compatibility. For complete package coverage run the entire B suite in isolation, then all non-B tests; unrelated discovery launches must not affect the prescribed global-gate counts. Record both exact counts/commands and never describe this partition as a single default-parallel run.
+
 Current ProcessRunner has detached blocking readers, Process.isRunning polling, PID-only SIGKILL and a four-slot gate; replace them rather than wrap them. Async ContainerSpaceInfo, ProcessSurvey, SnapshotLister and both SimctlClient methods check succeeded before parsing, so truthful outputComplete closes their partial-success path. Synchronous discovery remains T08.
 
 MemoryReclaimer, SimulatorPruner, SnapshotDeleter and GitHousekeeper remain fixed-denied before calling injected transports. SystemCleanupCommandRunner itself is a public executable transport, not a fixed-denial implementation; preserve its callers' quarantine and do not misdescribe it as intrinsically incapable of executing commands. B adds no mutation selector/capability.
