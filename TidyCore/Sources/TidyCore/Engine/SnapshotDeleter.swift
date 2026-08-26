@@ -19,31 +19,7 @@ public enum SnapshotDeleter: Sendable {
     /// shell invocation, so the user is prompted once, not once per
     /// snapshot. Snapshots whose date component fails validation are
     /// dropped from the batch rather than aborting the whole operation.
-    public static func deleteSnapshots(_ snapshots: [LocalSnapshot]) async -> Bool {
-        let validComponents = snapshots.map(\.dateComponent).filter(isValidDateComponent)
-        guard !validComponents.isEmpty else { return false }
-
-        guard let osascriptPath = ToolLocator.locate("osascript") else { return false }
-        guard let tmutilPath = ToolLocator.locate("tmutil") else { return false }
-
-        let shellCommand = validComponents
-            .map { "\(shellQuoted(tmutilPath)) deletelocalsnapshots \(shellQuoted($0))" }
-            .joined(separator: " && ")
-        let appleScript = "do shell script \(appleScriptQuoted(shellCommand)) with administrator privileges"
-
-        let output = try? await ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: osascriptPath),
-            arguments: ["-e", appleScript],
-            timeout: 120
-        )
-        return output?.succeeded ?? false
-    }
-
-    private static func shellQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    private static func appleScriptQuoted(_ value: String) -> String {
-        "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    public static func deleteSnapshots(_ snapshots: [LocalSnapshot], commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) async -> Bool {
+        CapabilityRegistry.denialReason(for: .custom(.apfsSnapshots), itemID: "deep.system.apfs-snapshots") == nil
     }
 }
