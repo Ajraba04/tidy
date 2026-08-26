@@ -19,3 +19,11 @@ The alternative inclusive interpretation would need explicit acceptance that the
 3. Complete first-intent and diagnostic-publication fault cases; zero/over-remaining write progress and EINTR; checksum corruption and correctly checksummed sequence-gap/prefix-payload/foreign-run frames; header-only and invalid-length cases; cumulative segment caps. Assert actual preservation/latching and continued valid bookkeeping after deterministic pre-I/O rejection.
 
 Review was read-only: no tests, builds, source edits or commits. Implementer remains paused pending the accounting decision and corrected entry review. T04 process/reconciliation integration and physical acceptance remain open.
+
+## Independent corrections reviewed while the budget decision remains open
+
+The expanded proposal now specifies one bounded scanner for every mandatory-store and diagnostic scan, including initialization, acquire and publication. Production limits are 16,384 total directory entries and 4,096 diagnostic entries; internal overrides can only lower them. The shared publication helper requires the owning instance's limits and performs the final prospective staging-slot check itself. Retention parses one segment at a time and retains only bounded summaries.
+
+Ten additional proposed test methods cover thirty executions: first-intent/diagnostic publication faults, zero/over-remaining writes and EINTR, checksum and correctly checksummed structural corruption, cumulative segment limits, exact/overflow enumeration and preservation. These tests have not run.
+
+Independent re-review closed findings 2 and 3 at proposal level after correcting propagation of scan limits into the shared helper. Finding 1—the history-budget interpretation—remains open. This is not full source-entry approval. Work on the separately approved T05.A1 read-only settings migration proceeds without selecting the history policy.
