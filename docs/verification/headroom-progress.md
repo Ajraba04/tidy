@@ -13,6 +13,14 @@ Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-dev
 - Baseline Swift tests: `swift test --jobs 2`, exit 0; 174 tests in 35 suites passed in 26.126 seconds after a 64.46-second build. Initial sandbox failure occurred before test execution; approved unsandboxed retry supplied this evidence.
 - Baseline app build: unsigned Debug arm64 `xcodebuild`, exit 0, derived data `/private/tmp/tidy-headroom-build`, two jobs. Xcode 27 emitted its scheme supported-platform warning; the initial sandbox attempt failed during local package resolution and is not a code failure.
 
+## Current execution instruction — 2026-08-26
+
+The history-budget product decision is resolved: the user approved optional completed history having its own configurable cap, with separately bounded mandatory recovery storage. T04.A accounting and acceptance tests are being reconciled and independently reviewed before source entry. The historical pending-decision status in the table below is superseded by this instruction.
+
+The full program remains incomplete. The user authorized GitHub push, README update and a DMG release **after completion**, and explicitly rejected treating the partial foundation as the finished product. Release inspection was read-only; no push, tag, release or package publication occurred. Preserve the original checkout and continue on `CAJ/developer-headroom`.
+
+Fresh pre-T04.A baseline: `swift test --jobs 2`, 253 tests in 40 suites passed in 21.964 seconds, exit 0. The first sandbox attempt could not compile the package manifest; the approved retry supplied this test evidence. No new app build or device acceptance is claimed.
+
 ## Work-package status
 
 | Package | Status | Evidence / remaining gate |
