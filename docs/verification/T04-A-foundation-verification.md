@@ -1,6 +1,6 @@
 # T04.A journal foundation verification
 
-Source BASE: `142f90a`. Scope: durable journal and mandatory admission persistence only. Independent source review is pending; this is not full T04 or release acceptance.
+Source BASE: `142f90a`; approved through `490ff5a`. Scope: durable journal and mandatory admission persistence only. Independent spec and quality review approved with no remaining findings; this is not full T04 or release acceptance.
 
 ## Implemented scope
 
@@ -19,8 +19,6 @@ Controller full suite: `swift test --jobs 2` — exit 0, 297 tests in 41 suites,
 
 Controller unsigned arm64 production app build: `xcodebuild -quiet -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/tidy-headroom-build -jobs 2 build CODE_SIGNING_ALLOWED=NO` — exit 0 with no output. No app was launched and no release artifact was published.
 
-## Remaining boundaries
-
 ## Shared FIFO test-support correction — 2026-08-26
 
 The user directly resumed after the narrow shared-helper approval request. The tracked shared-FIFO amendment supersedes the plan's separate-copy instruction. One package-test-internal FIFOReadWatchdog now serves ConfirmedExecutionTests, RunRecoveryTests and SettingsMigrationTests; all assertions and caller catch/drain/cleanup ordering are unchanged. No production source changed.
@@ -28,5 +26,7 @@ The user directly resumed after the narrow shared-helper approval request. The t
 Fresh pre-refactor full baseline:297 tests/41 suites, exit0,10.986s. Controller inspected the actual extracted helper and all three caller diffs before approving FIFO execution. Focused post-refactor:92 tests/3 suites, exit0,3.562s (build9.15s). Controller post-refactor full suite:297 tests/41 suites, exit0,12.808s (build0.60s). No compiler/test warnings in the successful runs; sandbox-only manifest failures preceded approved retries. `git diff --check` passed. Prior unsigned production build evidence applies to unchanged production source; no new app build or launch was needed for this test-only extraction. Independent re-review remains pending at this checkpoint.
 
 ## Remaining full-program boundaries
+
+Independent reviewer `t04a_source_review` re-reviewed the complete correction package after the recorded tests and approved T04.A spec compliance and quality with no Critical/Important/Minor findings. The earlier production review stands because production source is unchanged by the correction. T04.B and T05A.2F dependency entry may proceed; full T04 acceptance remains open.
 
 Real subprocess ownership/recovery, supported positive effects and terminal proofs, aggregate manifest/proof reservations, joint optional report accounting, persisted-settings/app integration, Intel and macOS 14 device verification, physical interruption testing and the rest of T01–T24 remain open. Fault injection does not establish power-loss durability or a hard syscall latency guarantee. The user requested README/GitHub/DMG delivery after the full program is finished, not a foundation-only preview.

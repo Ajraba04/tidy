@@ -1,5 +1,11 @@
 # T04.A independent source review
 
+## Final re-review — approved through 490ff5a
+
+After the user's direct resume and the narrow shared-helper amendment, independent reviewer `t04a_source_review` returned spec compliant and quality Approved with no remaining findings. Three local implementations were replaced by one test-internal FIFOReadWatchdog, preserving all assertions and error/drain/cleanup ordering. Focused92/3 and full297/41 tests passed; production source remained unchanged. The original Important finding below is resolved, retained here as review history. Full T04/process/positive-effect/device acceptance is not claimed.
+
+## Original review
+
 Range142f90a..b6c585d. Reviewer: independent `t04a_source_review`, 2026-08-26. Functional spec compliant; quality **Needs fixes**. No Critical or Minor findings and no production functional safety defect identified.
 
 ## Important — plan-mandated duplicated test watchdog
