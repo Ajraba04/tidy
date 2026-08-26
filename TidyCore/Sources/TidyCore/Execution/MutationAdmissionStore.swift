@@ -10,18 +10,22 @@ final class MutationAdmissionStore {
     private let lockFD: Int32
     private var held = false
     private var failed = false
+    private let io: any JournalPOSIXIO
 
-    init(directory: URL) throws {
+    let scanLimits: JournalScanLimits
+    init(directory: URL, io: any JournalPOSIXIO = DarwinJournalIO(), scanLimits: JournalScanLimits = .production) throws {
+        self.scanLimits = scanLimits
+        self.io = io
         directoryPath = directory.path
         let dir = try Self.openDirectory(directory.path, create: true)
         do { try Self.validate(dir, directory: true) } catch { close(dir); throw error }
         directoryFD = dir
-        let names: [String]
-        do { names = try Self.names(in: dir) }
+        let scan: JournalDirectoryScan
+        do { scan = try JournalDirectoryScan.read(directoryFD: dir, limits: scanLimits) }
         catch { close(dir); throw ConfirmationError.storageUnavailable }
         var created = false
         var fd: Int32 = -1
-        if names.isEmpty {
+        if scan.entryCount == 0 {
             fd = openat(dir, "mutation.lock", O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
             created = fd >= 0
         }
@@ -38,7 +42,8 @@ final class MutationAdmissionStore {
             }
             held = true
             do {
-                guard try Self.names(in: dir) == ["mutation.lock"] else {
+                let bootstrapScan = try JournalDirectoryScan.read(directoryFD: dir, limits: scanLimits)
+                guard bootstrapScan.entryCount == 1, bootstrapScan.containsStableLock else {
                     throw ConfirmationError.storageUnavailable
                 }
                 let id = UUID()
@@ -75,20 +80,74 @@ final class MutationAdmissionStore {
         } catch { return .storageUnavailable }
     }
 
-    func persistIntentWhileLocked(_ intent: PendingEffectIntent) throws {
-        guard held, !failed else { throw ConfirmationError.storageUnavailable }
+    func requireJournalLock() throws {
+        guard held, !failed else { throw JournalError.unavailable }
         do {
             try validateStableLock()
-            var ledger = try readLedger()
-            ledger.unfinished.append(intent)
-            try publish(ledger, name: "unfinished-effects.json")
+            _ = try readLedger()
         } catch {
+            failed = true
+            throw JournalError.unavailable
+        }
+    }
+
+    func latchJournalStorageFailure() { failed = true }
+    func journalDirectoryIdentityWhileLocked() throws -> JournalDirectoryIdentity {
+        try requireJournalLock()
+        return try JournalFiles.identity(directoryFD)
+    }
+    func unfinishedIntentsWhileLocked() throws -> [PendingEffectIntent] {
+        try requireJournalLock()
+        return try readLedger().unfinished
+    }
+    func persistIntentWhileLocked(_ intent: PendingEffectIntent, update: IntentPersistence = .append) throws {
+        try requireJournalLock()
+        var ledger = try readLedger()
+        switch update {
+        case .append:
+            guard !ledger.unfinished.contains(where: { $0.operationID == intent.operationID }),
+                  Self.validChildTuple(intent, allowAbsent: true) else { throw JournalError.invalidTransition }
+            ledger.unfinished.append(intent)
+        case .capturedChild:
+            guard ledger.unfinished.filter({ $0.operationID == intent.operationID }).count == 1,
+                  let index = ledger.unfinished.firstIndex(where: {
+                $0.operationID == intent.operationID && $0.runID == intent.runID
+            }) else { throw JournalError.invalidTransition }
+            let prior = ledger.unfinished[index]
+            guard Self.validChildTuple(intent, allowAbsent: false),
+                  prior.adapterID == intent.adapterID, prior.bootID == intent.bootID,
+                  prior.executablePath == intent.executablePath,
+                  prior.executableDevice == intent.executableDevice, prior.executableInode == intent.executableInode,
+                  prior.phase == intent.phase else { throw JournalError.invalidTransition }
+            if prior == intent { return }
+            guard prior.childPID == nil, prior.childStartSeconds == nil,
+                  prior.childStartMicroseconds == nil else { throw JournalError.invalidTransition }
+            ledger.unfinished[index] = intent
+        }
+        let bytes = try JSONEncoder().encode(ledger)
+        guard bytes.count <= JournalFiles.maximumBytes else { throw JournalError.capacity }
+        do {
+            try JournalFilePublication.replace(directoryFD: directoryFD, name: "unfinished-effects.json",
+                bytes: bytes, io: io, scanLimits: scanLimits)
+        } catch JournalError.capacity { throw JournalError.capacity }
+        catch {
             failed = true
             throw ConfirmationError.storageUnavailable
         }
     }
 
+    private static func validChildTuple(_ intent: PendingEffectIntent, allowAbsent: Bool) -> Bool {
+        if intent.childPID == nil && intent.childStartSeconds == nil && intent.childStartMicroseconds == nil {
+            return allowAbsent
+        }
+        guard let pid = intent.childPID, let seconds = intent.childStartSeconds,
+              let micros = intent.childStartMicroseconds else { return false }
+        return pid > 0 && seconds >= 0 && (0..<1_000_000).contains(micros)
+    }
+
     private func validateStableLock() throws {
+        let scan = try JournalDirectoryScan.read(directoryFD: directoryFD, limits: scanLimits)
+        guard !scan.containsPendingStage else { throw ConfirmationError.storageUnavailable }
         try Self.validate(directoryFD, directory: true)
         try Self.validate(lockFD, directory: false)
         let namedFD = try Self.openDirectory(directoryPath, create: false)
@@ -138,45 +197,8 @@ final class MutationAdmissionStore {
         return fd
     }
 
-    private static func names(in fd: Int32) throws -> [String] {
-        // A distinct open-file description avoids sharing directory enumeration offsets.
-        let duplicate = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard duplicate >= 0 else { throw ConfirmationError.storageUnavailable }
-        guard let directory = fdopendir(duplicate) else {
-            close(duplicate); throw ConfirmationError.storageUnavailable
-        }
-        defer { closedir(directory) }
-        var result: [String] = []
-        errno = 0
-        while let entry = readdir(directory) {
-            let name = withUnsafePointer(to: &entry.pointee.d_name) {
-                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
-            }
-            if name != "." && name != ".." { result.append(name) }
-            errno = 0
-        }
-        guard errno == 0 else { throw ConfirmationError.storageUnavailable }
-        return result.sorted()
-    }
-
     private func read<T: Decodable>(_ type: T.Type, name: String) throws -> T {
-        let fd = openat(directoryFD, name, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard fd >= 0 else { throw ConfirmationError.storageUnavailable }
-        defer { close(fd) }
-        try Self.validate(fd, directory: false)
-        var bytes = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let count = Darwin.read(fd, &buffer, buffer.count)
-            if count < 0 {
-                if errno == EINTR { continue }
-                throw ConfirmationError.storageUnavailable
-            }
-            if count == 0 { break }
-            guard bytes.count + count <= 8 * 1024 * 1024 else { throw ConfirmationError.storageUnavailable }
-            bytes.append(contentsOf: buffer.prefix(count))
-        }
-        return try JSONDecoder().decode(type, from: bytes)
+        try JSONDecoder().decode(type, from: JournalFiles.read(directoryFD, name: name))
     }
 
     private func readLedger() throws -> Envelope {
@@ -188,23 +210,9 @@ final class MutationAdmissionStore {
     }
 
     private func publish<T: Encodable>(_ value: T, name: String) throws {
-        let data = try JSONEncoder().encode(value)
-        let temporary = ".pending-" + UUID().uuidString
-        let fd = openat(directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw ConfirmationError.storageUnavailable }
-        defer { close(fd); _ = unlinkat(directoryFD, temporary, 0) }
-        try data.withUnsafeBytes { bytes in
-            var offset = 0
-            while offset < bytes.count {
-                let count = Darwin.write(fd, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
-                if count < 0 && errno == EINTR { continue }
-                guard count > 0 else { throw ConfirmationError.storageUnavailable }
-                offset += count
-            }
-        }
-        guard fsync(fd) == 0, fcntl(fd, F_FULLFSYNC) == 0,
-              renameat(directoryFD, temporary, directoryFD, name) == 0,
-              fsync(directoryFD) == 0 else { throw ConfirmationError.storageUnavailable }
+        let bytes = try JSONEncoder().encode(value)
+        try JournalFilePublication.replace(directoryFD: directoryFD, name: name, bytes: bytes,
+                                           io: io, scanLimits: scanLimits)
     }
 }
 struct PendingEffectIntent: Codable, Equatable, Sendable {
@@ -223,3 +231,5 @@ struct PendingEffectIntent: Codable, Equatable, Sendable {
 enum SubmissionPhase: String, Codable, Sendable {
     case prepared, submitted, uncertainAndPossiblyRunning
 }
+
+enum IntentPersistence: Sendable { case append, capturedChild }
