@@ -17,10 +17,10 @@ Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-dev
 
 | Package | Status | Evidence / remaining gate |
 |---|---|---|
-| T01 Action review/quarantine | A scoped unit approved at `96fd35c`; B next. Full 170 tests/36 suites + arm64 app build passed at `2a4089d`, then 14 covering tests passed after review fixes. | Independent spec/quality review approved quarantine only. Positive accepted-action/T02/T04/UI and physical gates remain open; no full T01 acceptance. |
-| T02 Sealed selection/coordinator | Task-card entry independently approved; implementation pending T01.A/B | Bootstrap/missing-ledger, throwing settings persistence, opaque tokens and synchronous policy invalidation specified. Proposed tests are not execution evidence; actual effect concurrency/recovery remain open. |
+| T01 Action review/quarantine | A scoped unit approved at `96fd35c`; B scoped default-denied checkpoint independently spec/quality approved at `48ee814`. Core175/37 passed before final bounded fix; covering6/6 and both final arm64 builds passed afterward. | Controller observed actual620×620-point native layout on all four shared surfaces, expanded Custom included; reviewer could not reopen temporary screenshot artifacts. AX endpoint navigation anomaly retained for T05/T23 reproduction; ordinary scrolling recovered. Old-filter regression proof was postimplementation. Positive accepted-action/T02/T04 and physical gates remain open; no full T01 acceptance. |
+| T02 Sealed selection/coordinator | Revised task-card entry independently approved; implementation pending T01.A/B | Pure config-only policy projection removes pre-invalidation tool probes from the proposed mechanism. Bootstrap unknown-tool snapshot, complete discovery/refresh deferred to T08; no complete inventory/latency claim. Bootstrap/missing-ledger, throwing settings persistence, opaque tokens and synchronous policy invalidation specified. Tests proposed, not executed. |
 | T03 Guarded filesystem effects | A mechanism task-card entry approved; implementation pending prerequisites | B production integration unapproved: real ownership/exclusion, persisted manifests, durable accounting and bounded policy/effect boundary required. Proposed scratch tests are not execution evidence. |
-| T04 Journal/process recovery | Pending | Surviving processes, crash windows and bounded I/O |
+| T04 Journal/process recovery | A/B foundation task-card entry independently approved after revisions; no implementation | A requires T02 source/API; B also requires reviewed launcher/FD/identity design. T02 JSON envelope preserved; concrete I/O faults and tracked post-spawn cancellation specified. C/D real adapter dispatch/crash/recovery and UI acceptance remain gated. |
 | T05 UI fixture host/migration | Pending | Real UI flows and historical config preservation |
 | T06 Policy/defaults | Pending | Every registry row and all precedence classes |
 | T07 Settings/profiles/transfer | Pending | Persistence, settings reachability, authority-free import |
@@ -52,3 +52,8 @@ Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-dev
 | Current host OS | macOS 27.0 developer build | Toolchain evidence only, not stable-OS release acceptance |
 
 No user data cleanup is permitted as test setup. All effects must use disposable fixtures. Publishing, signing changes and remote Git writes require separate authority. The goal remains active until the full contract is implemented and verified; an incomplete device matrix is not full completion.
+
+## Reliability follow-up
+
+- T05/T23: reproduce the native AX endpoint/blank-list observation recorded in T01-B-manual-verification.md on supported stable macOS with ordinary scrolling, keyboard and AX navigation. Subsequent ordinary scrolling recovered and content was inspectable; cause remains undiagnosed. Do not claim comprehensive scrolling/accessibility robustness from the scoped layout pass.
+- T05/T08: synchronous ConfigStore save/load, initial journal I/O and legacy tool-detection paths remain latency risks; the T02 pure projection correction does not certify those paths.
