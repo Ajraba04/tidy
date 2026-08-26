@@ -33,7 +33,7 @@ All package commands use the existing cache and `--jobs 2`. Initial sandbox mani
 
 ## Remaining gates
 
-- Independent source/spec review of `a45d22c..aa956b0` found one Important issue: the new memory aggregate delegated an empty report to the shared sum helper, yielding measured zero without observations. The narrow fix and evidence below await re-review; no A.1 approval claimed yet.
+- Independent source/spec review of `a45d22c..aa956b0` found one Important issue: the new memory aggregate delegated an empty report to the shared sum helper, yielding measured zero without observations. Independent re-review approved the fix through `599ed45`: spec compliant and quality approved for A.1, with no remaining Critical, Important or Minor findings. All broader gates below remain open.
 - Safe foreign-owner fixture was unavailable; owner checks have source evidence only. No privileged chown or foreign user data was used.
 - A.2 must supply named-FD/single-link/locked exact-byte conflict checks, coherent publication/bootstrap, backups, explicit rollback, pending-stage recovery, revision overflow and real fault/process evidence. A.1 is a read-only projection, not write or execution permission.
 - A.2/A.3 must cover a truly fresh install with an absent Tidy parent directory under Application Support. Current read-only load requires an existing parent; all current fixtures create one. No fallback reset is authorized.
@@ -49,4 +49,4 @@ Detailed chronological command evidence: `.superpowers/sdd/T05.A1-report.md`. Th
 - Covering command: `swift test --filter '(SettingsMigrationTests|missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero)(\.|\(|$)' --jobs 2`; exit0, **21 tests/two suites**, 0.411 seconds. All settings/FIFO/memory cases included; no warnings.
 - Root inspected the exact two-file fix and report, then ran the full core suite again: `swift test --jobs 2`, exit0, **253 tests/40 suites**, 12.000 seconds, no warnings observed.
 - Root repeated the exact unsigned arm64 production build above: exit0, no output. No launch or app-model/native UI run.
-- `git diff --check` passed. These post-fix checks supersede the earlier 252-test build evidence for current source validation; independent re-review is still pending.
+- `git diff --check` passed. These post-fix checks supersede the earlier 252-test build evidence for current source validation. Independent re-review approved `a45d22c..599ed45` for the bounded A.1 unit only; no full T05 or deployment approval.
