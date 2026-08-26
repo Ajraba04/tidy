@@ -50,10 +50,13 @@ Future A.3 ownership is exactly this allowlist; source changes require a separat
 | `TidyAppModelTests/RunReportPresentationTests.swift` (new) | Complete presentation RED below |
 | `TidyAppModelTests/ConfirmationLifecycleTests.swift` | Migrate existing scratch service helper/calls and saved-value assertion; retain every accepted lifecycle/denial assertion |
 | `TidyCore/Tests/TidyCoreTests/ConfigStoreTests.swift` | Replace the four obsolete loader/writer tests with recoverable SettingsStore tests, retain both TidyConfig tests |
+| `TidyCore/Tests/TidyCoreTests/SettingsProcessAcceptanceTests.swift` | Mechanical integration only: remove `Engine/ConfigStore.swift` from the explicit fixture-compiler source allowlist when that production file is deleted in this atomic cutover; preserve every process test, assertion, source-manifest check and lifetime bound |
 | `TidyCore/Tests/TidyCoreTests/ConfirmedExecutionTests.swift` | Migrate `persistPolicy`, `settingsSaveFailureBlocksBridge`, `settingsSubmissionHasNoDiscoveryPhase`, `overlappingPolicyUpdates` together; retain token/error/revision/denial assertions |
 | `project.yml`, generated `Tidy.xcodeproj/project.pbxproj`, generated `Tidy.xcodeproj/xcshareddata/xcschemes/TidyAppModelTests.xcscheme` | Add only the three named new test/presentation source entries to the existing unhosted target; preserve all unrelated generated content |
 
 SettingsStore, SettingsPublication, SettingsEnvelope, JournalPOSIXIO, coordinator/token/barrier implementation, manual host, SafetyHost, process files, package dependencies/resources and T06 policy are **not A.3 write ownership**. If accepted source needs a change there, stop for a narrow Controller amendment. Existing internal SettingsStore initializer is sufficient; do not make JournalPOSIXIO or its initializer public, add a shipping test flag, or copy core source into an alternate test module.
+
+Controller integration amendment: the accepted A.2P fixture compiles an explicit production-source allowlist, which currently includes the legacy ConfigStore file. Deleting that file necessarily removes that one allowlist entry in the same A.3 change. This does not authorize automatic source discovery, alternate production logic, fixture API changes or weakened assertions. Re-run A.2P after the cutover against the remaining actual production sources.
 
 ### Exact interfaces consumed and produced
 
