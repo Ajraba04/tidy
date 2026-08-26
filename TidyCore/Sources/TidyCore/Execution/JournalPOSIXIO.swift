@@ -54,6 +54,19 @@ enum JournalFilePublication {
         // Failed stages deliberately survive. A successful rename consumes its name.
         defer { close(fd) }
         try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: temporary)
+        try JournalCheckedWrite.write(fd: fd, bytes: bytes, io: io)
+        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: temporary)
+        try io.syncFile(fd: fd)
+        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: temporary)
+        try io.replace(directoryFD: directoryFD, temporary: temporary, destination: name)
+        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: name)
+        try io.syncDirectory(fd: directoryFD)
+    }
+}
+
+/// Shared checked progress, not a format, transaction, or persistence authority.
+enum JournalCheckedWrite {
+    static func write(fd: Int32, bytes: Data, io: any JournalPOSIXIO) throws {
         var offset = 0
         while offset < bytes.count {
             let count: Int
@@ -62,11 +75,5 @@ enum JournalFilePublication {
             guard count > 0, count <= bytes.count - offset else { throw JournalError.unavailable }
             offset += count
         }
-        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: temporary)
-        try io.syncFile(fd: fd)
-        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: temporary)
-        try io.replace(directoryFD: directoryFD, temporary: temporary, destination: name)
-        try JournalFiles.validateNamed(fd, directoryFD: directoryFD, name: name)
-        try io.syncDirectory(fd: directoryFD)
     }
 }
