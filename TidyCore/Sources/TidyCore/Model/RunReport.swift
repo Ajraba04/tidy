@@ -162,7 +162,8 @@ public struct ItemResult: Identifiable, Sendable, Codable {
 /// `runs.jsonl` as one JSON object per line.
 public struct RunReport: Sendable, Codable {
     public var measuredTotalReclaimedMemoryBytes: Int64? {
-        EffectAccounting.checkedSum(results.map {
+        guard !results.isEmpty else { return nil }
+        return EffectAccounting.checkedSum(results.map {
             ByteObservation(bytes: $0.measuredReclaimedMemoryBytes, explanation: nil)
         }).bytes
     }

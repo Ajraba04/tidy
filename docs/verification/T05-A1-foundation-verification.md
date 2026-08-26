@@ -33,7 +33,7 @@ All package commands use the existing cache and `--jobs 2`. Initial sandbox mani
 
 ## Remaining gates
 
-- Independent source/spec review is pending; no A.1 approval claimed yet.
+- Independent source/spec review of `a45d22c..aa956b0` found one Important issue: the new memory aggregate delegated an empty report to the shared sum helper, yielding measured zero without observations. The narrow fix and evidence below await re-review; no A.1 approval claimed yet.
 - Safe foreign-owner fixture was unavailable; owner checks have source evidence only. No privileged chown or foreign user data was used.
 - A.2 must supply named-FD/single-link/locked exact-byte conflict checks, coherent publication/bootstrap, backups, explicit rollback, pending-stage recovery, revision overflow and real fault/process evidence. A.1 is a read-only projection, not write or execution permission.
 - A.2/A.3 must cover a truly fresh install with an absent Tidy parent directory under Application Support. Current read-only load requires an existing parent; all current fixtures create one. No fallback reset is authorized.
@@ -41,3 +41,12 @@ All package commands use the existing cache and `--jobs 2`. Initial sandbox mani
 - T05B accepted-action UI/shared-window/in-flight lifecycle, stable-OS accessibility reproduction, Intel/macOS14 and physical performance acceptance remain open.
 
 Detailed chronological command evidence: `.superpowers/sdd/T05.A1-report.md`. The separate T04 history-budget decision remains pending and was not selected by this work.
+
+## Empty-report follow-up
+
+- A fresh fix agent added historical-empty and coordinator-style invalidToken/noWork reports. Genuine focused RED observed five nil expectations returning zero; the explicit-zero positive control passed. Historical round-trip coverage was added afterward and first executed in GREEN; no sixth RED failure is claimed.
+- Only the new memory aggregate gained an empty-results guard returning nil. The shared accounting helper and all unrelated byte semantics remain unchanged.
+- Covering command: `swift test --filter '(SettingsMigrationTests|missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero)(\.|\(|$)' --jobs 2`; exit0, **21 tests/two suites**, 0.411 seconds. All settings/FIFO/memory cases included; no warnings.
+- Root inspected the exact two-file fix and report, then ran the full core suite again: `swift test --jobs 2`, exit0, **253 tests/40 suites**, 12.000 seconds, no warnings observed.
+- Root repeated the exact unsigned arm64 production build above: exit0, no output. No launch or app-model/native UI run.
+- `git diff --check` passed. These post-fix checks supersede the earlier 252-test build evidence for current source validation; independent re-review is still pending.

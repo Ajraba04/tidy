@@ -124,6 +124,24 @@ struct SettingsMigrationTests {
         #expect(roundTrip.measuredTotalReclaimedMemoryBytes == nil)
         #expect(roundTrip.results[0].measuredReclaimedMemoryBytes == nil)
     }
+
+    @Test func emptyHistoricalAndCoordinatorReportsHaveUnavailableMemoryNotMeasuredZero() throws {
+        let historical = try JSONDecoder().decode(RunReport.self, from: Data(#"{"tier":"safe","results":[],"startedAt":0,"finishedAt":1,"freeSpaceBeforeBytes":0,"freeSpaceAfterBytes":0}"#.utf8))
+        #expect(historical.measuredTotalReclaimedMemoryBytes == nil)
+        let historicalRoundTrip = try JSONDecoder().decode(RunReport.self,
+            from: JSONEncoder().encode(historical))
+        #expect(historicalRoundTrip.measuredTotalReclaimedMemoryBytes == nil)
+        for disposition in [RunDisposition.invalidToken, .noWork] {
+            let report = RunReport(tier: .safe, results: [],
+                startedAt: Date(timeIntervalSince1970: 100), finishedAt: Date(timeIntervalSince1970: 101),
+                freeSpaceBeforeBytes: 0, freeSpaceAfterBytes: 0,
+                disposition: disposition, coordinatorMeasurementsAvailable: false)
+            #expect(report.measuredTotalReclaimedMemoryBytes == nil)
+            let roundTrip = try JSONDecoder().decode(RunReport.self, from: JSONEncoder().encode(report))
+            #expect(roundTrip.measuredTotalReclaimedMemoryBytes == nil)
+            #expect(roundTrip.disposition == disposition)
+        }
+    }
 }
 
 extension SettingsMigrationTests {
