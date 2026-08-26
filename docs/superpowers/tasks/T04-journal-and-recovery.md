@@ -23,7 +23,7 @@ All design S01–S16 and every policy/default row in `docs/superpowers/specs/202
 
 ## Readiness and delivery boundaries
 
-Read `.superpowers/sdd/T04-brief.md` and the final independently reviewed T02/T03 cards before execution. T02 coordinator, `MutationAdmissionStore`, `PendingEffectIntent`, synchronous `PolicyInvalidationBarrier` and T03 `EffectStatus`/`TargetEffectOutcome` are proposed dependencies. Do not implement their names twice or infer their source exists. T01 legacy quarantine remains mandatory.
+Read `.superpowers/sdd/T04-brief.md` and the final independently reviewed T02/T03 cards before execution. T02 foundation source through `10616b3` is independently approved, including the FIFO admission reader correction: `MutationAdmissionStore`, `PendingEffectIntent`, the synchronous `PolicyInvalidationBarrier`, schema-1 envelope and stable installation lock are real dependencies to extend rather than recreate. T03.A's internal mechanism foundation through `ec9dbc5` is independently approved; its `EffectStatus`/`TargetEffectOutcome` are real dependencies, but production integration remains gated. T01 legacy quarantine remains mandatory.
 
 | Unit | Entry boundary | What passing means |
 |---|---|---|
@@ -44,6 +44,8 @@ The **dispatch principle is accepted**: submission of one exact already-prepared
 ## Exact owned files
 
 A creates `TidyCore/Sources/TidyCore/Execution/RunJournal.swift`, `JournalStorage.swift`, `JournalPOSIXIO.swift`, and `TidyCore/Tests/TidyCoreTests/RunRecoveryTests.swift`. A modifies T02 `Execution/MutationAdmissionStore.swift` under a single assigned owner. No second storeID, lock, bootstrap or authority map.
+
+**T04.A shared-I/O ownership is singular:** the assigned T04.A owner moves/extends the shared low-level persistence path exactly once so both T02 mandatory-envelope publication and T04 diagnostic journal storage use `JournalPOSIXIO`; T04 owns that coordinated modification. T05 A.2F consumes this shared journal I/O only after T04 lands. T05 may own explicitly approved settings-specific reader/store/bootstrap work, but must not duplicate `JournalPOSIXIO` or introduce a second mutation authority.
 
 B modifies `TidyCore/Sources/TidyCore/Exec/ProcessRunner.swift`; creates `Exec/ProcessSession.swift`, `Exec/ProcessIdentity.swift`, `Exec/ProcessJobGate.swift`, `TidyCore/Tests/TidyCoreTests/BoundedProcessRunnerTests.swift`, and `TidyCore/Tests/TidyCoreTests/Fixtures/T04ProcessFixture.c`. Modify `TidyCore/Package.swift` only to exclude `Fixtures` from Swift test source discovery. Compile that controlled fixture during tests into a UUID scratch directory, not into the repository or any user's tool directory.
 
@@ -89,6 +91,10 @@ struct DarwinJournalIO: JournalPOSIXIO {
     func syncDirectory(fd: Int32) throws
 }
 protocol JournalStorage: Sendable {
+    // Opens the named diagnostic/metadata leaf descriptor with
+    // O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC, validates that that
+    // opened FD is the owner-only regular file still named by this anchored
+    // directory, then performs the bounded read.
     func read(name: String) throws -> Data
     func replace(name: String, bytes: Data) throws
 }
@@ -120,7 +126,7 @@ RunJournal borrows the acquired T02 store lock; every operation checks lock owne
 
 **Preserve T02's schema-1 JSON format exactly:** `unfinished-effects.json` remains `{ "schema": 1, "storeID": "<same UUID>", "unfinished": [<PendingEffectIntent>] }`; bootstrap JSON, storeID and stable lock are unchanged. Framing/checksums apply only to diagnostic `run-<runID>.journal` files, not the mandatory envelope. No implicit JSON→binary migration. Admission still uses T02 strict bounded envelope decoding and incomplete-bootstrap rules.
 
-Diagnostic journals are owner-only, anchored/no-follow, bounded length-prefixed versioned records with sequence and SHA-256 checksums, not unbounded JSONL decoding. Maximum event payload 64 KiB, maximum unresolved-admission envelope 1 MiB, maximum active diagnostic segment 1 MiB; reject capacity before dispatch rather than evict unresolved data. `JournalSequence.next(after:)` uses checked addition and is the actual append/parser sequence helper, not disconnected test code. Large manifests remain T03 bounded separate files referenced by digest. No env, raw argv, credentials or stream contents are persisted. Keep actual executable identity and adapter operation identity privately in the mandatory store; redacted exports omit them. Reject unsafe modes/owner, symlink, truncated envelope, unknown schema, checksum mismatch and sequence gaps. Preserve original bytes; do not truncate a corrupt tail to manufacture success.
+Diagnostic journals are owner-only, anchored/no-follow, bounded length-prefixed versioned records with sequence and SHA-256 checksums, not unbounded JSONL decoding. Maximum event payload 64 KiB, maximum unresolved-admission envelope 1 MiB, maximum active diagnostic segment 1 MiB; reject capacity before dispatch rather than evict unresolved data. `JournalSequence.next(after:)` uses checked addition and is the actual append/parser sequence helper, not disconnected test code. Large manifests remain T03 bounded separate files referenced by digest. No env, raw argv, credentials or stream contents are persisted. Keep actual executable identity and adapter operation identity privately in the mandatory store; redacted exports omit them. Every `DurableJournalStorage.read` of metadata or a diagnostic segment opens with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`; before reading it validates the opened FD as the expected owner-only single-link regular file and compares its no-follow directory entry identity to that FD. This is the T02 FIFO correction applied to the new reader contract: never call a potentially blocking `O_RDONLY` open before `fstat`, and never treat a FIFO, symlink, replacement or other special node as empty/corrupt journal input. **Source gate before the first `read(2)`: the opened descriptor must pass that regular-file/owner/mode/link/identity validation; `JournalError.unavailable` is the typed result for a nonregular leaf.** The bounded watchdog below can only rescue a pre-fix blocking open; it never validates or makes safe a blocking read. T04.A and T05 A.2F both require pre-read FD validation; neither new reader should deliberately introduce a blocking bug to manufacture RED. Record natural missing-API RED separately from any genuine behavioral failure; a correct new FIFO reader may pass on its first behavioral run. Reject unsafe modes/owner, symlink, truncated envelope, unknown schema, checksum mismatch and sequence gaps. Preserve original bytes; do not truncate a corrupt tail to manufacture success.
 
 Storage replacement: exclusive owner-only temporary file `.pending-<UUID>` in the same anchored directory, complete checked writes, durable file synchronization, atomic rename, directory synchronization. The SAME low-level `JournalPOSIXIO` seam services both diagnostic storage and T02 mandatory-envelope publication; no injected alternative persistence algorithm. `write` returns actual positive bytes written, so production loops with checked offset until complete; zero or out-of-range count fails, EINTR is retried, and other errno propagates. The test seam delegates real short writes and real renames, not just throwing before any production I/O. File creation/open/owner/no-follow checks stay production-only. `replace` calls descriptor-relative `renameat`; an error does not prove it was unpublished. File sync is checked; use appropriate supported Darwin durability primitives and check failures, not an assumption that `.atomic` is durable. Directory sync is independently checked.
 
@@ -132,9 +138,10 @@ An unkeyed SHA-256 checksum detects accidental corruption, not modification by t
 
 ### Complete A RED test file
 
-The following file is a foundation simulation, not evidence that a child or daemon actually survived. `PendingEffectIntent` is T02's exact schema. A deliberately unknown adapter remains unresolved. The low-level wrapper delegates actual scratch file writes/rename and faults individual I/O boundaries, never authorization.
+The following file is a foundation simulation, not evidence that a child or daemon actually survived. `PendingEffectIntent` is T02's exact schema. A deliberately unknown adapter remains unresolved. The low-level wrapper delegates actual scratch file writes/rename and faults individual I/O boundaries, never authorization. T02's two existing `ConfirmedExecutionTests.fifoMetadataBlocksPromptly` filename cases remain its regression coverage for the mandatory bootstrap/envelope reader; the additional T04 case below is deliberately limited to the newly proposed diagnostic reader and does not duplicate or create fake admission authority.
 
 ```swift
+import Darwin
 import Foundation
 import Testing
 @testable import TidyCore
@@ -207,8 +214,15 @@ private func intent(_ run: UUID, operation: UUID = UUID(), pid: Int32? = nil,
         childStartMicroseconds: pid == nil ? nil : 1, phase: .prepared)
 }
 private func journalScratch(_ body: (URL) throws -> Void) throws {
-    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-        .appendingPathComponent("tidy-t04-journal-\(UUID())")
+    // Canonicalize only this known existing temporary base before the UUID
+    // allocation. Foundation resolvingSymlinksInPath can retain /var/folders
+    // under its /var ancestor symlink; production no-follow rules stay strict.
+    guard let canonical = realpath(FileManager.default.temporaryDirectory.path, nil) else {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+    defer { free(canonical) }
+    let root = URL(fileURLWithPath: String(cString: canonical), isDirectory: true)
+        .appendingPathComponent("tidy-t04-journal-\(UUID())", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
                                            attributes: [.posixPermissions: 0o700])
     defer { try? FileManager.default.removeItem(at: root) }
@@ -218,6 +232,55 @@ private func event(_ run: UUID, _ seq: UInt64, _ phase: JournalPhase,
                    operation: UUID? = nil) -> JournalEvent {
     JournalEvent(runID: run, sequence: seq, phase: phase,
                  operationID: operation, status: nil, reason: nil)
+}
+/// T04-local adaptation of T02's tested FIFOAdmissionWatchdog. T02 retains
+/// ownership of its helper; this duplicate exercises the new journal reader,
+/// rather than creating test or production admission authority.
+private final class JournalFIFOReadWatchdog {
+    private final class Outcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fired = false
+        func markFired() { lock.lock(); fired = true; lock.unlock() }
+        func didFire() -> Bool { lock.lock(); defer { lock.unlock() }; return fired }
+    }
+    private let completed = DispatchSemaphore(value: 0)
+    private let drained = DispatchSemaphore(value: 0)
+    private let outcome = Outcome()
+    private let worker: Thread
+
+    init(fifo: URL) throws {
+        let reader = open(fifo.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard reader >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let probe = open(fifo.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard probe >= 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(reader); throw error
+        }
+        close(probe) // Leave no writer that could mask a blocking reader open.
+        let completed = self.completed, drained = self.drained, outcome = self.outcome
+        let path = fifo.path
+        worker = Thread {
+            var writer: Int32 = -1
+            if completed.wait(timeout: .now() + .seconds(5)) == .timedOut {
+                outcome.markFired()
+                writer = open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+                guard writer >= 0 else {
+                    fatalError("FIFO rescue open failed (errno \(errno)); retaining scratch containing \(path) because journal read may still be active")
+                }
+                completed.wait() // Keep writer alive until the actual read has returned.
+            }
+            if writer >= 0 { close(writer) }
+            close(reader); drained.signal()
+        }
+        worker.start()
+    }
+
+    /// Call immediately after the reader returns, before any throwing check or cleanup.
+    func finishAndDrain() -> Bool {
+        completed.signal(); drained.wait()
+        while !worker.isFinished { Thread.sleep(forTimeInterval: 0.001) }
+        return outcome.didFire()
+    }
 }
 @Suite struct RunRecoveryTests {
     @Test func transitionAndRoundTrip() throws {
@@ -311,7 +374,8 @@ private func event(_ run: UUID, _ seq: UInt64, _ phase: JournalPhase,
             let store = try MutationAdmissionStore(directory: root)
             #expect(store.acquire() == .ready)
             defer { store.release() }
-            let journal = try RunJournal(store: store, storage: DurableJournalStorage(directory: root))
+            let storage = try DurableJournalStorage(directory: root)
+            let journal = try RunJournal(store: store, storage: storage)
             let run = UUID(), first = intent(UUID())
             try journal.append(event(run, 1, .planned))
             try journal.append(event(run, 2, .confirmed))
@@ -410,6 +474,58 @@ private func event(_ run: UUID, _ seq: UInt64, _ phase: JournalPhase,
             #expect(reopened.acquire() != .ready)
             reopened.release()
             #expect(try Data(contentsOf: file) == bytes)
+        }
+    }
+    @Test func diagnosticFIFOReaderRejectsPromptlyAndPreservesUnfinishedAdmission() throws {
+        try journalScratch { root in
+            let store = try MutationAdmissionStore(directory: root)
+            #expect(store.acquire() == .ready)
+            defer { store.release() }
+            let storage = try DurableJournalStorage(directory: root)
+            let journal = try RunJournal(store: store, storage: storage)
+            let run = UUID(), unresolved = intent(run)
+            try journal.append(event(run, 1, .planned))
+            try journal.append(event(run, 2, .confirmed))
+            try journal.persistIntent(unresolved)
+            let target = root.appendingPathComponent("run-\(run.uuidString).journal")
+            let targetBytes = try Data(contentsOf: target)
+            let backup = root.appendingPathComponent(".t04-fifo-original-\(UUID())")
+            try FileManager.default.moveItem(at: target, to: backup)
+            // Snapshot after the move, before the FIFO exists. This includes the
+            // owned neutral backup and every other regular metadata byte.
+            let movedNames = try FileManager.default.contentsOfDirectory(atPath: root.path).sorted()
+            var preservedBytes: [String: Data] = [:]
+            for name in movedNames {
+                preservedBytes[name] = try Data(contentsOf: root.appendingPathComponent(name))
+            }
+            #expect(mkfifo(target.path, 0o600) == 0)
+            var before = stat()
+            try #require(lstat(target.path, &before) == 0)
+            try #require(before.st_mode & S_IFMT == S_IFIFO)
+            let watchdog = try JournalFIFOReadWatchdog(fifo: target)
+            // No cancellation, task race, throwing check or scratch cleanup between
+            // the actual proposed reader call and draining its owned watchdog.
+            let received: JournalError?
+            do { _ = try storage.read(name: target.lastPathComponent); received = nil }
+            catch let error as JournalError { received = error }
+            catch { received = nil }
+            let watchdogFired = watchdog.finishAndDrain()
+
+            #expect(received == .unavailable)
+            #expect(!watchdogFired, "Journal reader needed FIFO rescue after five seconds")
+            var after = stat()
+            try #require(lstat(target.path, &after) == 0)
+            #expect(after.st_mode & S_IFMT == S_IFIFO)
+            #expect(after.st_dev == before.st_dev && after.st_ino == before.st_ino)
+            #expect(after.st_mode == before.st_mode)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted()
+                == (movedNames + [target.lastPathComponent]).sorted())
+            #expect(try Data(contentsOf: backup) == targetBytes)
+            for (name, bytes) in preservedBytes {
+                #expect(try Data(contentsOf: root.appendingPathComponent(name)) == bytes)
+            }
+            #expect(try envelope(root).unfinished.contains(unresolved))
+            #expect(store.readAdmissionWhileLocked() == .uncertainAndPossiblyRunning)
         }
     }
 }
@@ -617,8 +733,15 @@ private final class ProcessScratch: @unchecked Sendable {
     private var ambiguousLaunch = false
     private var unobservedDescendants = 0
     init() async throws {
-        let artifactRoot = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-            .appendingPathComponent("tidy-t04-process-\(UUID())")
+        // Canonicalize only the known existing temporary base before UUID
+        // allocation. Do not dilute production O_NOFOLLOW handling because
+        // Foundation's resolvingSymlinksInPath can retain /var/folders.
+        guard let canonical = realpath(FileManager.default.temporaryDirectory.path, nil) else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { free(canonical) }
+        let artifactRoot = URL(fileURLWithPath: String(cString: canonical), isDirectory: true)
+            .appendingPathComponent("tidy-t04-process-\(UUID())", isDirectory: true)
         root = artifactRoot.appendingPathComponent("run")
         let build = artifactRoot.appendingPathComponent("build")
         binary = build.appendingPathComponent("fixture")
@@ -1034,8 +1157,8 @@ CleanResultsView consumes T03 typed outcomes: succeeded/partial/failed/skipped/c
 
 ## Ordered execution and review steps
 
-- [ ] Controller assigns A only after T02 source and final API review. Add the entire A test file and exact proposed declarations. Run `cd TidyCore && swift test --filter RunRecoveryTests` after other package jobs are idle. Initial missing-symbol RED is scaffolding evidence only; record behavioral RED before implementing transitions/storage.
-- [ ] Implement anchored durable storage and extend the existing admission store; no second safety ledger. Rerun A and T02 `ConfirmedExecutionTests`; verify retained uncertainty after releasing/reopening and after minimum history pruning. Review lock lifetime, fsync/rename ambiguity and capacity before accepting A.
+- [ ] T02 foundation through `10616b3` and T03.A foundation through `ec9dbc5` are approved; controller still assigns the single T04.A owner and reviews the exact shared-`JournalPOSIXIO` source/API change before entry. T03 production integration remains gated. Add the entire A test file and exact proposed declarations. Run `cd TidyCore && swift test --filter RunRecoveryTests` after other package jobs are idle. Initial missing-symbol RED is scaffolding evidence only; record behavioral RED before implementing transitions/storage.
+- [ ] Implement anchored durable storage and the assigned shared-I/O extension of the existing admission store; no second safety ledger or persistence seam. Rerun A and T02 `ConfirmedExecutionTests`, including the existing mandatory-reader FIFO cases; review the additional bounded diagnostic-reader FIFO fixture before accepting it. Verify retained uncertainty after releasing/reopening and after minimum history pruning. Review lock lifetime, fsync/rename ambiguity and capacity before accepting A.
 - [ ] Review B launcher/FD/identity design and compiler lifecycle before adding the entire C helper and B test file. Audit all ProcessRunner production callers with `rg -n 'ProcessRunner|runDiscardingOutput|kill\\(|SIGKILL|readDataToEndOfFile' TidyCore/Sources Tidy`. Quarantined mutation bodies must not reappear as read-only callers.
 - [ ] Run `cd TidyCore && swift test --filter BoundedProcessRunnerTests`; initial API RED, then actual flood/pipe/timeout/queued-cancel behavior RED. Implement the nonblocking drain/gate/identity mechanisms and rerun. Record actual surviving fixture marker observations and elapsed pipe deadline; do not substitute seeded journal records.
 - [ ] Run `cd TidyCore && swift test --filter 'RunRecoveryTests|BoundedProcessRunnerTests'` plus existing `ProcessRunnerTests` only after auditing their host commands. Review that no signal can reach mutations/user processes and no public mutation classifier/bypass exists. Compile-negative external client must fail access to `ProcessSession` and any low-level mutation API because of access control, not module lookup failure.
