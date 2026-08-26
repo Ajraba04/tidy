@@ -48,6 +48,7 @@ Modify:
 - `TidyCore/Tests/TidyCoreTests/ConfigStoreTests.swift`: add `throws`/`try` to existing successful save tests; never suppress new save errors. Change the existing field-projection test to call `makePolicyEnvironment(homeDirectory: "/Users/tester", detectedTools: [])`, so the prescribed focused suite does not launch ambient tool probes through the old helper.
 - `TidyCore/Sources/TidyCore/Model/RunReport.swift`: additive admission disposition and optional coordinator measurement availability, as described below; full per-target outcomes remain T03/T04.
 - `Tidy/TidyApp.swift`, `Tidy/Clean/CleanView.swift`, `Tidy/Custom/CustomView.swift`, both view models, `Tidy/Clean/PlanSelectionModel.swift`, and `Tidy/Settings/AppConfigStore.swift`: explicit shared dependency injection, frozen confirmation binding, config invalidation.
+- `Tidy/Clean/CleanPlanView.swift` and `Tidy/Custom/CustomPlanView.swift`: actual dialog owners, added by independent entry review. Preserve their constructor/callback contracts and the existing five-source manual-host isolation. App implementation waits for the reviewed complete model-test supplement described below; do not invent an untested confirmation lifecycle.
 - `Tidy/Clean/CleanResultsView.swift`: distinguish no-work/denial from cleanup success and suppress unavailable measurements.
 - `Tidy.xcodeproj/project.pbxproj`: generated through XcodeGen only if needed by `project.yml` source discovery.
 
@@ -250,7 +251,10 @@ Raw `CleanEngine.execute(plan:environment:)` becomes internal, unconditional den
 
 These tests exercise real catalog discovery, selection, token actor, file identity capture and disk admission store. They contain no host command runner, allow-all policy, fake trusted item, or fake effect. Empty reviews deliberately select nothing; eligible positive mutations remain separately gated. T01 must have removed unsafe discovery before running these tests.
 
+Fixture-path correction verified on the development host: Foundation's temporaryDirectory.resolvingSymlinksInPath() still returned `/var/folders/...`, while Darwin realpath returned `/private/var/folders/...`; `/var` is a symlink. Canonicalize only this known temporary base before allocating the fresh UUID fixture below. This does not relax production no-follow parent traversal or authorize canonicalizing arbitrary user targets around protection checks.
+
 ```swift
+import Darwin
 import Foundation
 import Testing
 @testable import TidyCore
@@ -261,7 +265,11 @@ private struct ExecutionScratch {
     let journal: URL
     let leaf: URL
     init() throws {
-        root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        guard let canonical = realpath(FileManager.default.temporaryDirectory.path, nil) else {
+            throw ResourceCaptureError.unavailable
+        }
+        defer { free(canonical) }
+        root = URL(fileURLWithPath: String(cString: canonical), isDirectory: true)
             .appendingPathComponent("T02-\(UUID().uuidString)", isDirectory: true)
         home = root.appendingPathComponent("home", isDirectory: true)
         journal = root.appendingPathComponent("journal", isDirectory: true)
@@ -718,6 +726,12 @@ struct ConfirmedExecutionTests {
 Fixture expected outputs are asserted above: actual denied erase-all row stays unselected; genuine empty selection mints and consumes token; supplied IDs do not change immutable registration; updated policy denies old hint/token; real changed/symlinked file fails capture; persisted unfinished record blocks regardless of phase/PID absence and lock release; corrupt bytes remain exact. All cleanup in tests removes only the freshly created UUID scratch root, never app support or ambient home. Add no injected valid capability to these tests.
 
 ## Exact app wiring and confirmation lifecycle
+
+### App-model implementation entry supplement
+
+Independent review identified required lifecycle details beyond the initial prose: synchronous onConfirm must consume/freeze the binding and displayed count/estimate **before creating a Task**; automatic presentation dismissal must not erase it before the action callback; explicit cancel, selection/preset/config changes, review replacement and teardown invalidate it. Duplicate submission is denied. Generations cover the entire review lifetime, and coordinator selection requests must be ordered/coalesced, not merely their returned UI projections. Observe an actual shared bridge update identity (including rapid or identical settings edits); a locked `coordinator.policyAdmission()` getter is not an observable subscription. A policy change invalidates the old binding and requires a fresh explicit review, not automatic discovery from settings.
+
+Before changing app models/shared dialogs, supply and independently review complete deterministic tests against actual production model code in a scratch-only, non-production-launch test target, with an exact source allowlist and command. The separate `T02-app-confirmation-tests.md` supplement received independent entry approval after real-caller and bounded-timeout revisions. This is permission to implement its RED-first tests and wiring, not passing source/UI evidence; controller audits generated test membership and initialization before its first test run. Existing manual fixture constructors, nil registration/disabled defaults and no-op callbacks stay presentation-only. Positive selectable-action/dialog execution remains gated on a real accepted adapter; untrusted display-state tests cannot grant registry permission or claim that positive flow.
 
 `AppExecutionServices` is `@Observable @MainActor final`, created once by `TidyApp` using `@State`. It owns one `let coordinator`, one or more discovery engines, one ExecutionPolicyBridge and the shared AppConfigStore. Load config once into a local value, capture `homeDirectory` once, and use `let detectedTools: Set<ToolchainID> = []` for this foundation's unknown discovery state. Derive the initial environment with `config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: detectedTools)`, construct coordinator with the journal's canonical app-support URL, then construct bridge with the **same** home/snapshot and AppConfigStore in that order. No detector, locator, tool-cache warm-up, background discovery Task or lazy discovery getter may run during service construction. Add `init(tier: Tier, services: AppExecutionServices)` to CleanView and `init(services: AppExecutionServices)` to CustomView. TidyApp passes the same instance to every Clean WindowGroup and Custom window. Delete per-view `ConfigStore.load()`, `CleanEnvironment` snapshot and coordinator construction; engine instances cannot imply separate coordinator instances.
 
