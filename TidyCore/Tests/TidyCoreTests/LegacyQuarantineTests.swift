@@ -79,7 +79,7 @@ struct LegacyQuarantineTests {
             let report = await engine.execute(plan: CleanPlan(tier: .deep, plannedItems: [row]), environment: scratch.environment)
             #expect(report.results.count == 1)
             #expect(report.results.first?.succeeded == false, "\(id) was not denied")
-            #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
+            #expect(report.results.first?.message == "Unavailable: no accepted local-only, exact-scope, ownership, preflight, interruption and recovery contract.")
             #expect(report.totalFreedBytes == 0)
             #expect(report.totalReclaimedMemoryBytes == 0)
         }
