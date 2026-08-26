@@ -11,7 +11,7 @@
 **Binding design:** [Product contract](../specs/2026-08-26-developer-headroom-design.md).
 **Binding appendix:** [Settings registry, profiles and adapter contracts](../specs/2026-08-26-headroom-policy-and-adapter-contracts.md).
 **Baseline:** `db4707f`, `v1.5.0`; working tree verified clean on 2026-08-26 before writing these documents.
-**State:** Planning only. No production implementation has been made or authorized by this turn.
+**State:** Full execution authorized by the user's follow-up. Implementation is in progress on `CAJ/developer-headroom`; see [current evidence](../../verification/headroom-progress.md). Unchecked acceptance gates remain unproven.
 **Independent review:** Accepted for program adoption after three passes; see [findings and final verdict](2026-08-26-developer-headroom-adversarial-review.md). Per-unit task cards and implementation verification remain mandatory.
 
 ## Global Constraints

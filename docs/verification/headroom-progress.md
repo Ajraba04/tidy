@@ -17,9 +17,9 @@ Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-dev
 
 | Package | Status | Evidence / remaining gate |
 |---|---|---|
-| T01 Action review/quarantine | A implementation in progress; A/B task-card entry approved | All unaccepted legacy effects must be denied. Positive accepted-action integration stays open until its prerequisite contracts exist. |
-| T02 Sealed selection/coordinator | Pending | Forgery, staleness, concurrency and durable uncertainty |
-| T03 Guarded filesystem effects | Pending | Descendant identity/churn/cap/partial-result tests |
+| T01 Action review/quarantine | A scoped unit approved at `96fd35c`; B next. Full 170 tests/36 suites + arm64 app build passed at `2a4089d`, then 14 covering tests passed after review fixes. | Independent spec/quality review approved quarantine only. Positive accepted-action/T02/T04/UI and physical gates remain open; no full T01 acceptance. |
+| T02 Sealed selection/coordinator | Task-card entry independently approved; implementation pending T01.A/B | Bootstrap/missing-ledger, throwing settings persistence, opaque tokens and synchronous policy invalidation specified. Proposed tests are not execution evidence; actual effect concurrency/recovery remain open. |
+| T03 Guarded filesystem effects | A mechanism task-card entry approved; implementation pending prerequisites | B production integration unapproved: real ownership/exclusion, persisted manifests, durable accounting and bounded policy/effect boundary required. Proposed scratch tests are not execution evidence. |
 | T04 Journal/process recovery | Pending | Surviving processes, crash windows and bounded I/O |
 | T05 UI fixture host/migration | Pending | Real UI flows and historical config preservation |
 | T06 Policy/defaults | Pending | Every registry row and all precedence classes |
