@@ -438,7 +438,7 @@ final class SharedSettingsWiringTests: XCTestCase {
         }
     }
 
-    func testBounded32SnapshotQueueOverflowStaysDisabledUntilExplicitResave() async throws {
+    func testBounded32SnapshotQueueOverflowPreservesAcceptedAdmissionUntilExplicitResave() async throws {
         try await run(stops: ["config.1"]) { s, services, io in
             let bridge = services.policyBridge, c = services.coordinator
             services.configStore.config.transcriptAgeThresholdDays = 60
@@ -447,8 +447,10 @@ final class SharedSettingsWiringTests: XCTestCase {
             XCTAssertEqual(bridge.pendingSnapshotCount, 32)
             XCTAssertGreaterThan(bridge.pendingSnapshotBytes, 0)
             XCTAssertLessThanOrEqual(bridge.pendingSnapshotBytes, 32 * 1_048_576)
+            let acceptedGeneration = bridge.updateGeneration
             services.configStore.config.transcriptAgeThresholdDays = 92
-            XCTAssertEqual(c.policyAdmission(), .updating(revision: 34))
+            XCTAssertEqual(c.policyAdmission(), .updating(revision: 33))
+            XCTAssertEqual(bridge.updateGeneration, acceptedGeneration)
             XCTAssertEqual(bridge.pendingSnapshotCount, 32)
             XCTAssertEqual(bridge.persistenceError, "Settings changes are pending; wait and save again.")
             io.probe.releaseAll(); await bridge.drain()
@@ -457,8 +459,8 @@ final class SharedSettingsWiringTests: XCTestCase {
             XCTAssertEqual(saved.envelope?.config.transcriptAgeThresholdDays, 91)
             XCTAssertEqual(io.configAttempts, 32)
             XCTAssertEqual(bridge.durableSettingsRevision, 32)
-            XCTAssertEqual(c.policyAdmission(), .updating(revision: 34))
-            XCTAssertFalse(services.isExecutionEnabled)
+            XCTAssertEqual(c.policyAdmission(), .ready(revision: 33))
+            XCTAssertTrue(services.isExecutionEnabled)
             XCTAssertEqual(bridge.persistenceError, "Settings changes are pending; wait and save again.")
             XCTAssertEqual(bridge.pendingSnapshotCount, 0)
             XCTAssertEqual(bridge.pendingSnapshotBytes, 0)
@@ -467,7 +469,7 @@ final class SharedSettingsWiringTests: XCTestCase {
             let retry = await services.settings.load()
             XCTAssertEqual(retry.envelope?.revision, 33)
             XCTAssertEqual(retry.envelope?.config.transcriptAgeThresholdDays, 92)
-            XCTAssertEqual(c.policyAdmission(), .ready(revision: 35))
+            XCTAssertEqual(c.policyAdmission(), .ready(revision: 34))
             XCTAssertTrue(services.isExecutionEnabled)
             XCTAssertNil(bridge.persistenceError)
         }
@@ -475,26 +477,76 @@ final class SharedSettingsWiringTests: XCTestCase {
 
     func testOversizedAndInvalidSnapshotsAreNotRetainedOrPersistedThenValidEditWorks() async throws {
         try await run { s, services, io in
+            let review = try await self.noOpReview(services)
+            let token = try await services.coordinator.confirm(binding: review.binding)
+            let generation = services.policyBridge.updateGeneration
+            let original = services.configStore.config
             var oversized = services.configStore.config
             oversized.keepCookieDomains = Array(repeating: String(repeating: "a", count: 4096), count: 257)
             services.configStore.config = oversized
-            XCTAssertEqual(services.coordinator.policyAdmission(), .updating(revision: 2))
+            XCTAssertEqual(services.coordinator.policyAdmission(), .ready(revision: 1))
+            XCTAssertEqual(services.policyBridge.updateGeneration, generation)
+            XCTAssertTrue(services.isExecutionEnabled)
+            XCTAssertEqual(services.configStore.config, original)
             XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
             XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
             await services.policyBridge.drain()
             XCTAssertEqual(io.configAttempts, 0)
-            XCTAssertFalse(services.isExecutionEnabled)
+            XCTAssertTrue(services.isExecutionEnabled)
             XCTAssertNotNil(services.persistenceError)
             XCTAssertFalse(FileManager.default.fileExists(atPath: s.paths.settings.path))
+            let report = await services.coordinator.execute(token, currentPolicyRevision: 1)
+            XCTAssertEqual(report.disposition, .noWork)
             var invalid = TidyConfig(schemaVersion: 2); invalid.transcriptAgeThresholdDays = 366
             services.configStore.config = invalid
             await services.policyBridge.drain()
             XCTAssertEqual(io.configAttempts, 0)
-            XCTAssertFalse(services.isExecutionEnabled)
+            XCTAssertTrue(services.isExecutionEnabled)
+            XCTAssertEqual(services.coordinator.policyAdmission(), .ready(revision: 1))
+            XCTAssertEqual(services.policyBridge.updateGeneration, generation)
+            XCTAssertEqual(services.configStore.config, original)
             services.configStore.config = TidyConfig(schemaVersion: 2, transcriptAgeThresholdDays: 75)
             await services.policyBridge.drain()
             XCTAssertEqual(services.policyBridge.durableSettingsRevision, 1)
             XCTAssertTrue(services.isExecutionEnabled)
+        }
+    }
+
+    func testPresentationSuccessCannotHealAcceptedInvalidatingConflict() async throws {
+        try await run { _, services, _ in
+            let bridge = services.policyBridge
+            let review = try await self.noOpReview(services)
+            let invalidatingID = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            let conflicting = GlobalPreferenceDelta(baseRevision: 0, id: invalidatingID,
+                baseValue: .integer(99), editedValue: .integer(12))
+            guard case .accepted(_, let invalidatingCompletion) = bridge.submit(global: conflicting) else {
+                return XCTFail("Valid-shape conflicting invalidating edit was not admitted")
+            }
+            _ = await invalidatingCompletion.value
+            XCTAssertFalse(bridge.isExecutionEnabled)
+            XCTAssertEqual(services.coordinator.policyAdmission(), .updating(revision: 2))
+            let blockingMessage = try XCTUnwrap(bridge.persistenceError)
+            do {
+                _ = try await services.coordinator.confirm(binding: review.binding)
+                XCTFail("Old confirmation survived invalidating conflict")
+            } catch let error as ConfirmationError {
+                XCTAssertEqual(error, .stalePolicy)
+            }
+
+            let units = SettingID(rawValue: "ui.units")
+            let presentation = GlobalPreferenceDelta(baseRevision: 0, id: units,
+                baseValue: nil, editedValue: .choice("decimal"))
+            guard case .accepted(_, let presentationCompletion) = bridge.submit(global: presentation) else {
+                return XCTFail("Presentation edit was not admitted")
+            }
+            guard case .saved = await presentationCompletion.value else {
+                return XCTFail("Presentation edit did not persist")
+            }
+            XCTAssertFalse(bridge.isExecutionEnabled)
+            XCTAssertEqual(bridge.persistenceError, blockingMessage)
+            XCTAssertEqual(services.coordinator.policyAdmission(), .updating(revision: 2))
+            let saved = await services.settings.load()
+            XCTAssertEqual(saved.envelope?.preferences?.global.fields[units], .choice("decimal"))
         }
     }
 
@@ -524,6 +576,103 @@ final class SharedSettingsWiringTests: XCTestCase {
             let saved = await services.settings.load()
             XCTAssertEqual(saved.envelope?.config.transcriptAgeThresholdDays, 74)
             XCTAssertEqual(saved.envelope?.revision, 1)
+        }
+    }
+
+    func testTypedPresentationEditPersistsWithoutInvalidatingExistingConfirmation() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            let review = try await self.noOpReview(services)
+            let basePolicyRevision = review.binding.policyRevision
+
+            services.configStore.setGlobalPreference(SettingID(rawValue: "ui.units"),
+                                                     to: .choice("decimal"))
+            XCTAssertTrue(services.storageUpdatePending)
+            XCTAssertFalse(services.policyUpdatePending)
+            XCTAssertEqual(services.coordinator.policyAdmission(),
+                           .ready(revision: basePolicyRevision))
+            XCTAssertEqual(services.configStore.preferences.global.fields[
+                SettingID(rawValue: "ui.units")], .choice("decimal"))
+            _ = try await services.coordinator.confirm(binding: review.binding)
+
+            try await io.probe.waitFor("config.1")
+            io.probe.releaseAll()
+            await services.policyBridge.drain()
+            let loaded = await services.settings.load()
+            let saved = try XCTUnwrap(loaded.envelope)
+            XCTAssertEqual(saved.revision, 1)
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "ui.units")], .choice("decimal"))
+            XCTAssertEqual(services.coordinator.policyAdmission(),
+                           .ready(revision: basePolicyRevision))
+            XCTAssertFalse(services.storageUpdatePending)
+            XCTAssertTrue(services.isExecutionEnabled)
+        }
+    }
+
+    func testTypedInvalidatingEditRejectsFrozenConfirmationBeforePersistence() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            let review = try await self.noOpReview(services)
+            let oldRevision = review.binding.policyRevision
+
+            services.configStore.setGlobalPreference(
+                SettingID(rawValue: "cleanup.requestedBatchGiB"), to: .integer(12))
+            XCTAssertTrue(services.storageUpdatePending)
+            XCTAssertTrue(services.policyUpdatePending)
+            XCTAssertEqual(services.coordinator.policyAdmission(),
+                           .updating(revision: oldRevision + 1))
+            XCTAssertFalse(services.isExecutionEnabled)
+            do {
+                _ = try await services.coordinator.confirm(binding: review.binding)
+                XCTFail("Frozen confirmation survived an invalidating edit")
+            } catch let error as ConfirmationError {
+                XCTAssertEqual(error, .stalePolicy)
+            }
+
+            try await io.probe.waitFor("config.1")
+            io.probe.releaseAll()
+            await services.policyBridge.drain()
+            let loaded = await services.settings.load()
+            let saved = try XCTUnwrap(loaded.envelope)
+            XCTAssertEqual(saved.revision, 1)
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "cleanup.requestedBatchGiB")], .integer(12))
+            XCTAssertEqual(services.coordinator.policyAdmission(),
+                           .ready(revision: oldRevision + 1))
+            XCTAssertFalse(services.storageUpdatePending)
+            XCTAssertFalse(services.policyUpdatePending)
+            XCTAssertTrue(services.isExecutionEnabled)
+        }
+    }
+
+    func testQueuedTypedEditsReplayInOrderAcrossSharedWindows() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            let firstWindow = services.configStore
+            let secondWindow = services.configStore
+            XCTAssertTrue(firstWindow === secondWindow)
+
+            firstWindow.setGlobalPreference(SettingID(rawValue: "ui.units"),
+                                            to: .choice("decimal"))
+            try await io.probe.waitFor("config.1")
+            secondWindow.setGlobalPreference(SettingID(rawValue: "ui.density"),
+                                             to: .choice("detailed"))
+            XCTAssertEqual(firstWindow.preferences.global.fields[
+                SettingID(rawValue: "ui.units")], .choice("decimal"))
+            XCTAssertEqual(secondWindow.preferences.global.fields[
+                SettingID(rawValue: "ui.density")], .choice("detailed"))
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 2)
+
+            io.probe.releaseAll()
+            await services.policyBridge.drain()
+            let loaded = await services.settings.load()
+            let saved = try XCTUnwrap(loaded.envelope)
+            XCTAssertEqual(saved.revision, 2)
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "ui.units")], .choice("decimal"))
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "ui.density")], .choice("detailed"))
+            XCTAssertEqual(firstWindow.preferences, saved.preferences)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
         }
     }
 
