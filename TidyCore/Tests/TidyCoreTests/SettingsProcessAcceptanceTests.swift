@@ -134,7 +134,7 @@ private actor A2PBuild {
         Model/Tier.swift Model/ToolchainID.swift
         Policy/FeatureSettings.swift Policy/ScanSettings.swift Policy/CleanupSettings.swift
         Policy/ExperienceSettings.swift Policy/PolicyDefaults.swift Policy/PolicyValidator.swift
-        Policy/SettingsEnvelope.swift Policy/SettingsPublication.swift Policy/SettingsStore.swift
+        Policy/StrictJSON.swift Policy/SettingsEnvelope.swift Policy/SettingsPublication.swift Policy/SettingsStore.swift
         Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
         """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var sources = names.map { package.appendingPathComponent("Sources/TidyCore/\($0)") }
