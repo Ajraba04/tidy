@@ -10,6 +10,15 @@ public struct SettingsEnvelope: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     public let revision: UInt64
     public let config: TidyConfig
+    public let preferences: PolicyPreferences?
+
+    public init(schemaVersion: Int, revision: UInt64, config: TidyConfig,
+                preferences: PolicyPreferences? = nil) {
+        self.schemaVersion = schemaVersion
+        self.revision = revision
+        self.config = config
+        self.preferences = preferences
+    }
 }
 public struct SettingsLoadResult: Equatable, Sendable {
     public let disposition: SettingsLoadDisposition
@@ -19,6 +28,7 @@ public struct SettingsLoadResult: Equatable, Sendable {
 public enum SettingsChange: Equatable, Sendable {
     case transcriptAgeDays(Int)
     case legacyPreferences(TidyConfig)
+    case preferences(PolicyPreferences)
 }
 public enum SettingsStoreError: Error, Equatable, Sendable {
     case readOnlyRecovery, staleRevision, changedExternally, invalidChange
@@ -30,7 +40,14 @@ struct SettingsPublicationFailure: Equatable, Sendable {
 }
 public struct SettingsRollbackPreview: Sendable {
     public let config: TidyConfig
+    public let preferences: PolicyPreferences?
     internal let identity: UUID
+
+    internal init(config: TidyConfig, preferences: PolicyPreferences? = nil, identity: UUID) {
+        self.config = config
+        self.preferences = preferences
+        self.identity = identity
+    }
 }
 
 /// Bounded historical compatibility decoding, never an effective-policy resolver.
@@ -48,9 +65,10 @@ enum SettingsDecoding {
         func strings(_ values: [String]) throws {
             guard values.count <= 1000 else { throw SettingsStoreError.invalidChange }
             for value in values {
-                guard value.count <= 4096 else { throw SettingsStoreError.invalidChange }
-                budget += value.utf8.count
-                guard budget <= byteLimit else { throw SettingsStoreError.oversized }
+                guard value.utf8.count <= 4096 else { throw SettingsStoreError.invalidChange }
+                let (next, overflow) = budget.addingReportingOverflow(value.utf8.count)
+                guard !overflow, next <= byteLimit else { throw SettingsStoreError.oversized }
+                budget = next
             }
         }
         try strings(config.keepCookieDomains)
@@ -59,6 +77,10 @@ enum SettingsDecoding {
         try strings(config.appsApprovedForQuit)
         for preset in config.presets {
             try strings([preset.name]); try strings(Array(preset.itemIDs))
+        }
+        if let preferences = envelope.preferences {
+            do { try validate(preferences, stringBudget: &budget) }
+            catch is PolicyFieldError { throw SettingsStoreError.invalidChange }
         }
         // The raw-string budget also bounds encoder allocation before the exact byte check.
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -94,11 +116,17 @@ enum SettingsDecoding {
                 envelope: SettingsEnvelope(schemaVersion: 2, revision: 0,
                     config: try config(root, legacy: true)), recoveryReason: nil)
         }
-        guard Set(root.keys) == ["schemaVersion", "revision", "config"] else { throw Failure.malformed }
+        let keys = Set(root.keys)
+        guard keys == ["schemaVersion", "revision", "config"] ||
+              keys == ["schemaVersion", "revision", "config", "preferences"] else {
+            throw Failure.malformed
+        }
         let revision = try required(root, "revision").unsignedInteger()
+        let decodedPreferences = try root["preferences"].map(preferences)
         return SettingsLoadResult(disposition: .loaded,
             envelope: SettingsEnvelope(schemaVersion: 2, revision: revision,
-                config: try config(required(root, "config").object(), legacy: false)), recoveryReason: nil)
+                config: try config(required(root, "config").object(), legacy: false),
+                preferences: decodedPreferences), recoveryReason: nil)
     }
 
     private static func required(_ object: [String: SettingsJSON.Value], _ key: String) throws -> SettingsJSON.Value {
@@ -135,6 +163,123 @@ enum SettingsDecoding {
             allowRestartToReclaimSwap: try object["allowRestartToReclaimSwap"]?.bool() ?? false,
             presets: decodedPresets)
     }
+
+    private static func validate(_ preferences: PolicyPreferences,
+                                 stringBudget: inout Int) throws {
+        guard preferences.profiles.count <= 50,
+              preferences.projects.count <= 1_000,
+              Set(preferences.profiles.map(\.id)).count == preferences.profiles.count else {
+            throw SettingsStoreError.invalidChange
+        }
+
+        var totalFields = 0
+        func consume(_ value: String) throws {
+            let bytes = value.utf8.count
+            guard bytes <= 4_096 else { throw SettingsStoreError.invalidChange }
+            let (next, overflow) = stringBudget.addingReportingOverflow(bytes)
+            guard !overflow, next <= byteLimit else { throw SettingsStoreError.oversized }
+            stringBudget = next
+        }
+        func document(_ values: PolicyValues, at layer: PolicyLayer) throws {
+            guard values.fields.count <= 1_000 else { throw SettingsStoreError.invalidChange }
+            let (next, overflow) = totalFields.addingReportingOverflow(values.fields.count)
+            guard !overflow, next <= 4_096 else { throw SettingsStoreError.invalidChange }
+            totalFields = next
+            for (id, value) in values.fields {
+                try consume(id.rawValue)
+                switch value {
+                case .choice(let string): try consume(string)
+                case .strings(let strings):
+                    guard strings.count <= 1_000 else { throw SettingsStoreError.invalidChange }
+                    for string in strings { try consume(string) }
+                case .bool, .integer, .null, .volume: break
+                }
+            }
+            try PolicyValidator.validateStructure(values, at: layer)
+        }
+
+        try document(preferences.global, at: .global)
+        for profile in preferences.profiles {
+            try consume(profile.id.uuidString)
+            try consume(profile.name)
+            try document(profile.values, at: .profile)
+        }
+        for (project, values) in preferences.projects {
+            guard !project.isEmpty else { throw SettingsStoreError.invalidChange }
+            try consume(project)
+            try document(values, at: .project)
+        }
+    }
+
+    private static func preferences(_ value: SettingsJSON.Value) throws -> PolicyPreferences {
+        let root = try value.object()
+        guard Set(root.keys) == ["global", "profiles", "projects"] else { throw Failure.malformed }
+        let global = try policyValues(required(root, "global"))
+        let profileValues = try required(root, "profiles").array()
+        guard profileValues.count <= 50 else { throw Failure.malformed }
+        var profiles: [SavedProfile] = []
+        var profileIDs = Set<UUID>()
+        for value in profileValues {
+            let object = try value.object()
+            let rawID = try required(object, "id").string()
+            guard Set(object.keys) == ["id", "name", "values"],
+                  let id = UUID(uuidString: rawID), rawID == id.uuidString,
+                  profileIDs.insert(id).inserted else { throw Failure.malformed }
+            profiles.append(SavedProfile(id: id, name: try required(object, "name").string(),
+                values: try policyValues(required(object, "values"))))
+        }
+        let projectValues = try required(root, "projects").object()
+        var projects: [String: PolicyValues] = [:]
+        for (id, value) in projectValues {
+            guard !id.isEmpty else { throw Failure.malformed }
+            projects[id] = try policyValues(value)
+        }
+        let result = PolicyPreferences(global: global, profiles: profiles, projects: projects)
+        var stringBudget = 0
+        do { try validate(result, stringBudget: &stringBudget) }
+        catch { throw Failure.malformed }
+        return result
+    }
+
+    private static func policyValues(_ value: SettingsJSON.Value) throws -> PolicyValues {
+        let root = try value.object()
+        guard Set(root.keys) == ["fields"] else { throw Failure.malformed }
+        let encodedFields = try required(root, "fields").object()
+        let fields = try Dictionary(uniqueKeysWithValues: encodedFields.map {
+            (SettingID(rawValue: $0.key), try settingValue($0.value))
+        })
+        return PolicyValues(fields: fields)
+    }
+
+    private static func settingValue(_ value: SettingsJSON.Value) throws -> SettingValue {
+        let object = try value.object()
+        guard object.count == 1, let (tag, payload) = object.first else { throw Failure.malformed }
+        switch tag {
+        case "bool": return .bool(try payload.bool())
+        case "integer": return .integer(try payload.signedInteger())
+        case "choice": return .choice(try payload.string())
+        case "strings": return .strings(try payload.strings())
+        case "null": guard try payload.bool() else { throw Failure.malformed }; return .null
+        case "volume":
+            let fields = try payload.object()
+            guard Set(fields.keys) == ["target", "warning", "clear"] else { throw Failure.malformed }
+            return .volume(VolumeOverride(target: try volumeField(required(fields, "target")),
+                warning: try volumeField(required(fields, "warning")),
+                clear: try volumeField(required(fields, "clear"))))
+        default: throw Failure.malformed
+        }
+    }
+
+    private static func volumeField(_ value: SettingsJSON.Value) throws -> VolumeField {
+        let object = try value.object()
+        guard object.count == 1, let (tag, payload) = object.first else { throw Failure.malformed }
+        switch tag {
+        case "inherit": guard try payload.bool() else { throw Failure.malformed }; return .inherit
+        case "automatic": guard try payload.bool() else { throw Failure.malformed }; return .automatic
+        case "fixedGiB": return .fixedGiB(try payload.signedInteger())
+        default: throw Failure.malformed
+        }
+    }
 }
 
 /// Keeps token types and duplicate decoded keys intact before any model is decoded.
@@ -157,6 +302,12 @@ private struct SettingsJSON {
         }
         func integer() throws -> Int {
             guard case .number(let text) = self, let value = Int(text) else { throw SettingsDecoding.Failure.malformed }
+            return value
+        }
+        func signedInteger() throws -> Int64 {
+            guard case .number(let text) = self, let value = Int64(text) else {
+                throw SettingsDecoding.Failure.malformed
+            }
             return value
         }
         func unsignedInteger() throws -> UInt64 {
@@ -229,7 +380,7 @@ private struct SettingsJSON {
             let byte = bytes[index]; index += 1
             if byte == 34 {
                 let result = try JSONDecoder().decode(String.self, from: Data(bytes[start..<index]))
-                guard result.count <= 4096 else { throw SettingsDecoding.Failure.malformed }
+                guard result.utf8.count <= 4096 else { throw SettingsDecoding.Failure.malformed }
                 return result
             }
             if byte == 92 {
