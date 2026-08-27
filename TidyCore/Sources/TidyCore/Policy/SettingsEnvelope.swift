@@ -81,6 +81,68 @@ public struct LegacyPreferenceDelta: Equatable, Sendable {
         self.touchedCompatibilityBase = touched.sorted { $0.id.rawValue < $1.id.rawValue }
     }
 }
+
+/// Pure compatibility projection shared by durable settings, bridge prediction,
+/// and app-visible optimistic replay. This does not resolve effective policy or
+/// alter authority; it only keeps the four historical `TidyConfig` fields and
+/// their raw global preference representations in lockstep.
+public enum LegacyCompatibilityProjection {
+    public static func applyingLegacyEdit(from base: TidyConfig, to edited: TidyConfig,
+                                          saved: PolicyPreferences?) -> PolicyPreferences {
+        var preferences = PolicyPreferences.project(legacy: base, saved: saved)
+        func set(_ id: String, _ value: SettingValue) {
+            preferences.global.fields[SettingID(rawValue: id)] = value
+        }
+        if base.transcriptAgeThresholdDays != edited.transcriptAgeThresholdDays {
+            set("cleanup.transcriptDays", .integer(Int64(edited.transcriptAgeThresholdDays)))
+        }
+        if base.staleNodeModulesThresholdDays != edited.staleNodeModulesThresholdDays {
+            set("item.normal.extras.stale-node-modules.inactiveDays",
+                .integer(Int64(edited.staleNodeModulesThresholdDays)))
+        }
+        if base.keepCookieDomains != edited.keepCookieDomains {
+            set("browsers.keepCookieDomains", .strings(edited.keepCookieDomains))
+        }
+        if base.allowRestartToReclaimSwap != edited.allowRestartToReclaimSwap {
+            set("rescue.showAdvancedMemoryActions", .bool(edited.allowRestartToReclaimSwap))
+        }
+        return preferences
+    }
+
+    public static func reverseProject(_ config: TidyConfig, replacing prior: PolicyValues?,
+                                      with global: PolicyValues) -> TidyConfig {
+        var result = config
+        let transcript = SettingID(rawValue: "cleanup.transcriptDays")
+        if case .integer(let value)? = global.fields[transcript], let exact = Int(exactly: value) {
+            result.transcriptAgeThresholdDays = exact
+        } else if prior?.fields[transcript] != nil {
+            result.transcriptAgeThresholdDays = 45
+        }
+
+        let stale = SettingID(rawValue: "item.normal.extras.stale-node-modules.inactiveDays")
+        if case .integer(let value)? = global.fields[stale], let exact = Int(exactly: value) {
+            result.staleNodeModulesThresholdDays = exact
+        } else if prior?.fields[stale] != nil {
+            result.staleNodeModulesThresholdDays = 60
+        }
+
+        let domains = SettingID(rawValue: "browsers.keepCookieDomains")
+        if case .strings(let values)? = global.fields[domains] {
+            result.keepCookieDomains = values
+        } else if prior?.fields[domains] != nil {
+            result.keepCookieDomains = []
+        }
+
+        let advanced = SettingID(rawValue: "rescue.showAdvancedMemoryActions")
+        if case .bool(let visible)? = global.fields[advanced] {
+            result.allowRestartToReclaimSwap = visible
+        } else if prior?.fields[advanced] != nil {
+            result.allowRestartToReclaimSwap = false
+        }
+        return result
+    }
+}
+
 public enum SettingsStoreError: Error, Equatable, Sendable {
     case readOnlyRecovery, staleRevision, changedExternally, invalidChange
     case unavailable, unsafeLocation, oversized, revisionOverflow, writeFailed, durabilityUncertain, finalizationBlocked
