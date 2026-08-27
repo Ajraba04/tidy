@@ -41,8 +41,9 @@ public final class ExecutionPolicyBridge {
     private var pendingTailID: UUID?
     private var pendingPolicyCount = 0
     private var recoveryTicket: PolicyUpdateTicket?
-    private var legacySubmittedConfig: TidyConfig
-    private var legacySubmittedPreferences: PolicyPreferences?
+    private var predictedSubmittedEnvelope: SettingsEnvelope
+    private var pendingPayloadOrder: [SettingsIntentID] = []
+    private var pendingPayloads: [SettingsIntentID: Payload] = [:]
     private var observers: [UUID: @MainActor (SettingsIntentOutcome) -> Void] = [:]
     private var submissionSequence: UInt64 = 0
     private var errorSequence: UInt64 = 0
@@ -68,8 +69,8 @@ public final class ExecutionPolicyBridge {
         let envelope = loaded.envelope
         let revision = envelope?.revision
         self.acknowledgedEnvelope = envelope
-        self.legacySubmittedConfig = envelope?.config ?? TidyConfig(schemaVersion: 2)
-        self.legacySubmittedPreferences = envelope?.preferences
+        self.predictedSubmittedEnvelope = envelope ?? SettingsEnvelope(schemaVersion: 2,
+            revision: 0, config: TidyConfig(schemaVersion: 2))
         self.lastSuccessfullyPersistedRevision = revision
         self.durableSettingsRevision = revision
         self.isExecutionEnabled = revision != nil && loaded.disposition != .recoveryReadOnly
@@ -114,14 +115,22 @@ public final class ExecutionPolicyBridge {
                 reason: .unsupportedAuthority,
                 message: "This setting requires a separate authorization flow.")
         }
-        if let value = delta.editedValue {
-            do {
+        let predictedRaw = predictedSubmittedEnvelope.preferences?.global.fields[delta.id]
+        guard delta.baseValue == predictedRaw else {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings change is based on stale settings.")
+        }
+        do {
+            if let base = delta.baseValue {
                 try PolicyValidator.validateStructure(
-                    PolicyValues(fields: [delta.id: value]), at: .global)
-            } catch {
-                return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
-                                             message: "The settings change is invalid.")
+                    PolicyValues(fields: [delta.id: base]), at: .global)
             }
+            var complete = predictedSubmittedEnvelope.preferences?.global ?? PolicyValues()
+            complete.fields[delta.id] = delta.editedValue
+            try PolicyValidator.validateStructure(complete, at: .global)
+        } catch {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings change is invalid.")
         }
         return admit(id: id, sequence: sequence, payload: .global(delta),
                      effect: definition.effect)
@@ -140,17 +149,7 @@ public final class ExecutionPolicyBridge {
             return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
                                          message: "The settings change is invalid.")
         }
-        let admission = admit(id: id, sequence: sequence, payload: .legacy(delta),
-                              effect: .invalidate)
-        if case .accepted = admission {
-            legacySubmittedConfig = delta.edited
-            var projected = legacySubmittedPreferences ?? PolicyPreferences()
-            for touched in delta.touchedCompatibilityBase {
-                projected.global.fields[touched.id] = touched.editedValue
-            }
-            legacySubmittedPreferences = projected
-        }
-        return admission
+        return admit(id: id, sequence: sequence, payload: .legacy(delta), effect: .invalidate)
     }
 
     /// Source-compatible whole-value entry point. New app code uses the
@@ -158,8 +157,8 @@ public final class ExecutionPolicyBridge {
     @discardableResult
     public func submit(config: TidyConfig) -> Task<Void, Never> {
         let delta = LegacyPreferenceDelta(baseRevision: acknowledgedEnvelope?.revision ?? 0,
-            base: legacySubmittedConfig, edited: config,
-            compatibilityBase: legacySubmittedPreferences?.global)
+            base: predictedSubmittedEnvelope.config, edited: config,
+            compatibilityBase: predictedSubmittedEnvelope.preferences?.global)
         switch submit(legacy: delta) {
         case .accepted(_, let completion):
             return Task { _ = await completion.value }
@@ -196,6 +195,9 @@ public final class ExecutionPolicyBridge {
 
         pendingSnapshotCount += 1
         pendingSnapshotBytes += bytes
+        pendingPayloadOrder.append(id)
+        pendingPayloads[id] = payload
+        rebuildPredictedSubmission()
         storageUpdatePending = true
         let intentGeneration: UUID?
         if ticket != nil {
@@ -216,9 +218,12 @@ public final class ExecutionPolicyBridge {
         let previous = pendingTail
         let task = Task { @MainActor [self] in
             if let previous { _ = await previous.value }
-            let outcome = await perform(id: id, payload: payload, ticket: ticket,
+            let outcome = await perform(id: id, ticket: ticket,
                                         intentGeneration: intentGeneration,
                                         sequence: sequence)
+            pendingPayloadOrder.removeAll { $0 == id }
+            pendingPayloads[id] = nil
+            rebuildPredictedSubmission()
             pendingSnapshotCount -= 1
             pendingSnapshotBytes -= bytes
             if ticket != nil { pendingPolicyCount -= 1 }
@@ -236,26 +241,31 @@ public final class ExecutionPolicyBridge {
         return .accepted(id, task)
     }
 
-    private func perform(id: SettingsIntentID, payload: Payload,
-                         ticket: PolicyUpdateTicket?,
+    private func perform(id: SettingsIntentID, ticket: PolicyUpdateTicket?,
                          intentGeneration: UUID?, sequence: UInt64) async -> SettingsIntentOutcome {
         do {
             guard let expectedRevision = lastSuccessfullyPersistedRevision else {
                 throw SettingsStoreError.readOnlyRecovery
             }
+            guard let payload = pendingPayloads[id] else {
+                throw SettingsStoreError.invalidChange
+            }
             let change: SettingsChange
             switch payload {
-            case .legacy(let delta): change = .legacyPreferenceDelta(delta)
+            case .legacy(let delta):
+                // A stored whole-value delta remains bound to the exact config
+                // prediction it was accepted against. If an earlier dependency
+                // failed, do not replay only its changed fields over another base.
+                guard delta.base == acknowledgedEnvelope?.config else {
+                    throw SettingsStoreError.staleRevision
+                }
+                change = .legacyPreferenceDelta(delta)
             case .global(let delta): change = .globalPreferenceDelta(delta)
             }
             let saved = try await settings.update(expectedRevision: expectedRevision, change: change)
             lastSuccessfullyPersistedRevision = saved.revision
             durableSettingsRevision = saved.revision
             acknowledgedEnvelope = saved
-            if pendingSnapshotCount == 1 {
-                legacySubmittedConfig = saved.config
-                legacySubmittedPreferences = saved.preferences
-            }
 
             if let ticket {
                 let environment = saved.config.makePolicyEnvironment(
@@ -367,6 +377,69 @@ public final class ExecutionPolicyBridge {
             if let value = delta.editedValue { try add(JSONEncoder().encode(value).count) }
         }
         return total
+    }
+
+    /// Replays accepted intent payloads in admission order over the exact last
+    /// durable acknowledgement. Stored deltas are never rebased: this is only
+    /// the prediction used to bind later source-compatible submissions.
+    private func rebuildPredictedSubmission() {
+        var envelope = acknowledgedEnvelope ?? SettingsEnvelope(schemaVersion: 2,
+            revision: 0, config: TidyConfig(schemaVersion: 2))
+        for id in pendingPayloadOrder {
+            guard let payload = pendingPayloads[id] else { continue }
+            switch payload {
+            case .legacy(let delta):
+                envelope = applyingPrediction(delta, to: envelope)
+            case .global(let delta):
+                envelope = applyingGlobalPrediction(delta, to: envelope)
+            }
+        }
+        predictedSubmittedEnvelope = envelope
+    }
+
+    private func applyingPrediction(_ delta: LegacyPreferenceDelta,
+                                    to envelope: SettingsEnvelope) -> SettingsEnvelope {
+        var config = envelope.config
+        if delta.base.schemaVersion != delta.edited.schemaVersion { config.schemaVersion = delta.edited.schemaVersion }
+        if delta.base.hasCompletedOnboarding != delta.edited.hasCompletedOnboarding { config.hasCompletedOnboarding = delta.edited.hasCompletedOnboarding }
+        if delta.base.keepCookieDomains != delta.edited.keepCookieDomains { config.keepCookieDomains = delta.edited.keepCookieDomains }
+        if delta.base.simulatorsApprovedForDeletion != delta.edited.simulatorsApprovedForDeletion { config.simulatorsApprovedForDeletion = delta.edited.simulatorsApprovedForDeletion }
+        if delta.base.gitRoots != delta.edited.gitRoots { config.gitRoots = delta.edited.gitRoots }
+        if delta.base.staleNodeModulesThresholdDays != delta.edited.staleNodeModulesThresholdDays { config.staleNodeModulesThresholdDays = delta.edited.staleNodeModulesThresholdDays }
+        if delta.base.transcriptAgeThresholdDays != delta.edited.transcriptAgeThresholdDays { config.transcriptAgeThresholdDays = delta.edited.transcriptAgeThresholdDays }
+        if delta.base.appsApprovedForQuit != delta.edited.appsApprovedForQuit { config.appsApprovedForQuit = delta.edited.appsApprovedForQuit }
+        if delta.base.allowRestartToReclaimSwap != delta.edited.allowRestartToReclaimSwap { config.allowRestartToReclaimSwap = delta.edited.allowRestartToReclaimSwap }
+        if delta.base.presets != delta.edited.presets { config.presets = delta.edited.presets }
+        var preferences = envelope.preferences ?? PolicyPreferences()
+        for touched in delta.touchedCompatibilityBase {
+            preferences.global.fields[touched.id] = touched.editedValue
+        }
+        return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
+            revision: envelope.revision, config: config, preferences: preferences)
+    }
+
+    private func applyingGlobalPrediction(_ delta: GlobalPreferenceDelta,
+                                          to envelope: SettingsEnvelope) -> SettingsEnvelope {
+        var config = envelope.config
+        var preferences = envelope.preferences ?? PolicyPreferences()
+        preferences.global.fields[delta.id] = delta.editedValue
+        switch delta.id.rawValue {
+        case "cleanup.transcriptDays":
+            if case .integer(let value)? = delta.editedValue { config.transcriptAgeThresholdDays = Int(value) }
+            else if delta.baseValue != nil { config.transcriptAgeThresholdDays = 45 }
+        case "item.normal.extras.stale-node-modules.inactiveDays":
+            if case .integer(let value)? = delta.editedValue { config.staleNodeModulesThresholdDays = Int(value) }
+            else if delta.baseValue != nil { config.staleNodeModulesThresholdDays = 60 }
+        case "browsers.keepCookieDomains":
+            if case .strings(let values)? = delta.editedValue { config.keepCookieDomains = values }
+            else if delta.baseValue != nil { config.keepCookieDomains = [] }
+        case "rescue.showAdvancedMemoryActions":
+            if case .bool(let value)? = delta.editedValue { config.allowRestartToReclaimSwap = value }
+            else if delta.baseValue != nil { config.allowRestartToReclaimSwap = false }
+        default: break
+        }
+        return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
+            revision: envelope.revision, config: config, preferences: preferences)
     }
 
     public func drain() async {
