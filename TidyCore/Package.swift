@@ -19,7 +19,7 @@ let package = Package(
         .testTarget(
             name: "TidyCoreTests",
             dependencies: ["TidyCore"],
-            exclude: ["Fixtures/T04ProcessFixture.c"],
+            exclude: ["Fixtures/T04ProcessFixture.c", "Fixtures/T05SettingsProcessDriver.swift"],
             resources: [.copy("Fixtures/Config")]
         )
     ]
