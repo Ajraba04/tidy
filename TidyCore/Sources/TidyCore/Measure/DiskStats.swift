@@ -8,7 +8,9 @@ public struct DiskStats: Sendable, Equatable {
     public let availableBytes: Int64
     /// Finder-style available space including purgeable
     /// (`.volumeAvailableCapacityForImportantUsageKey`): the headline
-    /// number, since it matches what Finder and About This Mac show.
+    /// number, since it matches what Finder and About This Mac show. This is
+    /// a live policy estimate and is not guaranteed to equal or exceed the
+    /// strict available-space value from the same snapshot.
     public let availableForImportantUsageBytes: Int64
 
     public static func current(volumeURL: URL = URL(fileURLWithPath: "/")) throws -> DiskStats {

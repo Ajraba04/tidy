@@ -9,9 +9,10 @@ struct DiskStatsTests {
         #expect(stats.totalBytes > 0)
         #expect(stats.availableBytes >= 0)
         #expect(stats.availableBytes <= stats.totalBytes)
-        // Finder-style "important usage" free space includes purgeable
-        // space, so it is never smaller than the strict figure.
-        #expect(stats.availableForImportantUsageBytes >= stats.availableBytes)
+        // These live policy estimates are independent and are not guaranteed
+        // to be ordered against each other.
+        #expect(stats.availableForImportantUsageBytes >= 0)
+        #expect(stats.availableForImportantUsageBytes <= stats.totalBytes)
     }
 }
 
