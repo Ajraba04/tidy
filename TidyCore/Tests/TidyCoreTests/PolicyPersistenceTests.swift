@@ -226,6 +226,47 @@ import Testing
         let reloaded = try #require(await SettingsStore(url: scratch.file).load().envelope)
         #expect(reloaded.preferences == preferences)
     }
+
+    @Test func legacyDeltaUsesItsCapturedBaseAndPreservesUnrelatedTypedEdits() async throws {
+        let scratch = try PolicySettingsScratch(); defer { scratch.remove() }
+        let store = SettingsStore(url: scratch.file)
+        let initial = try #require(await store.load().envelope)
+        var edited = initial.config
+        edited.transcriptAgeThresholdDays = 72
+        let delta = LegacyPreferenceDelta(baseRevision: initial.revision,
+                                          base: initial.config, edited: edited)
+
+        let typed = PolicyPreferences(global: values(["ui.units": .choice("decimal")]))
+        let intervening = try await store.update(expectedRevision: initial.revision,
+                                                 change: .preferences(typed))
+        let saved = try await store.update(expectedRevision: intervening.revision,
+                                           change: .legacyPreferenceDelta(delta))
+
+        #expect(saved.config.transcriptAgeThresholdDays == 72)
+        #expect(saved.preferences?.global.fields[key("ui.units")] == .choice("decimal"))
+        #expect(saved.preferences?.global.fields[key("cleanup.transcriptDays")] == .integer(72))
+    }
+
+    @Test func typedDeltaTreatsAbsentAsDifferentFromDefaultAndRejectsTouchedConflict() async throws {
+        let scratch = try PolicySettingsScratch(); defer { scratch.remove() }
+        let store = SettingsStore(url: scratch.file)
+        let initial = try #require(await store.load().envelope)
+        let id = key("ui.units")
+        let delta = GlobalPreferenceDelta(baseRevision: initial.revision, id: id,
+                                          baseValue: nil, editedValue: .choice("binary"))
+        let intervening = try await store.update(expectedRevision: initial.revision,
+            change: .preferences(PolicyPreferences(global: values(["ui.units": .choice("decimal")]))))
+
+        do {
+            _ = try await store.update(expectedRevision: intervening.revision,
+                                       change: .globalPreferenceDelta(delta))
+            Issue.record("A touched typed-field conflict was accepted")
+        } catch let error as SettingsStoreError {
+            #expect(error == .staleRevision)
+        }
+        let unchanged = try #require(await store.load().envelope)
+        #expect(unchanged == intervening)
+    }
 }
 
 private struct PolicySettingsScratch {

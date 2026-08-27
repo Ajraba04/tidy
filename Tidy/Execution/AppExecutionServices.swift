@@ -38,11 +38,12 @@ final class AppExecutionServices {
         self.settingsLoad = worker.load
         self.initialJournalAdmission = worker.journalAdmission
         self.coordinator = worker.coordinator
-        let config = worker.load.envelope?.config ?? TidyConfig(schemaVersion: 2)
+        let envelope = worker.load.envelope ?? SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: TidyConfig(schemaVersion: 2))
         self.policyBridge = ExecutionPolicyBridge(coordinator: worker.coordinator,
             settings: settings, loaded: worker.load, homeDirectory: paths.home.path,
             detectedTools: [])
-        self.configStore = AppConfigStore(config: config, bridge: policyBridge)
+        self.configStore = AppConfigStore(loaded: envelope, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
         self.runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
     }
@@ -78,6 +79,7 @@ final class AppExecutionServices {
             && policyBridge.isExecutionEnabled
     }
     var policyUpdatePending: Bool { policyBridge.policyUpdatePending }
+    var storageUpdatePending: Bool { policyBridge.storageUpdatePending }
     var persistenceError: String? {
         if let error = policyBridge.persistenceError { return error }
         guard initialJournalAdmission == .ready else {

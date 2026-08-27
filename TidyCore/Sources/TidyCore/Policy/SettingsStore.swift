@@ -66,6 +66,30 @@ public actor SettingsStore {
             reverseProject(replacing: current.preferences?.global,
                            with: value.global,
                            into: &config)
+        case .legacyPreferenceDelta(let delta):
+            guard delta.baseRevision <= current.revision else {
+                throw SettingsStoreError.staleRevision
+            }
+            for touched in delta.touchedCompatibilityBase {
+                guard preferences?.global.fields[touched.id] == touched.baseValue else {
+                    throw SettingsStoreError.staleRevision
+                }
+            }
+            config = try applying(delta, to: current.config)
+            preferences = applyingLegacyDelta(from: current.config, to: config,
+                                              preferences: preferences)
+        case .globalPreferenceDelta(let delta):
+            guard delta.baseRevision <= current.revision else {
+                throw SettingsStoreError.staleRevision
+            }
+            var replacement = preferences ?? PolicyPreferences()
+            guard replacement.global.fields[delta.id] == delta.baseValue else {
+                throw SettingsStoreError.staleRevision
+            }
+            let prior = replacement.global
+            replacement.global.fields[delta.id] = delta.editedValue
+            preferences = replacement
+            reverseProject(replacing: prior, with: replacement.global, into: &config)
         }
         return try save(current: current, config: config, preferences: preferences)
     }
@@ -174,6 +198,55 @@ public actor SettingsStore {
         }
         return preferences
     }
+
+    private func applying(_ delta: LegacyPreferenceDelta,
+                          to current: TidyConfig) throws -> TidyConfig {
+        var result = current
+        func replace<T: Equatable>(_ base: T, _ edited: T, _ current: T,
+                                    _ assign: (T) -> Void) throws {
+            guard base != edited else { return }
+            guard current == base else { throw SettingsStoreError.staleRevision }
+            assign(edited)
+        }
+        try replace(delta.base.schemaVersion, delta.edited.schemaVersion, current.schemaVersion) {
+            result.schemaVersion = $0
+        }
+        try replace(delta.base.hasCompletedOnboarding, delta.edited.hasCompletedOnboarding,
+                    current.hasCompletedOnboarding) { result.hasCompletedOnboarding = $0 }
+        try replace(delta.base.keepCookieDomains, delta.edited.keepCookieDomains,
+                    current.keepCookieDomains) { result.keepCookieDomains = $0 }
+        try replace(delta.base.simulatorsApprovedForDeletion,
+                    delta.edited.simulatorsApprovedForDeletion,
+                    current.simulatorsApprovedForDeletion) {
+            result.simulatorsApprovedForDeletion = $0
+        }
+        try replace(delta.base.gitRoots, delta.edited.gitRoots, current.gitRoots) {
+            result.gitRoots = $0
+        }
+        try replace(delta.base.staleNodeModulesThresholdDays,
+                    delta.edited.staleNodeModulesThresholdDays,
+                    current.staleNodeModulesThresholdDays) {
+            result.staleNodeModulesThresholdDays = $0
+        }
+        try replace(delta.base.transcriptAgeThresholdDays,
+                    delta.edited.transcriptAgeThresholdDays,
+                    current.transcriptAgeThresholdDays) {
+            result.transcriptAgeThresholdDays = $0
+        }
+        try replace(delta.base.appsApprovedForQuit, delta.edited.appsApprovedForQuit,
+                    current.appsApprovedForQuit) { result.appsApprovedForQuit = $0 }
+        try replace(delta.base.allowRestartToReclaimSwap,
+                    delta.edited.allowRestartToReclaimSwap,
+                    current.allowRestartToReclaimSwap) {
+            result.allowRestartToReclaimSwap = $0
+        }
+        try replace(delta.base.presets, delta.edited.presets, current.presets) {
+            result.presets = $0
+        }
+        return result
+    }
+
+    internal func isRecoveryRequired() -> Bool { recoveryReason != nil }
 
     private func reverseProject(replacing prior: PolicyValues?, with global: PolicyValues,
                                 into config: inout TidyConfig) {

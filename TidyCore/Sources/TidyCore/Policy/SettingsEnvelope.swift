@@ -29,6 +29,57 @@ public enum SettingsChange: Equatable, Sendable {
     case transcriptAgeDays(Int)
     case legacyPreferences(TidyConfig)
     case preferences(PolicyPreferences)
+    case legacyPreferenceDelta(LegacyPreferenceDelta)
+    case globalPreferenceDelta(GlobalPreferenceDelta)
+}
+
+public struct GlobalPreferenceDelta: Equatable, Sendable {
+    public let baseRevision: UInt64
+    public let id: SettingID
+    public let baseValue: SettingValue?
+    public let editedValue: SettingValue?
+
+    public init(baseRevision: UInt64, id: SettingID, baseValue: SettingValue?,
+                editedValue: SettingValue?) {
+        self.baseRevision = baseRevision
+        self.id = id
+        self.baseValue = baseValue
+        self.editedValue = editedValue
+    }
+}
+
+public struct LegacyPreferenceDelta: Equatable, Sendable {
+    public let baseRevision: UInt64
+    public let base: TidyConfig
+    public let edited: TidyConfig
+    /// Exact captured typed compatibility bases. `nil` is intentionally distinct
+    /// from the registry default and participates in stale-edit detection.
+    public let touchedCompatibilityBase: [GlobalPreferenceDelta]
+
+    public init(baseRevision: UInt64, base: TidyConfig, edited: TidyConfig,
+                compatibilityBase: PolicyValues? = nil) {
+        self.baseRevision = baseRevision
+        self.base = base
+        self.edited = edited
+        var touched: [GlobalPreferenceDelta] = []
+        func append(_ rawID: String, changed: Bool, _ after: SettingValue?) {
+            guard changed else { return }
+            let id = SettingID(rawValue: rawID)
+            touched.append(GlobalPreferenceDelta(baseRevision: baseRevision,
+                id: id, baseValue: compatibilityBase?.fields[id], editedValue: after))
+        }
+        append("browsers.keepCookieDomains", changed: base.keepCookieDomains != edited.keepCookieDomains,
+               .strings(edited.keepCookieDomains))
+        append("cleanup.transcriptDays", changed: base.transcriptAgeThresholdDays != edited.transcriptAgeThresholdDays,
+               .integer(Int64(edited.transcriptAgeThresholdDays)))
+        append("item.normal.extras.stale-node-modules.inactiveDays",
+               changed: base.staleNodeModulesThresholdDays != edited.staleNodeModulesThresholdDays,
+               .integer(Int64(edited.staleNodeModulesThresholdDays)))
+        append("rescue.showAdvancedMemoryActions",
+               changed: base.allowRestartToReclaimSwap != edited.allowRestartToReclaimSwap,
+               .bool(edited.allowRestartToReclaimSwap))
+        self.touchedCompatibilityBase = touched.sorted { $0.id.rawValue < $1.id.rawValue }
+    }
 }
 public enum SettingsStoreError: Error, Equatable, Sendable {
     case readOnlyRecovery, staleRevision, changedExternally, invalidChange
