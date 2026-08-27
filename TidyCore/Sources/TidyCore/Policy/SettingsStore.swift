@@ -63,7 +63,9 @@ public actor SettingsStore {
             config = value
         case .preferences(let value):
             preferences = value
-            reverseProject(value.global, into: &config)
+            reverseProject(replacing: current.preferences?.global,
+                           with: value.global,
+                           into: &config)
         }
         return try save(current: current, config: config, preferences: preferences)
     }
@@ -173,25 +175,34 @@ public actor SettingsStore {
         return preferences
     }
 
-    private func reverseProject(_ global: PolicyValues, into config: inout TidyConfig) {
-        if case .integer(let value)? = global.fields[SettingID(rawValue: "cleanup.transcriptDays")],
-           let exact = Int(exactly: value) {
+    private func reverseProject(replacing prior: PolicyValues?, with global: PolicyValues,
+                                into config: inout TidyConfig) {
+        let transcript = SettingID(rawValue: "cleanup.transcriptDays")
+        if case .integer(let value)? = global.fields[transcript], let exact = Int(exactly: value) {
             config.transcriptAgeThresholdDays = exact
+        } else if prior?.fields[transcript] != nil {
+            config.transcriptAgeThresholdDays = 45
         }
-        if case .integer(let value)? = global.fields[
-            SettingID(rawValue: "item.normal.extras.stale-node-modules.inactiveDays")
-        ], let exact = Int(exactly: value) {
+
+        let stale = SettingID(rawValue: "item.normal.extras.stale-node-modules.inactiveDays")
+        if case .integer(let value)? = global.fields[stale], let exact = Int(exactly: value) {
             config.staleNodeModulesThresholdDays = exact
+        } else if prior?.fields[stale] != nil {
+            config.staleNodeModulesThresholdDays = 60
         }
-        if case .strings(let values)? = global.fields[
-            SettingID(rawValue: "browsers.keepCookieDomains")
-        ] {
+
+        let domains = SettingID(rawValue: "browsers.keepCookieDomains")
+        if case .strings(let values)? = global.fields[domains] {
             config.keepCookieDomains = values
+        } else if prior?.fields[domains] != nil {
+            config.keepCookieDomains = []
         }
-        if case .bool(let visible)? = global.fields[
-            SettingID(rawValue: "rescue.showAdvancedMemoryActions")
-        ] {
+
+        let advanced = SettingID(rawValue: "rescue.showAdvancedMemoryActions")
+        if case .bool(let visible)? = global.fields[advanced] {
             config.allowRestartToReclaimSwap = visible
+        } else if prior?.fields[advanced] != nil {
+            config.allowRestartToReclaimSwap = false
         }
     }
 }
