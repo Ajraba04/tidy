@@ -8,6 +8,7 @@ Status: proposed source-entry card. No production edit is allowed before indepen
 - Create `TidyCore/Sources/TidyCore/Policy/SettingsTransfer.swift`
 - Modify `TidyCore/Sources/TidyCore/Policy/SettingsEnvelope.swift` only to replace private `SettingsJSON` with `StrictJSON` and map parser errors to the existing `SettingsDecoding.Failure`
 - Create `TidyCore/Tests/TidyCoreTests/SettingsTransferTests.swift`
+- Modify `TidyCore/Tests/TidyCoreTests/SettingsProcessAcceptanceTests.swift` only to add `Policy/StrictJSON.swift` to its explicit standalone production-source manifest (adversarial scope amendment approved after the dependency was exercised)
 
 No settings schema/model/store, profile source, bridge, coordinator, app, project or generated-project file may change.
 
@@ -107,7 +108,7 @@ public enum SettingsTransfer {
 }
 ```
 
-Public initializers are supplied for all public value structs. Analysis contains no secret token and is never commit-capable.
+Public initializers are supplied for public value structs except `SettingsImportAnalysis`: analysis is issued only by `analyze`, its initializer and hidden candidate fields remain internal, it contains no secret token, and it is never commit-capable.
 
 ## Classification and safety rules
 
@@ -143,7 +144,7 @@ Export uses one `PortableSettingPolicy`: it includes portable global/profile fie
 
 ## Complete RED test file
 
-Create this file verbatim before production edits; the focused command must fail to compile on the prescribed missing symbols.
+This was the initial approved RED file; it was created verbatim before production edits and the focused command failed to compile on the prescribed missing symbols. The post-review binding amendment below supersedes its two project fixtures and extends its regression coverage.
 
 ```swift
 import Foundation
@@ -240,7 +241,7 @@ import Testing
         let preferences = PolicyPreferences(global: values([
             ("ui.units", .choice("decimal")), ("scan.preset", .choice("balanced")),
             ("browsers.keepCookieDomains", .strings(["private.example"]))]),
-            profiles: [profile], projects: ["secret-project": values([("ui.units", .choice("binary"))])])
+            profiles: [profile], projects: ["secret-project": values([("cleanup.inactiveDays", .integer(60))])])
         let expected = #"{"global":{"fields":{"scan.preset":{"choice":"balanced"},"ui.units":{"choice":"decimal"}}},"inertImports":[],"profiles":[{"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","name":"Work","values":{"fields":{"scan.preset":{"choice":"eco"}}}}],"schemaVersion":1}"#
         let first = try SettingsTransfer.export(state(preferences))
         let reordered = PolicyPreferences(global: values([
@@ -554,7 +555,7 @@ import Testing
     }
 
     @Test func importMergesExplicitGlobalAndPreservesProjectsAndAbsentValues() throws {
-        let projects = ["local": values([("ui.units", .choice("binary"))])]
+        let projects = ["local": values([("cleanup.inactiveDays", .integer(60))])]
         let current = PolicyPreferences(global: values([
             ("ui.units", .choice("binary")), ("ui.density", .choice("compact"))]),
             projects: projects)
@@ -722,6 +723,21 @@ import Testing
     }
 }
 ```
+
+## Post-review binding amendment
+
+The authoritative executable artifact is `TidyCore/Tests/TidyCoreTests/SettingsTransferTests.swift`. In the RED-to-GREEN response to adversarial source review, the suite gained these binding regressions beyond the initial embedded file:
+
+- `exportOmitsRestrictionsThatWeakenDefaultsOrMergedGlobal`;
+- `replaceWithoutImportedInertStillDiscardsAllLocalProfileInert`;
+- `resolveRejectsCanonicalOutputOverflowCreatedOnlyByMerge`;
+- `candidateChecksCrossLayerRelationsAndUTF8ValueBytes`;
+- `authorityAndReassociationRowsValidateRulesBeforeClassification`;
+- `canonicalEncoderRejectsConstructedDepthAndNoncanonicalIntegers`;
+- expanded `malformedPreservedStateRejectsWithoutTruncationOrRepair` coverage for exact project validation, empty project IDs and 1,001 projects;
+- unsafe malformed setting tags under unsafe setting IDs.
+
+These regressions are part of this card's acceptance contract. The two embedded project fixtures above use the project-supported `cleanup.inactiveDays` row; project-scoped `ui.units` is invalid under exact project validation.
 
 ## Commands and acceptance
 
