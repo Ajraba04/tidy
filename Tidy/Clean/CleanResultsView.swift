@@ -5,11 +5,14 @@ struct CleanResultsView: View {
     let report: RunReport
 
     var body: some View {
+        let presentation = RunReportPresentation(report: report)
         List {
             Section {
-                if report.coordinatorMeasurementsAvailable == false {
-                    Text(admissionMessage)
-                    LabeledContent("Disk and memory", value: "Not measured")
+                if !presentation.measurementsAvailable {
+                    if let message = presentation.admissionMessage {
+                        Text(message)
+                    }
+                    LabeledContent("Disk and memory", value: presentation.memoryText)
                 } else {
                     HStack {
                         Text("Freed")
@@ -40,18 +43,15 @@ struct CleanResultsView: View {
                             .monospacedDigit()
                     }
 
-                    if report.totalReclaimedMemoryBytes > 0 {
-                        HStack {
-                            Text("Memory returned")
-                            Spacer()
-                            Text(ByteFormat.human(report.totalReclaimedMemoryBytes))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Text("Memory is measured separately from disk and is never added to the freed total.")
-                            .font(.caption)
+                    HStack {
+                        Text("Memory returned")
+                        Spacer()
+                        Text(presentation.memoryText)
                             .foregroundStyle(.secondary)
                     }
+                    Text("Memory is measured separately from disk and is never added to the freed total.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     if report.freedFigureNeedsReconciling {
                         Text("""
@@ -92,19 +92,6 @@ struct CleanResultsView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var admissionMessage: String {
-        switch report.disposition {
-        case .noWork: return "No items selected; nothing was run."
-        case .busy: return "Another cleanup is running. Wait for it to finish, then try again."
-        case .recoveryBlocked: return "An earlier operation may still be running. Cleanup is blocked pending reconciliation."
-        case .storageUnavailable: return "Execution records could not be validated. Cleanup remains blocked."
-        case .stalePolicy: return "Settings changed. Review the items again before confirming."
-        case .staleReview, .invalidToken: return "This confirmation is no longer valid. Review the items again."
-        case .unavailableSelection: return "The selected action is unavailable. Nothing was run."
-        case .completed: return "The operation finished, but measurements are unavailable."
         }
     }
 }

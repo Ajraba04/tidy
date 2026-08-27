@@ -2,29 +2,128 @@ import Foundation
 import Observation
 import TidyCore
 
+struct AppStoragePaths: Sendable {
+    let home: URL
+    let settings: URL
+    let journal: URL
+}
+
+enum AppBootstrapStage: String, Sendable {
+    case beforeSettingsLoad, afterSettingsLoad
+    case beforeCoordinatorConstruction, afterCoordinatorConstruction
+}
+
+private struct AppBootstrapWorkerResult: Sendable {
+    let load: SettingsLoadResult
+    let coordinator: ExecutionCoordinator
+    let journalAdmission: MutationAdmission
+}
+
 @Observable @MainActor
 final class AppExecutionServices {
+    let paths: AppStoragePaths
+    let settings: SettingsStore
+    let settingsLoad: SettingsLoadResult
+    let initialJournalAdmission: MutationAdmission
     let coordinator: ExecutionCoordinator
     let policyBridge: ExecutionPolicyBridge
     let configStore: AppConfigStore
     let engine: CleanEngine
     let runLogURL: URL
 
-    init(config: TidyConfig, configURL: URL?, homeDirectory: String, journalDirectory: URL) {
-        let detectedTools: Set<ToolchainID> = []
-        let environment = config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: detectedTools)
-        let coordinator = ExecutionCoordinator(environment: environment, journalDirectory: journalDirectory)
-        self.coordinator = coordinator
-        self.policyBridge = ExecutionPolicyBridge(coordinator: coordinator, configURL: configURL,
-                                                 homeDirectory: homeDirectory, detectedTools: detectedTools)
+    private init(paths: AppStoragePaths, settings: SettingsStore,
+                 worker: AppBootstrapWorkerResult) {
+        self.paths = paths
+        self.settings = settings
+        self.settingsLoad = worker.load
+        self.initialJournalAdmission = worker.journalAdmission
+        self.coordinator = worker.coordinator
+        let config = worker.load.envelope?.config ?? TidyConfig(schemaVersion: 2)
+        self.policyBridge = ExecutionPolicyBridge(coordinator: worker.coordinator,
+            settings: settings, loaded: worker.load, homeDirectory: paths.home.path,
+            detectedTools: [])
         self.configStore = AppConfigStore(config: config, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
-        self.runLogURL = journalDirectory.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
+        self.runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
     }
 
-    var isExecutionEnabled: Bool { policyBridge.isExecutionEnabled }
+    static func bootstrap(paths: AppStoragePaths) async -> AppExecutionServices {
+        let settings = SettingsStore(url: paths.settings)
+        return await bootstrap(paths: paths, settings: settings, observe: { _ in })
+    }
+
+    static func bootstrap(paths: AppStoragePaths, settings: SettingsStore,
+                          observe: @escaping @Sendable (AppBootstrapStage) -> Void) async
+        -> AppExecutionServices {
+        let worker = await Task.detached {
+            observe(.beforeSettingsLoad)
+            let load = await settings.load()
+            observe(.afterSettingsLoad)
+            let config = load.envelope?.config ?? TidyConfig(schemaVersion: 2)
+            let environment = config.makePolicyEnvironment(homeDirectory: paths.home.path,
+                detectedTools: [])
+            observe(.beforeCoordinatorConstruction)
+            let coordinator = ExecutionCoordinator(environment: environment,
+                journalDirectory: paths.journal)
+            observe(.afterCoordinatorConstruction)
+            let admission = await coordinator.mutationAdmission()
+            return AppBootstrapWorkerResult(load: load, coordinator: coordinator,
+                journalAdmission: admission)
+        }.value
+        return AppExecutionServices(paths: paths, settings: settings, worker: worker)
+    }
+
+    var isExecutionEnabled: Bool {
+        settingsLoad.envelope != nil && initialJournalAdmission == .ready
+            && policyBridge.isExecutionEnabled
+    }
     var policyUpdatePending: Bool { policyBridge.policyUpdatePending }
-    var persistenceError: String? { policyBridge.persistenceError }
+    var persistenceError: String? {
+        if let error = policyBridge.persistenceError { return error }
+        guard initialJournalAdmission == .ready else {
+            return "Execution records could not be validated. Cleanup remains disabled."
+        }
+        return nil
+    }
+}
+
+@Observable @MainActor
+final class AppBootstrapState {
+    enum Status: Equatable { case notStarted, loading, ready, recovery, unavailable }
+
+    private(set) var status: Status = .notStarted
+    private(set) var services: AppExecutionServices?
+    private var completion: Task<Void, Never>?
+
+    func start(paths: AppStoragePaths) -> Task<Void, Never> {
+        start { await AppExecutionServices.bootstrap(paths: paths) }
+    }
+
+    func start(paths: AppStoragePaths, settings: SettingsStore,
+               observe: @escaping @Sendable (AppBootstrapStage) -> Void) -> Task<Void, Never> {
+        start { await AppExecutionServices.bootstrap(paths: paths, settings: settings,
+            observe: observe) }
+    }
+
+    func storagePathUnavailable() {
+        guard completion == nil else { return }
+        services = nil
+        status = .unavailable
+    }
+
+    private func start(_ operation: @escaping @MainActor () async -> AppExecutionServices)
+        -> Task<Void, Never> {
+        if let completion { return completion }
+        status = .loading
+        let task = Task { @MainActor [weak self] in
+            let services = await operation()
+            guard let self else { return }
+            self.services = services
+            self.status = services.isExecutionEnabled ? .ready : .recovery
+        }
+        completion = task
+        return task
+    }
 }
 
 /// Per-window review lifecycle; authority remains exclusively in the shared coordinator.

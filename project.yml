@@ -59,11 +59,14 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: TidyAppModelTests/ConfirmationLifecycleTests.swift
+      - path: TidyAppModelTests/SharedSettingsWiringTests.swift
+      - path: TidyAppModelTests/RunReportPresentationTests.swift
       - path: Tidy/Clean/PlanSelectionModel.swift
       - path: Tidy/Clean/CleanViewModel.swift
       - path: Tidy/Custom/CustomViewModel.swift
       - path: Tidy/Execution/AppExecutionServices.swift
       - path: Tidy/Settings/AppConfigStore.swift
+      - path: Tidy/Clean/RunReportPresentation.swift
     dependencies:
       - package: TidyCore
     settings:

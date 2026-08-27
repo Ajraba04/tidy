@@ -12,6 +12,7 @@
 		0F73FAAF28AF854AC46D24A6 /* ScanReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DE9AF810FD928BD55D38E2 /* ScanReportView.swift */; };
 		0FB6D5062EF405B59363D75D /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C2127D230214425D9012EF /* ScanView.swift */; };
 		10EDD7559E917B514A413174 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8D66BF4CCE7907F7DD3916 /* OnboardingViewModel.swift */; };
+		11E97809427040AFD975A285 /* RunReportPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B251257E8268A3704E91025 /* RunReportPresentation.swift */; };
 		154AAC284891B78DBC6B6A87 /* CleanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA75D5598B9D8F1BBBC4743 /* CleanViewModel.swift */; };
 		1801F08A677F3AB88B756833 /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		255F13A45C3E9A1B34814F93 /* CustomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27CF98C2C4735642310A883 /* CustomViewModel.swift */; };
@@ -31,8 +32,10 @@
 		8F03FBD99A31B4D21BED37B4 /* TidyCore in Frameworks */ = {isa = PBXBuildFile; productRef = EC4F4657ADA9D299F1C77F37 /* TidyCore */; };
 		928631A7396E1EAC9A7D19B2 /* AppExecutionServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3EE4DD5ED172D8269F3B81E /* AppExecutionServices.swift */; };
 		94CAA6DEC8FAA77434EFC82E /* TidyCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2FFC2C395001E77A7296BBFD /* TidyCore */; };
+		9842B8692A93BF0AD828784B /* RunReportPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B251257E8268A3704E91025 /* RunReportPresentation.swift */; };
 		9B4EBB120CABC674306A812B /* TestHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9519BCE2FEACF5EC9C7E8B7 /* TestHostApp.swift */; };
 		9C2506ED094D575B75447E59 /* TidyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D722AAA0ECF65AFAB60615FA /* TidyCore */; };
+		A1C3F7AE75FD008518BD89AD /* RunReportPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F4C1C125EFED0F991930DB /* RunReportPresentationTests.swift */; };
 		A30BC700EB1C1939358B930D /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E72E66F717B290C37C642E2 /* ModeButton.swift */; };
 		A4A60D8F3BF28987988ABA4A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CB5D28287440D580A3BB067 /* Assets.xcassets */; };
 		AA55757274C2179E71248DA1 /* CleanPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B41F103AEAACD7A2F5B9CA1 /* CleanPlanView.swift */; };
@@ -42,6 +45,7 @@
 		D65E88E0B18491210BE597A7 /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		D8AAF482525D2486EDF8250D /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		DF3350AB3C7E491F3C97B9B8 /* CustomPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C3DEEB7B3494A1C873B926 /* CustomPlanView.swift */; };
+		E87129A796B865B2A84CE475 /* SharedSettingsWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 827D868F79DC26F673CEC826 /* SharedSettingsWiringTests.swift */; };
 		EEC24B17C06DBDBD4D15CB1C /* StatsGaugeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62D50C4B1DBA8EBD178933E8 /* StatsGaugeRow.swift */; };
 		F9AC75F9C22800338BE6F3F6 /* CleanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA75D5598B9D8F1BBBC4743 /* CleanViewModel.swift */; };
 		FEABBB854E141578D6030251 /* AppConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6E9FC425BFFBF2A669FB16 /* AppConfigStore.swift */; };
@@ -57,12 +61,15 @@
 		42925DD100B3A03F6F881D4D /* CleanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanView.swift; sourceTree = "<group>"; };
 		4ADAD8AADD436D37EBB63937 /* Tidy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Tidy.entitlements; sourceTree = "<group>"; };
 		4CB5D28287440D580A3BB067 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		61F4C1C125EFED0F991930DB /* RunReportPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunReportPresentationTests.swift; sourceTree = "<group>"; };
 		62D50C4B1DBA8EBD178933E8 /* StatsGaugeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsGaugeRow.swift; sourceTree = "<group>"; };
+		6B251257E8268A3704E91025 /* RunReportPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunReportPresentation.swift; sourceTree = "<group>"; };
 		6D1C88AAD17265B95E5D40D8 /* TidyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TidyApp.swift; sourceTree = "<group>"; };
 		6EB587C19EE3954FA36E0E8A /* TidyUITestHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TidyUITestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B41F103AEAACD7A2F5B9CA1 /* CleanPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanPlanView.swift; sourceTree = "<group>"; };
 		7F452175C870E21147D8910B /* TidyCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TidyCore; path = TidyCore; sourceTree = SOURCE_ROOT; };
 		7F8D66BF4CCE7907F7DD3916 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
+		827D868F79DC26F673CEC826 /* SharedSettingsWiringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSettingsWiringTests.swift; sourceTree = "<group>"; };
 		8D6E9FC425BFFBF2A669FB16 /* AppConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigStore.swift; sourceTree = "<group>"; };
 		8FA75D5598B9D8F1BBBC4743 /* CleanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanViewModel.swift; sourceTree = "<group>"; };
 		9BA332992BD15FAEAD38FEA8 /* PlanReviewRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReviewRow.swift; sourceTree = "<group>"; };
@@ -166,6 +173,7 @@
 				8FA75D5598B9D8F1BBBC4743 /* CleanViewModel.swift */,
 				9BA332992BD15FAEAD38FEA8 /* PlanReviewRow.swift */,
 				272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */,
+				6B251257E8268A3704E91025 /* RunReportPresentation.swift */,
 			);
 			path = Clean;
 			sourceTree = "<group>";
@@ -238,6 +246,8 @@
 			isa = PBXGroup;
 			children = (
 				A1830BC7E92D3BC8367D7CA3 /* ConfirmationLifecycleTests.swift */,
+				61F4C1C125EFED0F991930DB /* RunReportPresentationTests.swift */,
+				827D868F79DC26F673CEC826 /* SharedSettingsWiringTests.swift */,
 			);
 			path = TidyAppModelTests;
 			sourceTree = "<group>";
@@ -377,6 +387,7 @@
 				10EDD7559E917B514A413174 /* OnboardingViewModel.swift in Sources */,
 				4661B0E8B32542EF9F4096BA /* PlanReviewRow.swift in Sources */,
 				D65E88E0B18491210BE597A7 /* PlanSelectionModel.swift in Sources */,
+				11E97809427040AFD975A285 /* RunReportPresentation.swift in Sources */,
 				0F73FAAF28AF854AC46D24A6 /* ScanReportView.swift in Sources */,
 				82E28F46CF247AD8C0C0C74B /* ScanSectionViews.swift in Sources */,
 				0FB6D5062EF405B59363D75D /* ScanView.swift in Sources */,
@@ -410,6 +421,9 @@
 				0EF0F5AE3BAD64882F6AD78B /* ConfirmationLifecycleTests.swift in Sources */,
 				B8906F271266DA6A848657E3 /* CustomViewModel.swift in Sources */,
 				1801F08A677F3AB88B756833 /* PlanSelectionModel.swift in Sources */,
+				9842B8692A93BF0AD828784B /* RunReportPresentation.swift in Sources */,
+				A1C3F7AE75FD008518BD89AD /* RunReportPresentationTests.swift in Sources */,
+				E87129A796B865B2A84CE475 /* SharedSettingsWiringTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ScanView: View {
-    @State private var model = ScanViewModel()
+    @State private var model: ScanViewModel
+
+    init(services: AppExecutionServices) {
+        _model = State(initialValue: ScanViewModel(services: services))
+    }
 
     var body: some View {
         VStack {
@@ -41,11 +45,6 @@ struct ScanView: View {
                         Task { await model.runScan() }
                     }
                 }
-            }
-        }
-        .task {
-            if case .idle = model.phase {
-                await model.runScan()
             }
         }
     }

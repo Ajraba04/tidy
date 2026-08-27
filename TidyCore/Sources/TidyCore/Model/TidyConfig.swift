@@ -16,7 +16,7 @@ public struct CustomPreset: Sendable, Codable, Identifiable, Equatable {
 /// schema change can migrate rather than break. Every collection here
 /// ships empty: nothing defaults to any one person's machine.
 public struct TidyConfig: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var hasCompletedOnboarding: Bool
