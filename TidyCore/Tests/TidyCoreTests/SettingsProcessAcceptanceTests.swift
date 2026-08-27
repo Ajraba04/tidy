@@ -234,6 +234,8 @@ private final class A2PRun {
         try await save("seed-one", revision: 1, days: 180)
         #expect(try a2pFile(directory.appendingPathComponent("config.backup.json")).data == a2pLegacy())
         try await save("seed-two", revision: 2, days: 181)
+        #expect(try a2pFile(directory.appendingPathComponent("config.backup.json")).data ==
+            SettingsDecoding.encode(a2pEnvelope(1, 180)))
     }
     func finish() async {
         for (session, _) in children {
@@ -313,6 +315,7 @@ struct SettingsProcessAcceptanceTests {
             #expect(try after["config.json"]?.data == SettingsDecoding.encode(a2pEnvelope(revision, 211)))
             #expect(after["config.backup.json"]?.data == before["config.json"]?.data)
             #expect(Set(after.keys) == ["config.json", "config.backup.json", "config.lock", "config.store.json"])
+            #expect(after.values.allSatisfy { $0.mode == 0o600 })
             #expect(after["config.lock"] == held["config.lock"])
             if mode == "stable-hold" { #expect(after["config.store.json"] == before["config.store.json"]) }
             _ = try a2pMetadata(after)
@@ -365,7 +368,8 @@ struct SettingsProcessAcceptanceTests {
             let before = try run.snapshot()
             let storeID = try a2pMetadata(before)
             let old = try #require(before["config.json"]?.data)
-            let priorBackup = try #require(before["config.backup.json"]?.data)
+            let revision1Bytes = try SettingsDecoding.encode(a2pEnvelope(1, 180))
+            #expect(before["config.backup.json"]?.data == revision1Bytes)
             let candidate = try SettingsDecoding.encode(a2pEnvelope(3, 211))
             let child = try await run.launch("p\(prefix)")
             let (_, code) = try await a2pReap(child.0)
@@ -376,7 +380,7 @@ struct SettingsProcessAcceptanceTests {
             #expect(files["config.store.json"] == before["config.store.json"])
             #expect(files.values.allSatisfy { $0.mode == 0o600 })
             #expect(files["config.json"]?.data == (prefix >= 4 ? candidate : old))
-            #expect(files["config.backup.json"]?.data == (prefix >= 3 ? old : priorBackup))
+            #expect(files["config.backup.json"]?.data == (prefix >= 3 ? old : revision1Bytes))
             if prefix < 4 { #expect(files["config.json"] == before["config.json"]) }
             if prefix < 3 { #expect(files["config.backup.json"] == before["config.backup.json"]) }
             var expected: Set<String> = ["config.json", "config.backup.json", "config.lock", "config.store.json"]
