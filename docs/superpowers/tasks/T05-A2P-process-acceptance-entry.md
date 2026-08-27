@@ -366,8 +366,9 @@ struct SettingsProcessAcceptanceTests {
         try await withA2P { run in
             if mode == "stable-hold" { try await run.seed() }
             let before = try run.snapshot()
-            let winner = try await run.launch(mode), loser = try await run.launch("contender")
+            let winner = try await run.launch(mode)
             let winnerLoaded = try await run.wait(winner.1, "loaded.json")
+            let loser = try await run.launch("contender")
             let loserLoaded = try await run.wait(loser.1, "loaded.json")
             let loadedRevision: UInt64 = mode == "bootstrap-hold" ? 0 : 2
             let loadedDays = mode == "bootstrap-hold" ? 45 : 181
@@ -497,6 +498,8 @@ struct SettingsProcessAcceptanceTests {
     }
 }
 ```
+
+Controller runtime correction: preload the winner completely before launching and preloading the loser, as shown above, while retaining both live children before either start byte is released. The original simultaneous launch raced the store's intentional nonblocking read lock, so the initialized-store case sometimes exercised transient load contention instead of the specified write/publication contention. Two retained failures and the diagnostic artifact recorded the contender as `recoveryReadOnly` with reason `unavailable`; all five publication-prefix cases and bootstrap-death case passed. This correction preserves two overlapping actual writers, identical loaded bytes, all deadlines, the controlled publication collision and every postcondition. The diagnostic-only report branch must not remain in the fixture.
 
 - [ ] In `Package.swift`, replace only the accepted B exclude value with `exclude: ["Fixtures/T04ProcessFixture.c", "Fixtures/T05SettingsProcessDriver.swift"],` before the existing Config resources. Do not alter products, target linkage or resource handling.
 - [ ] Controller runs the focused command below once the parent test file can compile against accepted B/A.2F. Expected natural RED: checked-in driver is absent (`A2PError.missing` before compiler dispatch); record that as fixture-absence RED, not a production behavioral regression. Zero selected tests is never RED/GREEN evidence.
