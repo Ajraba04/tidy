@@ -86,6 +86,68 @@ import Testing
         #expect(saved.config.transcriptAgeThresholdDays != 333)
     }
 
+    @Test func replacingGlobalPreferencesResetsRemovedLegacyProjectionsAndRollsBackAtomically() async throws {
+        let scratch = try PolicySettingsScratch(); defer { scratch.remove() }
+        let store = SettingsStore(url: scratch.file)
+        let initial = try #require(await store.load().envelope)
+        let explicit = PolicyPreferences(global: values([
+            "cleanup.transcriptDays": .integer(111),
+            "item.normal.extras.stale-node-modules.inactiveDays": .integer(222),
+            "browsers.keepCookieDomains": .strings(["keep.invalid"]),
+            "rescue.showAdvancedMemoryActions": .bool(true)
+        ]))
+        let prior = try await store.update(expectedRevision: initial.revision,
+                                           change: .preferences(explicit))
+        #expect(prior.config.transcriptAgeThresholdDays == 111)
+        #expect(prior.config.staleNodeModulesThresholdDays == 222)
+        #expect(prior.config.keepCookieDomains == ["keep.invalid"])
+        #expect(prior.config.allowRestartToReclaimSwap)
+
+        let replacement = PolicyPreferences()
+        let replaced = try await store.update(expectedRevision: prior.revision,
+                                              change: .preferences(replacement))
+        #expect(replaced.config.transcriptAgeThresholdDays == 45)
+        #expect(replaced.config.staleNodeModulesThresholdDays == 60)
+        #expect(replaced.config.keepCookieDomains.isEmpty)
+        #expect(!replaced.config.allowRestartToReclaimSwap)
+        #expect(replaced.preferences == replacement)
+
+        let reloadedStore = SettingsStore(url: scratch.file)
+        let reloaded = try #require(await reloadedStore.load().envelope)
+        #expect(reloaded.config == replaced.config)
+        #expect(reloaded.preferences == replacement)
+        #expect(PolicyPreferences.project(legacy: reloaded.config, saved: reloaded.preferences)
+            .global.fields.isEmpty)
+
+        let preview = try await reloadedStore.previewRollback()
+        #expect(preview.config == prior.config)
+        #expect(preview.preferences == explicit)
+        let restored = try await reloadedStore.rollback(expectedRevision: reloaded.revision,
+                                                        preview: preview)
+        #expect(restored.revision == reloaded.revision + 1)
+        #expect(restored.config == prior.config)
+        #expect(restored.preferences == explicit)
+        let restoredFromDisk = try #require(await SettingsStore(url: scratch.file).load().envelope)
+        #expect(restoredFromDisk == restored)
+    }
+
+    @Test func replacementPreservesLegacyOnlyNondefaultWhenNeitherTypedDocumentOwnsIt() async throws {
+        let scratch = try PolicySettingsScratch(); defer { scratch.remove() }
+        let legacy = TidyConfig(transcriptAgeThresholdDays: 120)
+        let priorPreferences = PolicyPreferences(global: values(["ui.units": .choice("decimal")]))
+        try scratch.seed(try JSONEncoder().encode(SettingsEnvelope(
+            schemaVersion: 2, revision: 7, config: legacy, preferences: priorPreferences)))
+        let store = SettingsStore(url: scratch.file)
+        _ = try #require(await store.load().envelope)
+
+        let replacement = PolicyPreferences(global: values(["ui.density": .choice("detailed")]))
+        let saved = try await store.update(expectedRevision: 7, change: .preferences(replacement))
+        #expect(saved.config.transcriptAgeThresholdDays == 120)
+        #expect(saved.preferences == replacement)
+        #expect(try #require(await SettingsStore(url: scratch.file).load().envelope)
+            .config.transcriptAgeThresholdDays == 120)
+    }
+
     @Test func firstLegacyEditProjectsEveryExistingNondefaultBeforeItsDelta() async throws {
         let scratch = try PolicySettingsScratch(); defer { scratch.remove() }
         let legacy = TidyConfig(schemaVersion: 2, staleNodeModulesThresholdDays: 90,
