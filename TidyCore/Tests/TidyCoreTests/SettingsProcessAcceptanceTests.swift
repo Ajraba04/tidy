@@ -65,8 +65,12 @@ private func a2pEnvironment(root: URL) throws -> [String: String] {
     return ["PATH": "/usr/bin:/bin", "HOME": inheritedHome, "TMPDIR": root.path]
 }
 private func a2pEnvelope(_ revision: UInt64, _ days: Int) -> SettingsEnvelope {
-    SettingsEnvelope(schemaVersion: 2, revision: revision,
-                     config: TidyConfig(schemaVersion: 2, transcriptAgeThresholdDays: days))
+    let preferences = revision == 0 ? nil : PolicyPreferences(global: PolicyValues(fields: [
+        SettingID(rawValue: "cleanup.transcriptDays"): .integer(Int64(days)),
+    ]))
+    return SettingsEnvelope(schemaVersion: 2, revision: revision,
+                            config: TidyConfig(schemaVersion: 2, transcriptAgeThresholdDays: days),
+                            preferences: preferences)
 }
 private func a2pLegacy() throws -> Data {
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -128,6 +132,8 @@ private actor A2PBuild {
         Model/CleanItem.swift Model/CleanPlan.swift Model/PlanSelection.swift Model/ResourceIdentity.swift
         Model/RunReport.swift Model/ScanReport.swift Model/TargetPath.swift Model/TidyConfig.swift
         Model/Tier.swift Model/ToolchainID.swift
+        Policy/FeatureSettings.swift Policy/ScanSettings.swift Policy/CleanupSettings.swift
+        Policy/ExperienceSettings.swift Policy/PolicyDefaults.swift Policy/PolicyValidator.swift
         Policy/SettingsEnvelope.swift Policy/SettingsPublication.swift Policy/SettingsStore.swift
         Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
         """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
