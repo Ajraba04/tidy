@@ -5,7 +5,6 @@ struct MenuBarContentView: View {
     @State private var refresher = StatsRefresher()
     @Environment(\.openWindow) private var openWindow
     @Environment(AppConfigStore.self) private var configStore
-    @State private var hasCheckedOnboarding = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -65,6 +64,12 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            if !configStore.config.hasCompletedOnboarding {
+                Button("Set up Tidy…") {
+                    open(WindowID.onboarding)
+                }
+            }
+
             HStack {
                 Button("Settings…") {
                     open(WindowID.settings)
@@ -79,7 +84,6 @@ struct MenuBarContentView: View {
         .frame(width: 300)
         .onAppear {
             refresher.onPopoverAppear()
-            checkOnboardingOnce()
         }
         .onDisappear { refresher.onPopoverDisappear() }
     }
@@ -92,12 +96,5 @@ struct MenuBarContentView: View {
     private func open<D: Hashable & Codable>(_ id: String, value: D) {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: id, value: value)
-    }
-
-    private func checkOnboardingOnce() {
-        guard !hasCheckedOnboarding else { return }
-        hasCheckedOnboarding = true
-        guard !configStore.config.hasCompletedOnboarding else { return }
-        open(WindowID.onboarding)
     }
 }

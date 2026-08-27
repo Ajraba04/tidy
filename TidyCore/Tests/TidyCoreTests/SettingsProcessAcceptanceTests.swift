@@ -113,7 +113,7 @@ private actor A2PBuild {
         Detect/RestartReclaimSurvey.swift Detect/SimctlClient.swift Detect/SnapshotLister.swift
         Detect/StaleNodeModulesScanner.swift Detect/ToolchainDetector.swift Detect/TranscriptPruneScanner.swift
         Detect/UnclaimedSpaceScanner.swift
-        Engine/CleanEngine.swift Engine/ConfigStore.swift Engine/DefaultCustomActionExecutors.swift
+        Engine/CleanEngine.swift Engine/DefaultCustomActionExecutors.swift
         Engine/GitHousekeeper.swift Engine/MemoryReclaimer.swift Engine/RunLog.swift Engine/ScanEngine.swift
         Engine/SimulatorPruner.swift Engine/SnapshotDeleter.swift
         Exec/CleanupCommandRunner.swift Exec/ProcessRunner.swift Exec/ProcessSession.swift

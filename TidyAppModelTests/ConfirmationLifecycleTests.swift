@@ -45,9 +45,9 @@ private struct AppModelScratch {
                                                attributes: [.posixPermissions: 0o700])
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
     }
-    @MainActor func services() -> AppExecutionServices {
-        AppExecutionServices(config: TidyConfig(), configURL: configURL,
-                             homeDirectory: home.path, journalDirectory: journal)
+    @MainActor func services() async -> AppExecutionServices {
+        await AppExecutionServices.bootstrap(paths: AppStoragePaths(home: home,
+            settings: configURL, journal: journal))
     }
     func remove() { try? FileManager.default.removeItem(at: root) }
 }
@@ -66,7 +66,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testRealModelReplacementUsesNewRegisteredProjection() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services()
+        let services = await scratch.services()
         let first = try await services.coordinator.prepareReview(
             engine: services.engine, tier: .safe, selectDefaults: false)
         let second = try await services.coordinator.prepareReview(
@@ -207,7 +207,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testRealRegisteredDeniedModelAndUnknownPresetStayNonEntitling() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services()
+        let services = await scratch.services()
         let review = try await services.coordinator.prepareReview(
             engine: CleanEngine(sizeScanner: SizeScanner()), tier: .deep, selectDefaults: false)
         var requested: [Set<String>] = []
@@ -240,7 +240,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testObservableGenerationChangesForIdenticalEditsAndRealBarrierInvalidates() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services(), bridge = services.policyBridge
+        let services = await scratch.services(), bridge = services.policyBridge
         let before = bridge.updateGeneration
         let observed = ObservationFlag()
         withObservationTracking { _ = bridge.updateGeneration } onChange: { observed.mark() }
@@ -258,7 +258,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testRealBothVMLifetimesDoNotInstallQueuedLoadAfterPolicyChangeOrClose() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services()
+        let services = await scratch.services()
         let clean = CleanViewModel(tier: .safe, services: services)
         let custom = CustomViewModel(services: services)
         let cleanLoad = clean.requestLoad()
@@ -281,7 +281,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testBothRealVMsInstallRegisteredDeniedReviewsThenInvalidateAndClose() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services()
+        let services = await scratch.services()
         let clean = CleanViewModel(tier: .safe, services: services)
         let custom = CustomViewModel(services: services)
         await clean.requestLoad().value
@@ -312,7 +312,7 @@ final class ConfirmationLifecycleTests: XCTestCase {
 
     func testActualConfigStoreSettersInvalidateSynchronouslyAndPersistInOrder() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
-        let services = scratch.services(), bridge = services.policyBridge
+        let services = await scratch.services(), bridge = services.policyBridge
         let firstWindow = services.configStore, secondWindow = services.configStore
         XCTAssertTrue(firstWindow === secondWindow)
         let initial = bridge.updateGeneration
@@ -332,6 +332,8 @@ final class ConfirmationLifecycleTests: XCTestCase {
         await joined.value
         XCTAssertEqual(services.coordinator.policyAdmission(), .ready(revision: 4))
         XCTAssertTrue(bridge.isExecutionEnabled)
-        XCTAssertEqual(ConfigStore.load(from: scratch.configURL).transcriptAgeThresholdDays, 90)
+        let persisted = await services.settings.load()
+        XCTAssertEqual(persisted.envelope?.config.transcriptAgeThresholdDays, 90)
+        XCTAssertEqual(persisted.envelope?.revision, 3)
     }
 }

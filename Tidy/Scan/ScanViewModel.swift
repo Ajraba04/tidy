@@ -13,13 +13,16 @@ final class ScanViewModel {
     }
 
     private(set) var phase: Phase = .idle
+    private let services: AppExecutionServices
+
+    init(services: AppExecutionServices) {
+        self.services = services
+    }
 
     func runScan() async {
         phase = .running
-
-        let home = NSHomeDirectory()
-        let environment = ConfigStore.load().makeEnvironment(homeDirectory: home)
-
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
         let report = await ScanEngine.run(environment: environment)
         phase = .complete(report)
     }

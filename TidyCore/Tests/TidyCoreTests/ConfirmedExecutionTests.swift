@@ -41,11 +41,14 @@ private func review(_ coordinator: ExecutionCoordinator) async throws -> Registe
 private func persistPolicy(_ coordinator: ExecutionCoordinator,
                            scratch: ExecutionScratch) async throws -> UInt64 {
     let ticket = try coordinator.beginPolicyUpdate()
-    try ConfigStore.save(TidyConfig(), to: scratch.home.appendingPathComponent("config.json"))
-    let commit = try await coordinator.commitPolicyUpdate(ticket, environment: scratch.environment)
-    guard case .applied(let revision) = commit else {
-        throw ConfirmationError.stalePolicy
-    }
+    let settings = SettingsStore(url: scratch.home.appendingPathComponent("config.json"))
+    let loaded = await settings.load()
+    let envelope = try #require(loaded.envelope)
+    let saved = try await settings.update(expectedRevision: envelope.revision,
+        change: .legacyPreferences(TidyConfig(schemaVersion: 2)))
+    let environment = saved.config.makePolicyEnvironment(homeDirectory: scratch.home.path, detectedTools: [])
+    let commit = try await coordinator.commitPolicyUpdate(ticket, environment: environment)
+    guard case .applied(let revision) = commit else { throw ConfirmationError.stalePolicy }
     return revision
 }
 
@@ -455,34 +458,32 @@ struct ConfirmedExecutionTests {
     @MainActor
     func settingsSaveFailureBlocksBridge() async throws {
         let s = try ExecutionScratch(); defer { s.cleanup() }
-        let blocker = s.home.appendingPathComponent("not-a-directory")
+        let parent = s.home.appendingPathComponent("settings", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let url = parent.appendingPathComponent("config.json")
+        let settings = SettingsStore(url: url), loaded = await settings.load()
+        #expect(loaded.disposition == .newDefaults)
+        try FileManager.default.moveItem(at: parent, to: s.home.appendingPathComponent("retained-settings"))
         let blockerBytes = Data("preserve blocking file".utf8)
-        try blockerBytes.write(to: blocker)
-        let impossibleConfigURL = blocker.appendingPathComponent("config.json")
-        #expect(throws: ConfigSaveError.directoryCreationFailed) {
-            try ConfigStore.save(TidyConfig(), to: impossibleConfigURL)
-        }
-        let c = s.coordinator(); let r = try await review(c)
+        try blockerBytes.write(to: parent)
+        let c = s.coordinator(), r = try await review(c)
         let token = try await c.confirm(binding: r.binding)
-        let bridge = ExecutionPolicyBridge(coordinator: c, configURL: impossibleConfigURL,
-                                           homeDirectory: s.home.path, detectedTools: [])
-        var config = TidyConfig()
-        config.transcriptAgeThresholdDays = 90
+        let bridge = ExecutionPolicyBridge(coordinator: c, settings: settings, loaded: loaded,
+            homeDirectory: s.home.path, detectedTools: [])
+        var config = TidyConfig(schemaVersion: 2); config.transcriptAgeThresholdDays = 90
         let update = bridge.submit(config: config)
-        #expect(!bridge.isExecutionEnabled)
-        #expect(bridge.policyUpdatePending)
-        // No await since submit: the coordinator barrier is already invalidated,
-        // independently of whether the persistence Task has started.
+        #expect(!bridge.isExecutionEnabled && bridge.policyUpdatePending)
         #expect(c.policyAdmission() == .updating(revision: 2))
         #expect(await c.execute(token, currentPolicyRevision: 1).disposition == .stalePolicy)
         await update.value
-        #expect(!bridge.isExecutionEnabled)
-        #expect(!bridge.policyUpdatePending)
+        #expect(!bridge.isExecutionEnabled && !bridge.policyUpdatePending)
+        #expect(bridge.durableSettingsRevision == 0)
         #expect(bridge.persistenceError == "Settings could not be saved. Cleanup remains disabled. Fix the settings storage location and save again.")
         #expect(await c.execute(token, currentPolicyRevision: 1).disposition == .invalidToken)
         await expectConfirmationError(.stalePolicy) { _ = try await review(c) }
-        #expect(try Data(contentsOf: blocker) == blockerBytes)
-        #expect(!FileManager.default.fileExists(atPath: impossibleConfigURL.path))
+        #expect(try Data(contentsOf: parent) == blockerBytes)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
         try s.intact()
     }
 
@@ -520,24 +521,25 @@ struct ConfirmedExecutionTests {
     @MainActor
     func settingsSubmissionHasNoDiscoveryPhase() async throws {
         let s = try ExecutionScratch(); defer { s.cleanup() }
-        let c = s.coordinator(); let r = try await review(c)
+        let c = s.coordinator(), r = try await review(c)
         let token = try await c.confirm(binding: r.binding)
-        let url = s.home.appendingPathComponent("config.json")
-        let bridge = ExecutionPolicyBridge(coordinator: c, configURL: url,
-                                           homeDirectory: s.home.path, detectedTools: [])
-        var first = TidyConfig(); first.transcriptAgeThresholdDays = 60
+        let url = s.home.appendingPathComponent("config.json"), settings = SettingsStore(url: url)
+        let loaded = await settings.load()
+        let bridge = ExecutionPolicyBridge(coordinator: c, settings: settings, loaded: loaded,
+            homeDirectory: s.home.path, detectedTools: [])
+        var first = TidyConfig(schemaVersion: 2); first.transcriptAgeThresholdDays = 60
         var second = first; second.transcriptAgeThresholdDays = 90
         let a = bridge.submit(config: first)
         #expect(c.policyAdmission() == .updating(revision: 2))
         let b = bridge.submit(config: second)
         #expect(c.policyAdmission() == .updating(revision: 3))
         #expect(!bridge.isExecutionEnabled && bridge.policyUpdatePending)
-        // No await above: production MainActor persistence tasks cannot yet run.
-        // The next main-actor statement is reachable without a discovery completion.
         #expect(!FileManager.default.fileExists(atPath: url.path))
         #expect(await c.execute(token, currentPolicyRevision: 1).disposition == .stalePolicy)
         await a.value; await b.value
-        #expect(ConfigStore.load(from: url) == second)
+        let actual = await settings.load()
+        #expect(actual.envelope?.config == second && actual.envelope?.revision == 2)
+        #expect(bridge.durableSettingsRevision == 2)
         #expect(c.policyAdmission() == .ready(revision: 3))
         #expect(bridge.isExecutionEnabled && !bridge.policyUpdatePending)
         #expect(bridge.persistenceError == nil)
@@ -554,27 +556,27 @@ struct ConfirmedExecutionTests {
     @Test("Older persisted update cannot reopen admission while a newer ticket is pending")
     func overlappingPolicyUpdates() async throws {
         let s = try ExecutionScratch(); defer { s.cleanup() }
-        let c = s.coordinator(); let old = try await review(c)
+        let c = s.coordinator(), old = try await review(c)
         let token = try await c.confirm(binding: old.binding)
-        let first = try c.beginPolicyUpdate()
-        let second = try c.beginPolicyUpdate()
+        let first = try c.beginPolicyUpdate(), second = try c.beginPolicyUpdate()
         #expect(c.policyAdmission() == .updating(revision: 3))
-        var firstConfig = TidyConfig()
-        firstConfig.transcriptAgeThresholdDays = 60
         let configURL = s.home.appendingPathComponent("config.json")
-        try ConfigStore.save(firstConfig, to: configURL)
-        #expect(try await c.commitPolicyUpdate(first, environment: s.environment) == .superseded)
-        // Deterministic interleaving: second persistence/commit has not happened.
+        let settings = SettingsStore(url: configURL); _ = await settings.load()
+        var firstConfig = TidyConfig(schemaVersion: 2); firstConfig.transcriptAgeThresholdDays = 60
+        let firstSaved = try await settings.update(expectedRevision: 0, change: .legacyPreferences(firstConfig))
+        let firstEnvironment = firstSaved.config.makePolicyEnvironment(homeDirectory: s.home.path, detectedTools: [])
+        #expect(try await c.commitPolicyUpdate(first, environment: firstEnvironment) == .superseded)
         #expect(c.policyAdmission() == .updating(revision: 3))
         await expectConfirmationError(.stalePolicy) { _ = try await review(c) }
         #expect(await c.execute(token, currentPolicyRevision: 1).disposition == .stalePolicy)
-        var secondConfig = TidyConfig()
-        secondConfig.transcriptAgeThresholdDays = 90
-        try ConfigStore.save(secondConfig, to: configURL)
-        #expect(try await c.commitPolicyUpdate(second, environment: s.environment) == .applied(revision: 3))
+        var secondConfig = TidyConfig(schemaVersion: 2); secondConfig.transcriptAgeThresholdDays = 90
+        let secondSaved = try await settings.update(expectedRevision: 1, change: .legacyPreferences(secondConfig))
+        let secondEnvironment = secondSaved.config.makePolicyEnvironment(homeDirectory: s.home.path, detectedTools: [])
+        #expect(try await c.commitPolicyUpdate(second, environment: secondEnvironment) == .applied(revision: 3))
         #expect(c.policyAdmission() == .ready(revision: 3))
-        #expect(ConfigStore.load(from: configURL) == secondConfig)
-        #expect(try await c.commitPolicyUpdate(first, environment: s.environment) == .superseded)
+        let actual = await settings.load()
+        #expect(actual.envelope?.config == secondConfig && actual.envelope?.revision == 2)
+        #expect(try await c.commitPolicyUpdate(first, environment: firstEnvironment) == .superseded)
         #expect(c.policyAdmission() == .ready(revision: 3))
         let fresh = try await review(c)
         #expect(fresh.binding.policyRevision == 3)

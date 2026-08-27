@@ -1,52 +1,68 @@
 import Foundation
+import Darwin
 import Testing
 @testable import TidyCore
 
-@Suite("ConfigStore")
-struct ConfigStoreTests {
-    @Test("loading from a missing file returns defaults, not a crash")
-    func loadingMissingFileReturnsDefaults() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-missing-\(UUID().uuidString).json")
-        let config = ConfigStore.load(from: url)
-        #expect(config == TidyConfig())
+@Suite("SettingsStore cutover")
+struct SettingsStoreCutoverTests {
+    private func scratch() throws -> URL {
+        var chars = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard realpath("/private/tmp", &chars) != nil else { throw SettingsStoreError.unavailable }
+        let root = URL(fileURLWithPath: String(cString: chars), isDirectory: true)
+            .appendingPathComponent("T05-Cutover-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        return root
     }
-
-    @Test("round-trips a saved config")
-    func roundTripsSavedConfig() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        var config = TidyConfig()
-        config.hasCompletedOnboarding = true
-        config.keepCookieDomains = ["apple.com", "example.com"]
+    @Test func missingLoadIsInMemoryOnlyAndDefaultSchemaIsTwo() async throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("missing/config.json")
+        let store = SettingsStore(url: url), loaded = await store.load()
+        #expect(TidyConfig.currentSchemaVersion == 2)
+        #expect(loaded.disposition == .newDefaults)
+        #expect(loaded.envelope?.config == TidyConfig())
+        #expect(loaded.envelope?.revision == 0)
+        #expect(!FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path))
+    }
+    @Test func explicitSaveRoundTripsEnvelopeAndUnknownPresetAsInertData() async throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.json"), store = SettingsStore(url: url)
+        _ = await store.load()
+        var config = TidyConfig(); config.hasCompletedOnboarding = true
+        config.keepCookieDomains = ["example.invalid"]
         config.simulatorsApprovedForDeletion = ["Old iPhone"]
-        config.gitRoots = ["/Users/tester/Developer"]
+        config.gitRoots = [root.appendingPathComponent("Developer").path]
         config.staleNodeModulesThresholdDays = 90
-        config.presets = [CustomPreset(name: "Weekly", itemIDs: ["safe.cache.homebrew-cache"])]
-
-        try ConfigStore.save(config, to: url)
-        let loaded = ConfigStore.load(from: url)
-        #expect(loaded == config)
+        config.presets = [CustomPreset(name: "Saved", itemIDs: ["unknown.preset.id"])]
+        let saved = try await store.update(expectedRevision: 0, change: .legacyPreferences(config))
+        let actual = await SettingsStore(url: url).load()
+        #expect(actual.disposition == .loaded && actual.envelope == saved)
+        #expect(saved.schemaVersion == 2 && saved.revision == 1 && saved.config == config)
+        #expect(actual.envelope?.config.simulatorsApprovedForDeletion == ["Old iPhone"])
+        #expect(actual.envelope?.config.gitRoots == [root.appendingPathComponent("Developer").path])
+        #expect(actual.envelope?.config.staleNodeModulesThresholdDays == 90)
     }
-
-    @Test("creates the containing directory if it does not exist yet")
-    func createsContainingDirectory() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-\(UUID().uuidString)")
-        let url = dir.appendingPathComponent("config.json")
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        try ConfigStore.save(TidyConfig(), to: url)
+    @Test func firstExplicitSaveCreatesParents() async throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("missing/parents/config.json")
+        let store = SettingsStore(url: url); _ = await store.load()
+        _ = try await store.update(expectedRevision: 0, change: .legacyPreferences(TidyConfig()))
         #expect(FileManager.default.fileExists(atPath: url.path))
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        #expect(mode?.intValue == 0o600)
     }
-
-    @Test("a corrupt file falls back to defaults rather than crashing")
-    func corruptFileFallsBackToDefaults() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ConfigStoreTests-corrupt-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try Data("not json at all".utf8).write(to: url)
-
-        let config = ConfigStore.load(from: url)
-        #expect(config == TidyConfig())
+    @Test func corruptSettingsStayReadOnlyAndBytePreserved() async throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.json"), bytes = Data("not json at all".utf8)
+        try bytes.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        let store = SettingsStore(url: url), loaded = await store.load()
+        #expect(loaded.disposition == .recoveryReadOnly && loaded.envelope == nil)
+        do {
+            _ = try await store.update(expectedRevision: 0, change: .legacyPreferences(TidyConfig()))
+            Issue.record("Recovery wrote defaults")
+        } catch let error as SettingsStoreError { #expect(error == .readOnlyRecovery) }
+        #expect(try Data(contentsOf: url) == bytes)
     }
 }
 
