@@ -52,20 +52,19 @@ public actor SettingsStore {
         var preferences = current.preferences
         switch change {
         case .transcriptAgeDays(let days):
-            config.transcriptAgeThresholdDays = days
-            preferences = updating(PolicyPreferences.project(legacy: current.config,
-                                                             saved: preferences),
-                                   id: "cleanup.transcriptDays",
-                                   value: .integer(Int64(days)))
+            var edited = config
+            edited.transcriptAgeThresholdDays = days
+            preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
+                from: config, to: edited, saved: preferences)
+            config = edited
         case .legacyPreferences(let value):
-            preferences = applyingLegacyDelta(from: current.config, to: value,
-                                              preferences: preferences)
+            preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
+                from: current.config, to: value, saved: preferences)
             config = value
         case .preferences(let value):
             preferences = value
-            reverseProject(replacing: current.preferences?.global,
-                           with: value.global,
-                           into: &config)
+            config = LegacyCompatibilityProjection.reverseProject(config,
+                replacing: current.preferences?.global, with: value.global)
         case .legacyPreferenceDelta(let delta):
             guard delta.baseRevision <= current.revision else {
                 throw SettingsStoreError.staleRevision
@@ -76,8 +75,8 @@ public actor SettingsStore {
                 }
             }
             config = try applying(delta, to: current.config)
-            preferences = applyingLegacyDelta(from: current.config, to: config,
-                                              preferences: preferences)
+            preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
+                from: current.config, to: config, saved: preferences)
         case .globalPreferenceDelta(let delta):
             guard delta.baseRevision <= current.revision else {
                 throw SettingsStoreError.staleRevision
@@ -89,7 +88,8 @@ public actor SettingsStore {
             let prior = replacement.global
             replacement.global.fields[delta.id] = delta.editedValue
             preferences = replacement
-            reverseProject(replacing: prior, with: replacement.global, into: &config)
+            config = LegacyCompatibilityProjection.reverseProject(config,
+                replacing: prior, with: replacement.global)
         }
         return try save(current: current, config: config, preferences: preferences)
     }
@@ -170,35 +170,6 @@ public actor SettingsStore {
         SettingsLoadResult(disposition: .recoveryReadOnly, envelope: nil, recoveryReason: reason)
     }
 
-    private func updating(_ saved: PolicyPreferences?, id: String,
-                          value: SettingValue) -> PolicyPreferences {
-        var preferences = saved ?? PolicyPreferences()
-        preferences.global.fields[SettingID(rawValue: id)] = value
-        return preferences
-    }
-
-    private func applyingLegacyDelta(from base: TidyConfig, to edited: TidyConfig,
-                                     preferences saved: PolicyPreferences?) -> PolicyPreferences? {
-        var preferences: PolicyPreferences? = PolicyPreferences.project(legacy: base, saved: saved)
-        func update(_ id: String, _ value: SettingValue) {
-            preferences = updating(preferences, id: id, value: value)
-        }
-        if base.transcriptAgeThresholdDays != edited.transcriptAgeThresholdDays {
-            update("cleanup.transcriptDays", .integer(Int64(edited.transcriptAgeThresholdDays)))
-        }
-        if base.staleNodeModulesThresholdDays != edited.staleNodeModulesThresholdDays {
-            update("item.normal.extras.stale-node-modules.inactiveDays",
-                   .integer(Int64(edited.staleNodeModulesThresholdDays)))
-        }
-        if base.keepCookieDomains != edited.keepCookieDomains {
-            update("browsers.keepCookieDomains", .strings(edited.keepCookieDomains))
-        }
-        if base.allowRestartToReclaimSwap != edited.allowRestartToReclaimSwap {
-            update("rescue.showAdvancedMemoryActions", .bool(edited.allowRestartToReclaimSwap))
-        }
-        return preferences
-    }
-
     private func applying(_ delta: LegacyPreferenceDelta,
                           to current: TidyConfig) throws -> TidyConfig {
         var result = current
@@ -248,34 +219,4 @@ public actor SettingsStore {
 
     internal func isRecoveryRequired() -> Bool { recoveryReason != nil }
 
-    private func reverseProject(replacing prior: PolicyValues?, with global: PolicyValues,
-                                into config: inout TidyConfig) {
-        let transcript = SettingID(rawValue: "cleanup.transcriptDays")
-        if case .integer(let value)? = global.fields[transcript], let exact = Int(exactly: value) {
-            config.transcriptAgeThresholdDays = exact
-        } else if prior?.fields[transcript] != nil {
-            config.transcriptAgeThresholdDays = 45
-        }
-
-        let stale = SettingID(rawValue: "item.normal.extras.stale-node-modules.inactiveDays")
-        if case .integer(let value)? = global.fields[stale], let exact = Int(exactly: value) {
-            config.staleNodeModulesThresholdDays = exact
-        } else if prior?.fields[stale] != nil {
-            config.staleNodeModulesThresholdDays = 60
-        }
-
-        let domains = SettingID(rawValue: "browsers.keepCookieDomains")
-        if case .strings(let values)? = global.fields[domains] {
-            config.keepCookieDomains = values
-        } else if prior?.fields[domains] != nil {
-            config.keepCookieDomains = []
-        }
-
-        let advanced = SettingID(rawValue: "rescue.showAdvancedMemoryActions")
-        if case .bool(let visible)? = global.fields[advanced] {
-            config.allowRestartToReclaimSwap = visible
-        } else if prior?.fields[advanced] != nil {
-            config.allowRestartToReclaimSwap = false
-        }
-    }
 }

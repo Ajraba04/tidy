@@ -399,7 +399,8 @@ public final class ExecutionPolicyBridge {
 
     private func applyingPrediction(_ delta: LegacyPreferenceDelta,
                                     to envelope: SettingsEnvelope) -> SettingsEnvelope {
-        var config = envelope.config
+        let base = envelope.config
+        var config = base
         if delta.base.schemaVersion != delta.edited.schemaVersion { config.schemaVersion = delta.edited.schemaVersion }
         if delta.base.hasCompletedOnboarding != delta.edited.hasCompletedOnboarding { config.hasCompletedOnboarding = delta.edited.hasCompletedOnboarding }
         if delta.base.keepCookieDomains != delta.edited.keepCookieDomains { config.keepCookieDomains = delta.edited.keepCookieDomains }
@@ -410,34 +411,19 @@ public final class ExecutionPolicyBridge {
         if delta.base.appsApprovedForQuit != delta.edited.appsApprovedForQuit { config.appsApprovedForQuit = delta.edited.appsApprovedForQuit }
         if delta.base.allowRestartToReclaimSwap != delta.edited.allowRestartToReclaimSwap { config.allowRestartToReclaimSwap = delta.edited.allowRestartToReclaimSwap }
         if delta.base.presets != delta.edited.presets { config.presets = delta.edited.presets }
-        var preferences = envelope.preferences ?? PolicyPreferences()
-        for touched in delta.touchedCompatibilityBase {
-            preferences.global.fields[touched.id] = touched.editedValue
-        }
+        let preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
+            from: base, to: config, saved: envelope.preferences)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
             revision: envelope.revision, config: config, preferences: preferences)
     }
 
     private func applyingGlobalPrediction(_ delta: GlobalPreferenceDelta,
                                           to envelope: SettingsEnvelope) -> SettingsEnvelope {
-        var config = envelope.config
         var preferences = envelope.preferences ?? PolicyPreferences()
+        let prior = preferences.global
         preferences.global.fields[delta.id] = delta.editedValue
-        switch delta.id.rawValue {
-        case "cleanup.transcriptDays":
-            if case .integer(let value)? = delta.editedValue { config.transcriptAgeThresholdDays = Int(value) }
-            else if delta.baseValue != nil { config.transcriptAgeThresholdDays = 45 }
-        case "item.normal.extras.stale-node-modules.inactiveDays":
-            if case .integer(let value)? = delta.editedValue { config.staleNodeModulesThresholdDays = Int(value) }
-            else if delta.baseValue != nil { config.staleNodeModulesThresholdDays = 60 }
-        case "browsers.keepCookieDomains":
-            if case .strings(let values)? = delta.editedValue { config.keepCookieDomains = values }
-            else if delta.baseValue != nil { config.keepCookieDomains = [] }
-        case "rescue.showAdvancedMemoryActions":
-            if case .bool(let value)? = delta.editedValue { config.allowRestartToReclaimSwap = value }
-            else if delta.baseValue != nil { config.allowRestartToReclaimSwap = false }
-        default: break
-        }
+        let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
+            replacing: prior, with: preferences.global)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
             revision: envelope.revision, config: config, preferences: preferences)
     }

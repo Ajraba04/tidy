@@ -884,6 +884,74 @@ final class SharedSettingsWiringTests: XCTestCase {
         }
     }
 
+    func testLegacyPredictionProjectsAbsentCompatibilityBeforeQueuedTypedEdit() async throws {
+        let initial = SettingsEnvelope(schemaVersion: 2, revision: 7,
+            config: TidyConfig(schemaVersion: 2, transcriptAgeThresholdDays: 88))
+        let bytes = try JSONEncoder().encode(initial)
+        try await run(stops: ["config.1"], seed: bytes) { _, services, io in
+            let originalPolicyRevision = services.coordinator.policyAdmission()
+            services.configStore.config.hasCompletedOnboarding = true
+            try await io.probe.waitFor("config.1")
+            services.configStore.setGlobalPreference(
+                SettingID(rawValue: "cleanup.transcriptDays"), to: .integer(90))
+            XCTAssertEqual(services.configStore.preferences.global.fields[
+                SettingID(rawValue: "cleanup.transcriptDays")], .integer(90))
+
+            io.probe.releaseAll()
+            await services.policyBridge.drain()
+            let loaded = await services.settings.load()
+            let saved = try XCTUnwrap(loaded.envelope)
+            XCTAssertEqual(saved.revision, 9)
+            XCTAssertTrue(saved.config.hasCompletedOnboarding)
+            XCTAssertEqual(saved.config.transcriptAgeThresholdDays, 90)
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "cleanup.transcriptDays")], .integer(90))
+            XCTAssertEqual(services.configStore.config, saved.config)
+            XCTAssertEqual(services.configStore.preferences,
+                           PolicyPreferences.project(legacy: saved.config, saved: saved.preferences))
+            if case .ready(let revision) = originalPolicyRevision {
+                XCTAssertEqual(services.coordinator.policyAdmission(), .ready(revision: revision + 2))
+            } else { XCTFail("Initial policy was not ready") }
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+            XCTAssertFalse(services.storageUpdatePending)
+            XCTAssertFalse(services.policyUpdatePending)
+        }
+    }
+
+    func testTypedCompatibilityPredictionReverseProjectsBeforeQueuedLegacyEdit() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            guard case .ready(let originalPolicyRevision) =
+                    services.coordinator.policyAdmission() else {
+                return XCTFail("Initial policy was not ready")
+            }
+            services.configStore.setGlobalPreference(
+                SettingID(rawValue: "cleanup.transcriptDays"), to: .integer(60))
+            XCTAssertEqual(services.configStore.config.transcriptAgeThresholdDays, 60)
+            try await io.probe.waitFor("config.1")
+            services.configStore.config.hasCompletedOnboarding = true
+            XCTAssertEqual(services.configStore.config.transcriptAgeThresholdDays, 60)
+            XCTAssertTrue(services.configStore.config.hasCompletedOnboarding)
+
+            io.probe.releaseAll()
+            await services.policyBridge.drain()
+            let loaded = await services.settings.load()
+            let saved = try XCTUnwrap(loaded.envelope)
+            XCTAssertEqual(saved.revision, 2)
+            XCTAssertEqual(saved.config.transcriptAgeThresholdDays, 60)
+            XCTAssertTrue(saved.config.hasCompletedOnboarding)
+            XCTAssertEqual(saved.preferences?.global.fields[
+                SettingID(rawValue: "cleanup.transcriptDays")], .integer(60))
+            XCTAssertEqual(services.configStore.config, saved.config)
+            XCTAssertEqual(services.coordinator.policyAdmission(),
+                           .ready(revision: originalPolicyRevision + 2))
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+            XCTAssertFalse(services.storageUpdatePending)
+            XCTAssertFalse(services.policyUpdatePending)
+        }
+    }
+
     func testUnavailableProductionPathStateCreatesNoServices() {
         let state = AppBootstrapState()
         state.storagePathUnavailable()

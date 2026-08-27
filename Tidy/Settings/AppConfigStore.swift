@@ -98,9 +98,12 @@ final class AppConfigStore {
                 envelope = applying(delta, to: envelope)
             case .global(let delta):
                 var values = envelope.preferences ?? PolicyPreferences()
+                let prior = values.global
                 values.global.fields[delta.id] = delta.editedValue
+                let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
+                    replacing: prior, with: values.global)
                 envelope = SettingsEnvelope(schemaVersion: envelope.schemaVersion,
-                    revision: envelope.revision, config: envelope.config, preferences: values)
+                    revision: envelope.revision, config: config, preferences: values)
             }
         }
         displayed = envelope
@@ -108,7 +111,8 @@ final class AppConfigStore {
 
     private func applying(_ delta: LegacyPreferenceDelta,
                           to envelope: SettingsEnvelope) -> SettingsEnvelope {
-        var config = envelope.config
+        let base = envelope.config
+        var config = base
         if delta.base.schemaVersion != delta.edited.schemaVersion { config.schemaVersion = delta.edited.schemaVersion }
         if delta.base.hasCompletedOnboarding != delta.edited.hasCompletedOnboarding { config.hasCompletedOnboarding = delta.edited.hasCompletedOnboarding }
         if delta.base.keepCookieDomains != delta.edited.keepCookieDomains { config.keepCookieDomains = delta.edited.keepCookieDomains }
@@ -119,10 +123,8 @@ final class AppConfigStore {
         if delta.base.appsApprovedForQuit != delta.edited.appsApprovedForQuit { config.appsApprovedForQuit = delta.edited.appsApprovedForQuit }
         if delta.base.allowRestartToReclaimSwap != delta.edited.allowRestartToReclaimSwap { config.allowRestartToReclaimSwap = delta.edited.allowRestartToReclaimSwap }
         if delta.base.presets != delta.edited.presets { config.presets = delta.edited.presets }
-        var preferences = envelope.preferences ?? PolicyPreferences()
-        for item in delta.touchedCompatibilityBase {
-            preferences.global.fields[item.id] = item.editedValue
-        }
+        let preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
+            from: base, to: config, saved: envelope.preferences)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
             revision: envelope.revision, config: config, preferences: preferences)
     }
