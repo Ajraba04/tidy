@@ -2,6 +2,82 @@ import Foundation
 import Testing
 @testable import TidyCore
 @Suite struct PolicyValidationTests {
+    @Test func exactTaggedWireFormRoundTripsAndRejectsAmbiguity() throws {
+        let id = UUID(uuidString: "ABCDEF01-2345-6789-ABCD-EF0123456789")!
+        let original = PolicyPreferences(global: values([
+            "headroom.targetGiB": .integer(12),
+            "headroom.volumeOverrides.\(id.uuidString)": .volume(.init(
+                target: .fixedGiB(30), warning: .inherit, clear: .automatic))
+        ]))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encoded = try encoder.encode(original)
+        #expect(String(decoding: encoded, as: UTF8.self) ==
+            #"{"global":{"fields":{"headroom.targetGiB":{"integer":12},"headroom.volumeOverrides.ABCDEF01-2345-6789-ABCD-EF0123456789":{"volume":{"clear":{"automatic":true},"target":{"fixedGiB":30},"warning":{"inherit":true}}}}},"profiles":[],"projects":{}}"#)
+        #expect(try JSONDecoder().decode(PolicyPreferences.self, from: encoded) == original)
+
+        let malformed = [
+            #"{"fields":{"headroom.targetGiB":{}}}"#,
+            #"{"fields":{"headroom.targetGiB":{"null":false}}}"#,
+            #"{"fields":{"headroom.targetGiB":{"integer":12,"null":true}}}"#,
+            #"{"fields":{"headroom.targetGiB":{"unknown":12}}}"#,
+            #"{"fields":{"headroom.targetGiB":{"integer":12,"unknown":1}}}"#,
+            #"{"fields":{"headroom.volumeOverrides.ABCDEF01-2345-6789-ABCD-EF0123456789":{"volume":{"target":{"fixedGiB":30},"warning":{"inherit":true}}}}}"#,
+            #"{"fields":{"headroom.volumeOverrides.ABCDEF01-2345-6789-ABCD-EF0123456789":{"volume":{"target":{"fixedGiB":30,"automatic":true},"warning":{"inherit":true},"clear":{"automatic":true}}}}}"#,
+            #"{"fields":{"headroom.volumeOverrides.ABCDEF01-2345-6789-ABCD-EF0123456789":{"volume":{"target":{"fixedGiB":30},"warning":{"inherit":false},"clear":{"automatic":true}}}}}"#,
+            #"{"fields":{"headroom.volumeOverrides.ABCDEF01-2345-6789-ABCD-EF0123456789":{"volume":{"target":{"fixedGiB":30},"warning":{"inherit":true},"clear":{"automatic":true},"unknown":1}}}}"#
+        ]
+        for json in malformed {
+            #expect(throws: (any Error).self) {
+                try JSONDecoder().decode(PolicyValues.self, from: Data(json.utf8))
+            }
+        }
+    }
+
+    @Test func volumeIDsRequireCanonicalUppercaseUUIDSpelling() {
+        let canonical = "ABCDEF01-2345-6789-ABCD-EF0123456789"
+        let lower = canonical.lowercased()
+        let value = SettingValue.volume(.init(target: .inherit, warning: .automatic, clear: .fixedGiB(30)))
+        let lowerID = key("headroom.volumeOverrides.\(lower)")
+        #expect(throws: PolicyFieldError(id: lowerID, reason: .invalidIdentity)) {
+            try PolicyValidator.validateStructure(.init(fields: [lowerID: value]), at: .global)
+        }
+        #expect(throws: PolicyFieldError(id: lowerID, reason: .invalidIdentity)) {
+            try PolicyValidator.validateStructure(.init(fields: [
+                key("headroom.volumeOverrides.\(canonical)"): value,
+                lowerID: value
+            ]), at: .global)
+        }
+        let malformedID = key("headroom.volumeOverrides.not-a-uuid")
+        #expect(throws: PolicyFieldError(id: malformedID, reason: .invalidIdentity)) {
+            try PolicyValidator.validateStructure(.init(fields: [malformedID: value]), at: .global)
+        }
+    }
+
+    @Test func excludedRootsRequirePureLexicalCanonicalAbsolutePaths() throws {
+        try PolicyValidator.validateStructure(values([
+            "scope.excludedRoots": .strings(["/", "/fixture/a", "/fixture/a b"])
+        ]), at: .global)
+        for path in ["", "relative", "./relative", "../relative", "/fixture//a", "/fixture/./a",
+                     "/fixture/../a", "/fixture/a/", "/fixture/\u{0007}a"] {
+            #expect(throws: PolicyFieldError(id: key("scope.excludedRoots"), reason: .invalidIdentity)) {
+                try PolicyValidator.validateStructure(values(["scope.excludedRoots": .strings([path])]), at: .global)
+            }
+        }
+    }
+
+    @Test func disablingBudgetNeverRequiresVolumeBounds() throws {
+        let disabled = values(["budget.android.enabled": .bool(false)])
+        try PolicyValidator.validateEdit(disabled, at: .global,
+            context: input(capacity: nil, selected: nil, approved: []))
+        try PolicyValidator.validateEdit(disabled, at: .global,
+            context: input(capacity: nil, selected: volumeB, approved: [volumeA]))
+        #expect(throws: PolicyFieldError(id: key("budget.android.highGiB"), reason: .boundsUnavailable)) {
+            try PolicyValidator.validateEdit(values(["budget.android.enabled": .bool(true)]), at: .global,
+                context: input(capacity: nil, selected: nil, approved: []))
+        }
+    }
+
     @Test func quietRelationUsesMergedOperandsNotLayerDefaults() throws {
         let start = values(["notifications.quietStart":.choice("21:00")])
         let end = values(["notifications.quietEnd":.choice("21:00")])

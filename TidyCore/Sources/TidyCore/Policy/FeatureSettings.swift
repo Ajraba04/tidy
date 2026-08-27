@@ -24,6 +24,50 @@ public enum SettingValue: Equatable, Codable, Sendable {
     case strings([String])
     case null
     case volume(VolumeOverride)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: PolicyCodingKey.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "A setting value requires exactly one tagged case"))
+        }
+        switch key.stringValue {
+        case "bool": self = .bool(try container.decode(Bool.self, forKey: key))
+        case "integer": self = .integer(try container.decode(Int64.self, forKey: key))
+        case "choice": self = .choice(try container.decode(String.self, forKey: key))
+        case "strings": self = .strings(try container.decode([String].self, forKey: key))
+        case "null":
+            guard try container.decode(Bool.self, forKey: key) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: container,
+                    debugDescription: "The null tag must be true")
+            }
+            self = .null
+        case "volume": self = .volume(try container.decode(VolumeOverride.self, forKey: key))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: key, in: container,
+                debugDescription: "Unknown setting value tag")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: PolicyCodingKey.self)
+        switch self {
+        case .bool(let value): try container.encode(value, forKey: .init("bool"))
+        case .integer(let value): try container.encode(value, forKey: .init("integer"))
+        case .choice(let value): try container.encode(value, forKey: .init("choice"))
+        case .strings(let value): try container.encode(value, forKey: .init("strings"))
+        case .null: try container.encode(true, forKey: .init("null"))
+        case .volume(let value): try container.encode(value, forKey: .init("volume"))
+        }
+    }
+}
+
+struct PolicyCodingKey: CodingKey, Hashable {
+    let stringValue: String
+    let intValue: Int? = nil
+    init(_ stringValue: String) { self.stringValue = stringValue }
+    init?(stringValue: String) { self.init(stringValue) }
+    init?(intValue: Int) { return nil }
 }
 
 public enum ValueKind: String, Codable, Sendable {

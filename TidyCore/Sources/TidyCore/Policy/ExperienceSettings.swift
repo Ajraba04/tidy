@@ -3,6 +3,32 @@ import Foundation
 public struct PolicyValues: Equatable, Codable, Sendable {
     public var fields: [SettingID: SettingValue]
     public init(fields: [SettingID: SettingValue] = [:]) { self.fields = fields }
+
+    public init(from decoder: Decoder) throws {
+        let root = try decoder.container(keyedBy: PolicyCodingKey.self)
+        guard root.allKeys.map(\.stringValue) == ["fields"] else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Policy values require exactly the fields object"))
+        }
+        let fieldContainer = try root.nestedContainer(keyedBy: PolicyCodingKey.self,
+                                                       forKey: .init("fields"))
+        var decoded: [SettingID: SettingValue] = [:]
+        decoded.reserveCapacity(fieldContainer.allKeys.count)
+        for key in fieldContainer.allKeys {
+            decoded[SettingID(rawValue: key.stringValue)] = try fieldContainer.decode(SettingValue.self,
+                                                                                       forKey: key)
+        }
+        fields = decoded
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var root = encoder.container(keyedBy: PolicyCodingKey.self)
+        var fieldContainer = root.nestedContainer(keyedBy: PolicyCodingKey.self,
+                                                   forKey: .init("fields"))
+        for (id, value) in fields {
+            try fieldContainer.encode(value, forKey: .init(id.rawValue))
+        }
+    }
 }
 
 public struct SavedProfile: Equatable, Codable, Sendable {
