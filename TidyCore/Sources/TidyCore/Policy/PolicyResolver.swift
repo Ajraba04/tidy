@@ -37,7 +37,7 @@ public enum PolicyResolver {
         resolveBudgets(fields: &fields, inputs: inputs)
         let scan = resolveScan(fields: &fields, inputs: inputs)
 
-        let allowedFeatures = Set(FeatureSettings.featureIDs.filter { feature in
+        let allowedFeatures = Set((FeatureSettings.featureIDs + ["maintenance"]).filter { feature in
             fields[SettingID(rawValue: "feature.\(feature)")]?.value == .stored(.bool(true))
         })
         return EffectivePolicy(fields: fields, allowedFeatures: allowedFeatures,
@@ -174,8 +174,10 @@ public enum PolicyResolver {
             } else {
                 let suffix = String(definition.id.rawValue.split(separator: ".").last!)
                 let baseID = SettingID(rawValue: bases[suffix]!)
-                let inherited = fields[baseID]?.value ?? .stored(.null)
-                fields[definition.id] = EffectiveField(value: inherited, sources: [.builtIn], reason: .inherited)
+                let base = fields[baseID] ?? EffectiveField(value: .stored(.null),
+                    sources: [.builtIn], reason: .defaultValue)
+                fields[definition.id] = EffectiveField(value: base.value, sources: base.sources,
+                                                       reason: .inherited)
             }
         }
     }
@@ -321,13 +323,26 @@ public enum PolicyResolver {
     private static func setUnavailableHeadroom(_ name: String, reason: FieldReason,
                                                fields: inout [SettingID: EffectiveField], inputs: PolicyInputs) {
         let id = SettingID(rawValue: "headroom.\(name)GiB")
-        var sources: [FieldSource] = [.builtIn]
-        if let selected = inputs.selectedVolumeID {
-            let selection = headroomSelection(name, volume: selected, inputs: inputs)
-            sources = [selection.source]
+        var selection = genericHeadroomSelection(name, inputs: inputs)
+        if let selected = inputs.selectedVolumeID, inputs.approvedVolumeIDs.contains(selected) {
+            selection = headroomSelection(name, volume: selected, inputs: inputs)
         }
+        var sources = [selection.source]
         if !sources.contains(.immutable) { sources.append(.immutable) }
         fields[id] = EffectiveField(value: .unavailable(reason), sources: orderedSources(sources), reason: reason)
+    }
+
+    private static func genericHeadroomSelection(_ name: String,
+                                                 inputs: PolicyInputs) -> HeadroomSelection {
+        var selection: HeadroomSelection = .automatic(.builtIn)
+        let genericID = SettingID(rawValue: "headroom.\(name)GiB")
+        for layer in layers {
+            if let value = inputs.layers[layer]?.fields[genericID] {
+                if case .integer(let amount) = value { selection = .fixed(amount, .layer(layer)) }
+                if value == .null { selection = .automatic(.layer(layer)) }
+            }
+        }
+        return selection
     }
 
     private static func resolveBudgets(fields: inout [SettingID: EffectiveField], inputs: PolicyInputs) {

@@ -22,6 +22,12 @@ public enum PolicyValidator {
 
     public static func validateStructure(_ values: PolicyValues, at layer: PolicyLayer) throws {
         for (id, value) in values.fields {
+            if id.rawValue.hasPrefix(volumePrefix) {
+                let suffix = String(id.rawValue.dropFirst(volumePrefix.count))
+                guard let uuid = UUID(uuidString: suffix), suffix == uuid.uuidString else {
+                    throw PolicyFieldError(id: id, reason: .invalidIdentity)
+                }
+            }
             guard let definition = definition(for: id) else {
                 throw PolicyFieldError(id: id, reason: .unknownKey)
             }
@@ -157,7 +163,13 @@ public enum PolicyValidator {
             if case .choice(let project) = value, !validOpaqueID(project) {
                 throw PolicyFieldError(id: definition.id, reason: .invalidIdentity)
             }
-        case .exclusions, .pins:
+        case .exclusions:
+            guard case .strings(let strings) = value else { return }
+            try validateList(strings, id: definition.id, requireUnique: true)
+            guard strings.allSatisfy(validCanonicalAbsolutePath) else {
+                throw PolicyFieldError(id: definition.id, reason: .invalidIdentity)
+            }
+        case .pins:
             guard case .strings(let strings) = value else { return }
             try validateList(strings, id: definition.id, requireUnique: true)
             guard strings.allSatisfy({ !$0.isEmpty }) else {
@@ -219,6 +231,18 @@ public enum PolicyValidator {
             guard !label.isEmpty, label.count <= 63, label.first != "-", label.last != "-" else { return false }
             return label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
         }
+    }
+
+    private static func validCanonicalAbsolutePath(_ value: String) -> Bool {
+        guard value.first == "/",
+              !value.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {
+            return false
+        }
+        if value == "/" { return true }
+        guard value.last != "/" else { return false }
+        let components = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.first?.isEmpty == true else { return false }
+        return components.dropFirst().allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
 
     private static func validClock(_ value: String) -> Bool {
@@ -324,22 +348,27 @@ public enum PolicyValidator {
             guard !relevant.isEmpty else { continue }
             let highID = SettingID(rawValue: prefix + "highGiB")
             let lowID = SettingID(rawValue: prefix + "lowGiB")
+            let enabledID = SettingID(rawValue: prefix + "enabled")
+            let editsBounds = relevant.contains(highID) || relevant.contains(lowID)
+            let globallyEnabled = context.layers[.global]?.fields[enabledID] == .bool(true)
+            let explicitlyDisabled = PolicyLayer.allCases.contains {
+                context.layers[$0]?.fields[enabledID] == .bool(false)
+            }
+            let effectivelyEnabled = globallyEnabled && !explicitlyDisabled
+            if !editsBounds && !effectivelyEnabled { continue }
+
             guard let selected = context.selectedVolumeID, context.approvedVolumeIDs.contains(selected),
                   let capacity = context.capacityBytes, capacity > 0 else {
                 throw PolicyFieldError(id: highID, reason: .boundsUnavailable)
             }
             var high = PolicyDefaults.rows.first(where: { $0.id == highID })?.defaultValue ?? .null
             var low: SettingValue = .null
-            var enabled = false
             for layer in PolicyLayer.allCases {
                 if let value = context.layers[layer]?.fields[highID] { high = value }
                 if let value = context.layers[layer]?.fields[lowID] { low = value }
-                if case .bool(let value)? = context.layers[layer]?.fields[SettingID(rawValue: prefix + "enabled")], layer == .global {
-                    enabled = value
-                }
             }
             guard case .integer(let highGiB) = high else {
-                if enabled || relevant.contains(highID) || relevant.contains(lowID) {
+                if effectivelyEnabled || editsBounds {
                     throw PolicyFieldError(id: highID, reason: .boundsUnavailable)
                 }
                 continue

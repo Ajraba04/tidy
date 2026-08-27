@@ -2,6 +2,52 @@ import Foundation
 import Testing
 @testable import TidyCore
 @Suite struct PolicyResolutionTests {
+    @Test func maintenanceGlobalOptInIsFeatureEligibilityOnly() throws {
+        let global = try PolicyResolver.resolve(input([.global: values(["feature.maintenance": .bool(true)])]))
+        #expect(global.allowedFeatures.contains("maintenance"))
+        #expect(global.fields[key("feature.maintenance")] == EffectiveField(
+            value: .stored(.bool(true)), sources: [.layer(.global)], reason: .replaced))
+        let child = try PolicyResolver.resolve(input([.profile: values(["feature.maintenance": .bool(true)])]))
+        #expect(!child.allowedFeatures.contains("maintenance"))
+        #expect(child.fields[key("feature.maintenance")]?.reason == .denied)
+    }
+
+    @Test func unavailableHeadroomKeepsOnlyApplicableExplicitProvenance() throws {
+        let generic = values(["headroom.targetGiB": .integer(12)])
+        let noSelection = try PolicyResolver.resolve(input([.global: generic], capacity: nil, selected: nil))
+        #expect(noSelection.fields[key("headroom.targetGiB")] == EffectiveField(
+            value: .unavailable(.unmatchedVolume), sources: [.layer(.global), .immutable], reason: .unmatchedVolume))
+
+        let volumeID = key("headroom.volumeOverrides.\(volumeB.uuidString)")
+        let withVolume = PolicyValues(fields: generic.fields.merging([
+            volumeID: .volume(.init(target: .fixedGiB(30), warning: .inherit, clear: .inherit))
+        ]) { _, new in new })
+        let unapproved = try PolicyResolver.resolve(input([.global: withVolume], capacity: nil,
+            selected: volumeB, approved: [volumeA]))
+        #expect(unapproved.fields[key("headroom.targetGiB")] == EffectiveField(
+            value: .unavailable(.unmatchedVolume), sources: [.layer(.global), .immutable], reason: .unmatchedVolume))
+
+        let approved = try PolicyResolver.resolve(input([.global: withVolume], capacity: nil,
+            selected: volumeB, approved: [volumeA, volumeB]))
+        #expect(approved.fields[key("headroom.targetGiB")] == EffectiveField(
+            value: .unavailable(.capacityUnavailable), sources: [.volume(.global, volumeB), .immutable],
+            reason: .capacityUnavailable))
+    }
+
+    @Test func inheritedItemUsesResolvedBaseProvenance() throws {
+        let itemID = key("item.normal.extras.stale-node-modules.inactiveDays")
+        let fromGlobal = try PolicyResolver.resolve(input([.global: values(["cleanup.inactiveDays": .integer(90)])]))
+        #expect(fromGlobal.fields[itemID] == EffectiveField(value: .stored(.integer(90)),
+            sources: [.layer(.global)], reason: .inherited))
+        let fromProfile = try PolicyResolver.resolve(input([
+            .global: values(["cleanup.inactiveDays": .integer(90)]),
+            .profile: values(["cleanup.inactiveDays": .integer(120),
+                              "item.normal.extras.stale-node-modules.inactiveDays": .null])
+        ]))
+        #expect(fromProfile.fields[itemID] == EffectiveField(value: .stored(.integer(120)),
+            sources: [.layer(.profile)], reason: .inherited))
+    }
+
     @Test func defaultFalseRequiresOwningGlobalAndFalseDominates() throws {
         for id in ["ecosystem.docker.manualActions", "feature.maintenance", "budget.docker.enabled"] {
             let enabled = try PolicyResolver.resolve(input([.global:values([id:.bool(true)])]))

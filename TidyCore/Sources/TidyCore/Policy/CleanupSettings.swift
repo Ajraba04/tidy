@@ -4,6 +4,41 @@ public enum VolumeField: Equatable, Codable, Sendable {
     case inherit
     case automatic
     case fixedGiB(Int64)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: PolicyCodingKey.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "A volume field requires exactly one tagged case"))
+        }
+        switch key.stringValue {
+        case "inherit":
+            guard try container.decode(Bool.self, forKey: key) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: container,
+                    debugDescription: "The inherit tag must be true")
+            }
+            self = .inherit
+        case "automatic":
+            guard try container.decode(Bool.self, forKey: key) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: container,
+                    debugDescription: "The automatic tag must be true")
+            }
+            self = .automatic
+        case "fixedGiB": self = .fixedGiB(try container.decode(Int64.self, forKey: key))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: key, in: container,
+                debugDescription: "Unknown volume field tag")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: PolicyCodingKey.self)
+        switch self {
+        case .inherit: try container.encode(true, forKey: .init("inherit"))
+        case .automatic: try container.encode(true, forKey: .init("automatic"))
+        case .fixedGiB(let value): try container.encode(value, forKey: .init("fixedGiB"))
+        }
+    }
 }
 
 public struct VolumeOverride: Equatable, Codable, Sendable {
@@ -15,6 +50,26 @@ public struct VolumeOverride: Equatable, Codable, Sendable {
         self.target = target
         self.warning = warning
         self.clear = clear
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: PolicyCodingKey.self)
+        let expected = Set(["target", "warning", "clear"])
+        guard Set(container.allKeys.map(\.stringValue)) == expected,
+              container.allKeys.count == expected.count else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "A volume override requires exactly target, warning, and clear"))
+        }
+        target = try container.decode(VolumeField.self, forKey: .init("target"))
+        warning = try container.decode(VolumeField.self, forKey: .init("warning"))
+        clear = try container.decode(VolumeField.self, forKey: .init("clear"))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: PolicyCodingKey.self)
+        try container.encode(target, forKey: .init("target"))
+        try container.encode(warning, forKey: .init("warning"))
+        try container.encode(clear, forKey: .init("clear"))
     }
 }
 
