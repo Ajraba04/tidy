@@ -374,6 +374,18 @@ The catalog key set is exact and namespaced. Add `settings.workflow.tab.{profile
 
 ## Complete RED core test
 
+### Test-integrity amendment — 2026-08-28
+
+The approved `selectiveResetPreservesImmutableState` fixture originally stored
+`scan.requestedWorkers` in the project layer even though that setting is valid
+only at global/profile scope. That made whole-envelope validation reject before
+the intended combined-reset and immutable-project assertions ran. The installed
+RED fixture, and the source block below, instead store the already-selected,
+project-capable `cleanup.inactiveDays` value (`30`) in the project layer. No
+assertion, API contract, acceptance criterion, or expected behavior is removed
+or weakened; the unchanged project-preservation assertion now exercises the
+approved behavior.
+
 Create `SettingsWorkflowTests.swift`:
 
 ```swift
@@ -489,7 +501,8 @@ import Testing
     @Test func selectiveResetPreservesImmutableState() throws {
         let profile = SavedProfile(id: p, name: "Build",
             values: .init(fields: [workers: .integer(1)]))
-        let projects = ["local": PolicyValues(fields: [workers: .integer(3)])]
+        // Project fixtures must use a project-capable field; requestedWorkers is global/profile only.
+        let projects = ["local": PolicyValues(fields: [inactive: .integer(30)])]
         let current = envelope(profile, global: .init(fields: [
             inactive: .integer(90), workers: .integer(3)]),
                                projects: projects)

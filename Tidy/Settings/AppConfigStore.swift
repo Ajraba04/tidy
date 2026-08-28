@@ -24,6 +24,9 @@ final class AppConfigStore {
     }
     var activeProfileID: UUID? { displayed.activeProfileID }
     var inertImports: [InertPortableSetting] { displayed.inertImports }
+    var settingsRevision: UInt64 { displayed.revision }
+    var profiles: [SavedProfile] { preferences.profiles }
+    var hasPendingSettingsWrites: Bool { !pendingOrder.isEmpty }
     var effectivePolicy: EffectivePolicy? {
         var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
         if let activeProfileID {
@@ -90,6 +93,36 @@ final class AppConfigStore {
             replayVisibleState()
         }
         return admission
+    }
+
+    func previewProfileWorkflow(_ request: SettingsProfileWorkflowRequest) throws
+        -> SettingsProfileWorkflowPreview {
+        try SettingsWorkflow.previewProfile(request, current: displayed)
+    }
+
+    @discardableResult
+    func commitProfileWorkflow(_ preview: SettingsProfileWorkflowPreview)
+        -> SettingsSubmissionAdmission {
+        submit(document: preview.delta)
+    }
+
+    func previewSelectiveReset(_ request: SettingsSelectiveResetRequest) throws
+        -> SettingsSelectiveResetPreview {
+        try SettingsWorkflow.previewSelectiveReset(request, current: displayed)
+    }
+
+    @discardableResult
+    func commitSelectiveReset(_ preview: SettingsSelectiveResetPreview)
+        -> SettingsSubmissionAdmission {
+        submit(document: preview.delta)
+    }
+
+    func exportPortableSettings() throws -> Data {
+        try SettingsWorkflow.exportPortable(current: displayed)
+    }
+
+    func analyzeImportSummary(bytes: Data) async throws -> SettingsImportUISummary {
+        try SettingsImportUISummary(try await analyzeImport(bytes: bytes))
     }
 
     func analyzeImport(bytes: Data) async throws -> SettingsImportAnalysis {
