@@ -66,4 +66,26 @@ struct StaleNodeModulesScannerTests {
         let results = StaleNodeModulesScanner.find(roots: [scratch.path], olderThanDays: 0)
         #expect(results.isEmpty)
     }
+
+    @Test("bounded stale scan requires the supplied bridge facade and prunes matches")
+    @MainActor
+    func boundedFindMatchesExistingResults() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let fixture = rig.root.appendingPathComponent("stale-bounded", isDirectory: true)
+        let nodeModules = fixture.appendingPathComponent("project/node_modules", isDirectory: true)
+        try FileManager.default.createDirectory(at: nodeModules.appendingPathComponent("nested"),
+                                                withIntermediateDirectories: true)
+        try setModificationDate(Date().addingTimeInterval(-90 * 86400), at: nodeModules)
+        let possiblePage = await StaleNodeModulesScanner.findBounded(root: fixture.path,
+            olderThanDays: 60, maxDepth: 5, sessions: rig.sessions, session: rig.session,
+            sessionID: UUID(), generation: 1, limits: try standardLimits(maxDepth: 5))
+        let page = try #require(possiblePage)
+        let bounded = page.result.records.map(\.path)
+        let oracle = StaleNodeModulesScanner.find(roots: [fixture.path], olderThanDays: 60,
+                                                   maxDepth: 5).map(\.path)
+
+        #expect(page.result.coverage.isComplete)
+        #expect(bounded == oracle)
+    }
 }

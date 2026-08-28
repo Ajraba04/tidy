@@ -119,4 +119,25 @@ struct LargestItemsScannerTests {
         )
         #expect(results.count == 3)
     }
+
+    @Test("bounded large-file scan requires the supplied bridge facade and matches ordering")
+    @MainActor
+    func boundedFilesAtLeastMatchesOrdering() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let fixture = rig.root.appendingPathComponent("largest-bounded", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        for (name, count) in [("a.bin", 2_000_000), ("b.bin", 3_000_000), ("c.bin", 10)] {
+            try Data(repeating: 1, count: count).write(to: fixture.appendingPathComponent(name))
+        }
+        let page = await LargestItemsScanner.filesAtLeastBounded(1_000_000,
+            homeDirectory: fixture.path, protectedRoots: [], limit: 2,
+            sessions: rig.sessions, session: rig.session, sessionID: UUID(), generation: 1,
+            limits: try standardLimits(topN: 2))
+        let oracle = LargestItemsScanner.filesAtLeast(1_000_000,
+            homeDirectory: fixture.path, protectedRoots: [], limit: 2)
+
+        #expect(page.result.coverage.isComplete)
+        #expect(page.result.topItems == oracle)
+    }
 }

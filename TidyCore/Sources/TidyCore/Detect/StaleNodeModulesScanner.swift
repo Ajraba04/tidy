@@ -50,4 +50,34 @@ public enum StaleNodeModulesScanner: Sendable {
 
         return results
     }
+
+    /// Starts one bounded root through a caller-owned explicit bridge session. Multi-root fan-out
+    /// remains with T08.4 so this low-level API cannot retain an unbounded page array. Matching
+    /// `node_modules` directories prune their descendants in the bounded traversal.
+    public static func findBounded(
+        root: String,
+        olderThanDays: Int,
+        maxDepth: Int = 5,
+        sessions: BridgeExplicitSessions,
+        session: WorkSession,
+        sessionID: UUID,
+        generation: UInt64,
+        limits: TraversalLimits
+    ) async -> BoundedTraversalPage? {
+        guard olderThanDays > 0, maxDepth > 0 else { return nil }
+        let threshold = Date().addingTimeInterval(-Double(olderThanDays) * 86_400)
+        let traversalLimits = limits.replacing(maxDepth: min(maxDepth, limits.maxDepth))
+        let traversal = BoundedTraversal(sessions: sessions, limits: traversalLimits)
+        let result = await traversal.start(
+            root: root,
+            session: session,
+            sessionID: sessionID,
+            generation: generation,
+            options: TraversalOptions(
+                recordSelection: .directory(named: "node_modules", modifiedBefore: threshold),
+                pruneMatchedDirectories: true
+            )
+        )
+        return BoundedTraversalPage(traversal: traversal, result: result)
+    }
 }
