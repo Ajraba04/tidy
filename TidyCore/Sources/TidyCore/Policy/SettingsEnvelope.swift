@@ -1,5 +1,7 @@
 import Foundation
 
+extension AuthorityEffect: Equatable {}
+
 public enum SettingsLoadDisposition: Equatable, Sendable {
     case newDefaults, migrated, loaded, recoveryReadOnly
 }
@@ -66,7 +68,7 @@ public enum SettingsChange: Equatable, Sendable {
     case preferencesDocument(PreferencesDocumentDelta)
 }
 
-public struct PreferenceFieldEdit: Equatable, Sendable {
+public struct PreferenceFieldEdit: Codable, Equatable, Sendable {
     public let id: SettingID
     public let baseValue: SettingValue?
     public let editedValue: SettingValue?
@@ -75,13 +77,13 @@ public struct PreferenceFieldEdit: Equatable, Sendable {
     }
 }
 
-public enum ProfileDocumentEdit: Equatable, Sendable {
+public enum ProfileDocumentEdit: Codable, Equatable, Sendable {
     case insert(SavedProfile)
     case update(id: UUID, base: SavedProfile, edited: SavedProfile)
     case delete(id: UUID, base: SavedProfile)
 }
 
-public struct InertImportEdit: Equatable, Sendable {
+public struct InertImportEdit: Codable, Equatable, Sendable {
     public let item: InertPortableSetting
     public let presentInBase: Bool
     public let presentAfterEdit: Bool
@@ -90,7 +92,7 @@ public struct InertImportEdit: Equatable, Sendable {
     }
 }
 
-public struct PreferencesDocumentDelta: Equatable, Sendable {
+public struct PreferencesDocumentDelta: Codable, Equatable, Sendable {
     public let baseRevision: UInt64
     public let global: [PreferenceFieldEdit]
     public let profiles: [ProfileDocumentEdit]
@@ -105,6 +107,218 @@ public struct PreferencesDocumentDelta: Equatable, Sendable {
         self.baseRevision = baseRevision; self.global = global; self.profiles = profiles
         self.activeProfileBase = activeProfileBase; self.activeProfileEdit = activeProfileEdit
         self.touchesActiveProfile = touchesActiveProfile; self.inert = inert
+    }
+}
+
+public enum PreferencesDocumentProjectionError: Error, Equatable, Sendable {
+    case stale, invalid, unsupportedAuthority
+}
+
+public enum PreferencesDocumentEffect {
+    static func inspect(_ id: SettingID, _ value: SettingValue,
+                        layer: PolicyLayer, invalidates: inout Bool) throws {
+        guard let definition = PolicyValidator.definition(for: id) else {
+            throw PreferencesDocumentProjectionError.invalid
+        }
+        let classification: PortableClassification
+        do { classification = try PortableSettingPolicy.classify(id: id, value: value, layer: layer) }
+        catch { throw PreferencesDocumentProjectionError.invalid }
+        guard classification == .portable, definition.resolution != .authority,
+              definition.effect != .consent else {
+            throw PreferencesDocumentProjectionError.unsupportedAuthority
+        }
+        if definition.effect == .invalidate { invalidates = true }
+    }
+
+    private static func profilesByID(_ profiles: [SavedProfile]) throws -> [UUID: SavedProfile] {
+        var result: [UUID: SavedProfile] = [:]
+        for profile in profiles {
+            guard result.updateValue(profile, forKey: profile.id) == nil else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+        }
+        return result
+    }
+
+    public static func classify(before: SettingsEnvelope,
+                                after: SettingsEnvelope) throws -> AuthorityEffect {
+        var invalidates = before.activeProfileID != after.activeProfileID
+        let beforeGlobal = before.preferences?.global.fields ?? [:]
+        let afterGlobal = after.preferences?.global.fields ?? [:]
+        for id in Set(beforeGlobal.keys).union(afterGlobal.keys)
+            where beforeGlobal[id] != afterGlobal[id] {
+            guard let value = afterGlobal[id] ?? beforeGlobal[id] else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+            try inspect(id, value, layer: .global, invalidates: &invalidates)
+        }
+        let beforeProfiles = try profilesByID(before.preferences?.profiles ?? [])
+        let afterProfiles = try profilesByID(after.preferences?.profiles ?? [])
+        for profileID in Set(beforeProfiles.keys).union(afterProfiles.keys) {
+            let lhs = beforeProfiles[profileID]?.values.fields ?? [:]
+            let rhs = afterProfiles[profileID]?.values.fields ?? [:]
+            for id in Set(lhs.keys).union(rhs.keys) where lhs[id] != rhs[id] {
+                guard let value = rhs[id] ?? lhs[id] else {
+                    throw PreferencesDocumentProjectionError.invalid
+                }
+                try inspect(id, value, layer: .profile, invalidates: &invalidates)
+            }
+        }
+        return invalidates ? .invalidate : .none
+    }
+}
+
+public struct AppliedPreferencesDocument: Equatable, Sendable {
+    public let envelope: SettingsEnvelope
+    public let effect: AuthorityEffect
+    public init(envelope: SettingsEnvelope, effect: AuthorityEffect) {
+        self.envelope = envelope; self.effect = effect
+    }
+}
+
+public enum PreferencesDocumentProjection {
+    private struct InertKey: Hashable {
+        let scope: InertScope
+        let profileID: UUID?
+        let id: String
+        init(_ item: InertPortableSetting) {
+            scope = item.scope; profileID = item.profileID; id = item.id
+        }
+    }
+
+    public static func apply(_ delta: PreferencesDocumentDelta,
+                             to envelope: SettingsEnvelope) throws -> AppliedPreferencesDocument {
+        guard delta.baseRevision <= envelope.revision else {
+            throw PreferencesDocumentProjectionError.stale
+        }
+        var preferences = envelope.preferences ?? PolicyPreferences()
+        guard Set(preferences.profiles.map(\.id)).count == preferences.profiles.count else {
+            throw PreferencesDocumentProjectionError.invalid
+        }
+        var globalIDs = Set<SettingID>()
+        for edit in delta.global {
+            guard globalIDs.insert(edit.id).inserted else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+            guard preferences.global.fields[edit.id] == edit.baseValue else {
+                throw PreferencesDocumentProjectionError.stale
+            }
+            var ignored = false
+            guard let touchedValue = edit.editedValue ?? edit.baseValue ??
+                    PolicyValidator.definition(for: edit.id)?.defaultValue else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+            try PreferencesDocumentEffect.inspect(edit.id, touchedValue,
+                                                   layer: .global, invalidates: &ignored)
+            preferences.global.fields[edit.id] = edit.editedValue
+        }
+
+        var touchedProfiles = Set<UUID>()
+        var deletedProfiles = Set<UUID>()
+        for edit in delta.profiles {
+            let id: UUID
+            switch edit {
+            case .insert(let profile): id = profile.id
+            case .update(let profileID, _, _), .delete(let profileID, _): id = profileID
+            }
+            guard touchedProfiles.insert(id).inserted else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+            switch edit {
+            case .insert(let profile):
+                guard !preferences.profiles.contains(where: { $0.id == profile.id }) else {
+                    throw PreferencesDocumentProjectionError.stale
+                }
+                preferences.profiles.append(profile)
+            case .update(let id, let base, let edited):
+                guard edited.id == id else { throw PreferencesDocumentProjectionError.invalid }
+                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
+                      preferences.profiles[index] == base else {
+                    throw PreferencesDocumentProjectionError.stale
+                }
+                preferences.profiles[index] = edited
+            case .delete(let id, let base):
+                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
+                      preferences.profiles[index] == base else {
+                    throw PreferencesDocumentProjectionError.stale
+                }
+                preferences.profiles.remove(at: index); deletedProfiles.insert(id)
+            }
+            let touched: SavedProfile
+            switch edit {
+            case .insert(let profile): touched = profile
+            case .update(_, let base, let edited):
+                var ignored = false
+                for fieldID in Set(base.values.fields.keys).union(edited.values.fields.keys) {
+                    guard let value = edited.values.fields[fieldID] ?? base.values.fields[fieldID] else {
+                        throw PreferencesDocumentProjectionError.invalid
+                    }
+                    try PreferencesDocumentEffect.inspect(fieldID, value,
+                        layer: .profile, invalidates: &ignored)
+                }
+                continue
+            case .delete(_, let base): touched = base
+            }
+            var ignored = false
+            for (fieldID, value) in touched.values.fields {
+                try PreferencesDocumentEffect.inspect(fieldID, value,
+                    layer: .profile, invalidates: &ignored)
+            }
+        }
+        guard Set(preferences.profiles.map(\.id)).count == preferences.profiles.count else {
+            throw PreferencesDocumentProjectionError.invalid
+        }
+
+        var active = envelope.activeProfileID
+        if delta.touchesActiveProfile {
+            guard envelope.activeProfileID == delta.activeProfileBase else {
+                throw PreferencesDocumentProjectionError.stale
+            }
+            active = delta.activeProfileEdit
+        }
+        if let selected = envelope.activeProfileID, deletedProfiles.contains(selected) {
+            guard delta.touchesActiveProfile, delta.activeProfileBase == selected,
+                  delta.activeProfileEdit == nil else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+        }
+        if let active, !preferences.profiles.contains(where: { $0.id == active }) {
+            throw PreferencesDocumentProjectionError.invalid
+        }
+
+        var inert: [InertKey: InertPortableSetting] = [:]
+        for item in envelope.inertImports {
+            guard inert.updateValue(item, forKey: InertKey(item)) == nil else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+        }
+        var touchedInert = Set<InertKey>()
+        for edit in delta.inert {
+            let key = InertKey(edit.item)
+            guard touchedInert.insert(key).inserted else {
+                throw PreferencesDocumentProjectionError.invalid
+            }
+            if edit.presentInBase {
+                guard inert[key] == edit.item else { throw PreferencesDocumentProjectionError.stale }
+            } else if inert[key] != nil { throw PreferencesDocumentProjectionError.stale }
+            if edit.presentAfterEdit { inert[key] = edit.item } else { inert.removeValue(forKey: key) }
+        }
+        let inertImports = inert.values.sorted {
+            [$0.scope.rawValue, $0.profileID?.uuidString ?? "", $0.id]
+                .lexicographicallyPrecedes([$1.scope.rawValue, $1.profileID?.uuidString ?? "", $1.id])
+        }
+        let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
+            replacing: envelope.preferences?.global, with: preferences.global)
+        let candidate = SettingsEnvelope(schemaVersion: envelope.schemaVersion,
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: active, inertImports: inertImports)
+        let effect = try PreferencesDocumentEffect.classify(before: envelope, after: candidate)
+        do {
+            try SettingsTransfer.validatePersistedState(.init(preferences: preferences,
+                                                              inertImports: inertImports))
+        } catch { throw PreferencesDocumentProjectionError.invalid }
+        if delta.touchesActiveProfile { return .init(envelope: candidate, effect: .invalidate) }
+        return .init(envelope: candidate, effect: effect)
     }
 }
 

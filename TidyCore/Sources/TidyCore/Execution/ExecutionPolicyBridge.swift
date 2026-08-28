@@ -48,10 +48,49 @@ public final class ExecutionPolicyBridge {
     private var submissionSequence: UInt64 = 0
     private var errorSequence: UInt64 = 0
     private var policyFailureActive = false
+    private let pendingByteLimit: Int
+    private var issuedImportBinding: IssuedImportBinding?
+    private var importLifecycleGeneration: UInt64 = 0
+
+    private struct IssuedImportBinding: Sendable {
+        let preview: SettingsImportPreview
+        let revision: UInt64
+    }
+
+    private struct RetainedDocumentMirror: Codable {
+        let intentID: UUID
+        let delta: PreferencesDocumentDelta
+    }
+    private struct RetainedImportMirror: Codable {
+        struct Row: Codable {
+            let scope: String; let profileID: UUID?; let id: String?; let idDigest: String?
+            let outcome: String; let value: SettingValue?; let valueKind: String?
+            let valueDigest: String?
+        }
+        struct Collision: Codable {
+            let profileID: UUID; let localName: String; let importedName: String
+        }
+        struct Choice: Codable {
+            let profileID: UUID; let kind: String; let cloneID: UUID?
+        }
+        let intentID: UUID
+        let expectedRevision: UInt64
+        let previewID: UUID
+        let analysisID: UUID
+        let rows: [Row]
+        let collisions: [Collision]
+        let choices: [Choice]
+        let preferences: PolicyPreferences
+        let inertImports: [InertPortableSetting]
+        let sourceDigest: String
+        let candidateDigest: String
+    }
 
     private enum Payload: Sendable {
         case legacy(LegacyPreferenceDelta)
         case global(GlobalPreferenceDelta)
+        case document(PreferencesDocumentDelta)
+        case importPreview(expectedRevision: UInt64, preview: SettingsImportPreview)
     }
 
     private static let maximumPendingSnapshots = 32
@@ -59,13 +98,22 @@ public final class ExecutionPolicyBridge {
     private static let saveFailure = "Settings could not be saved. Cleanup remains disabled. Fix the settings storage location and save again."
     private static let overflowFailure = "Settings changes are pending; wait and save again."
 
-    public init(coordinator: ExecutionCoordinator, settings: SettingsStore,
-                loaded: SettingsLoadResult, homeDirectory: String,
-                detectedTools: Set<ToolchainID>) {
+    public convenience init(coordinator: ExecutionCoordinator, settings: SettingsStore,
+                            loaded: SettingsLoadResult, homeDirectory: String,
+                            detectedTools: Set<ToolchainID>) {
+        self.init(coordinator: coordinator, settings: settings, loaded: loaded,
+                  homeDirectory: homeDirectory, detectedTools: detectedTools,
+                  pendingByteLimit: Self.maximumPendingBytes)
+    }
+
+    internal init(coordinator: ExecutionCoordinator, settings: SettingsStore,
+                  loaded: SettingsLoadResult, homeDirectory: String,
+                  detectedTools: Set<ToolchainID>, pendingByteLimit: Int) {
         self.coordinator = coordinator
         self.settings = settings
         self.homeDirectory = homeDirectory
         self.detectedTools = detectedTools
+        self.pendingByteLimit = min(max(0, pendingByteLimit), Self.maximumPendingBytes)
         let envelope = loaded.envelope
         let revision = envelope?.revision
         self.acknowledgedEnvelope = envelope
@@ -136,6 +184,111 @@ public final class ExecutionPolicyBridge {
                      effect: definition.effect)
     }
 
+    public func submit(document delta: PreferencesDocumentDelta) -> SettingsSubmissionAdmission {
+        let id = UUID()
+        guard let sequence = reserveSequence() else { return rejectSequenceOverflow(id: id) }
+        let applied: AppliedPreferencesDocument
+        do {
+            applied = try PreferencesDocumentProjection.apply(delta, to: predictedSubmittedEnvelope)
+            // Bound aggregate strings and exact persisted bytes before the
+            // retained Codable mirror is allowed to allocate.
+            _ = try SettingsDecoding.encode(predictedSubmittedEnvelope)
+            _ = try SettingsDecoding.encode(applied.envelope)
+        }
+        catch PreferencesDocumentProjectionError.unsupportedAuthority {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .unsupportedAuthority,
+                message: "This setting requires a separate authorization flow.")
+        } catch {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings change is invalid.")
+        }
+        return admit(id: id, sequence: sequence, payload: .document(delta), effect: applied.effect)
+    }
+
+    public func submit(importPreview preview: SettingsImportPreview) -> SettingsSubmissionAdmission {
+        let id = UUID()
+        guard let sequence = reserveSequence() else { return rejectSequenceOverflow(id: id) }
+        guard pendingSnapshotCount == 0, pendingPayloadOrder.isEmpty,
+              let binding = issuedImportBinding, binding.preview == preview,
+              binding.revision == acknowledgedEnvelope?.revision,
+              binding.revision == predictedSubmittedEnvelope.revision else {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings import is no longer current.")
+        }
+        let candidate: SettingsEnvelope
+        do {
+            candidate = try importPrediction(preview.candidate, from: predictedSubmittedEnvelope)
+            _ = try PreferencesDocumentEffect.classify(before: predictedSubmittedEnvelope,
+                                                        after: candidate)
+        } catch PreferencesDocumentProjectionError.unsupportedAuthority {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .unsupportedAuthority,
+                message: "This import requires a separate authorization flow.")
+        } catch {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings import is invalid.")
+        }
+        let effect: AuthorityEffect
+        do { effect = try PreferencesDocumentEffect.classify(before: predictedSubmittedEnvelope,
+                                                              after: candidate) }
+        catch {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
+                                         message: "The settings import is invalid.")
+        }
+        let admission = admit(id: id, sequence: sequence,
+            payload: .importPreview(expectedRevision: binding.revision, preview: preview), effect: effect)
+        if case .accepted = admission {
+            issuedImportBinding = nil
+            _ = advanceImportLifecycle()
+        }
+        return admission
+    }
+
+    public func analyzeImport(bytes: Data) async throws -> SettingsImportAnalysis {
+        issuedImportBinding = nil
+        guard let lifecycle = advanceImportLifecycle() else {
+            throw SettingsStoreError.invalidChange
+        }
+        let analysis = try await settings.analyzeImport(bytes: bytes)
+        guard lifecycle == importLifecycleGeneration else {
+            if let id = analysis.analysisID { await settings.cancelImport(analysisID: id) }
+            throw SettingsStoreError.invalidChange
+        }
+        return analysis
+    }
+
+    public func issueImportPreview(analysisID: SettingsImportAnalysisID,
+                                   choices: [UUID: ProfileCollisionChoice]) async throws
+        -> SettingsImportPreview {
+        issuedImportBinding = nil
+        guard let lifecycle = advanceImportLifecycle() else {
+            throw SettingsStoreError.invalidChange
+        }
+        guard pendingSnapshotCount == 0, pendingPayloadOrder.isEmpty,
+              let revision = acknowledgedEnvelope?.revision,
+              revision == predictedSubmittedEnvelope.revision else {
+            throw SettingsStoreError.invalidChange
+        }
+        let preview = try await settings.issueImportPreview(analysisID: analysisID, choices: choices)
+        guard lifecycle == importLifecycleGeneration else {
+            await settings.cancelImport(previewID: preview.id)
+            throw SettingsStoreError.invalidChange
+        }
+        issuedImportBinding = .init(preview: preview, revision: revision)
+        return preview
+    }
+
+    public func cancelImport(analysisID: SettingsImportAnalysisID) async {
+        issuedImportBinding = nil
+        _ = advanceImportLifecycle()
+        await settings.cancelImport(analysisID: analysisID)
+    }
+
+    public func cancelImport(previewID: SettingsImportPreviewID) async {
+        if issuedImportBinding?.preview.id == previewID { issuedImportBinding = nil }
+        _ = advanceImportLifecycle()
+        await settings.cancelImport(previewID: previewID)
+    }
+
     public func submit(legacy delta: LegacyPreferenceDelta) -> SettingsSubmissionAdmission {
         let id = UUID()
         guard let sequence = reserveSequence() else {
@@ -175,8 +328,15 @@ public final class ExecutionPolicyBridge {
             return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
                                          message: Self.saveFailure)
         }
+        let retainedTotal: Int
+        do { retainedTotal = try Self.checkedRetainedTotalForTesting(pendingSnapshotBytes,
+                                                                      adding: bytes) }
+        catch {
+            return rejectBeforeRetention(id: id, sequence: sequence, reason: .queueFull,
+                                         message: Self.overflowFailure)
+        }
         guard pendingSnapshotCount < Self.maximumPendingSnapshots,
-              pendingSnapshotBytes <= Self.maximumPendingBytes - bytes else {
+              bytes <= pendingByteLimit, retainedTotal <= pendingByteLimit else {
             return rejectBeforeRetention(id: id, sequence: sequence, reason: .queueFull,
                                          message: Self.overflowFailure)
         }
@@ -194,7 +354,7 @@ public final class ExecutionPolicyBridge {
         }
 
         pendingSnapshotCount += 1
-        pendingSnapshotBytes += bytes
+        pendingSnapshotBytes = retainedTotal
         pendingPayloadOrder.append(id)
         pendingPayloads[id] = payload
         rebuildPredictedSubmission()
@@ -261,31 +421,20 @@ public final class ExecutionPolicyBridge {
                 }
                 change = .legacyPreferenceDelta(delta)
             case .global(let delta): change = .globalPreferenceDelta(delta)
+            case .document(let delta): change = .preferencesDocument(delta)
+            case .importPreview(let expectedRevision, let preview):
+                guard expectedRevision == lastSuccessfullyPersistedRevision else {
+                    throw SettingsStoreError.staleRevision
+                }
+                let saved = try await settings.commitImport(expectedRevision: expectedRevision,
+                                                            previewID: preview.id)
+                return try await acceptSaved(saved, id: id, ticket: ticket,
+                                             intentGeneration: intentGeneration,
+                                             sequence: sequence)
             }
             let saved = try await settings.update(expectedRevision: expectedRevision, change: change)
-            lastSuccessfullyPersistedRevision = saved.revision
-            durableSettingsRevision = saved.revision
-            acknowledgedEnvelope = saved
-
-            if let ticket {
-                let environment = saved.config.makePolicyEnvironment(
-                    homeDirectory: homeDirectory, detectedTools: detectedTools)
-                let commit = try await coordinator.commitPolicyUpdate(ticket, environment: environment)
-                if case .applied = commit, pendingPolicyCount == 1,
-                   generation == intentGeneration {
-                    isExecutionEnabled = true
-                    policyFailureActive = false
-                    if sequence >= errorSequence { persistenceError = nil }
-                } else if pendingPolicyCount == 1, generation == intentGeneration {
-                    persistenceError = "A newer settings update is pending. Cleanup remains disabled."
-                    errorSequence = sequence
-                    policyFailureActive = true
-                    isExecutionEnabled = false
-                }
-            } else if !policyFailureActive, sequence >= errorSequence {
-                persistenceError = nil
-            }
-            return .saved(id, saved)
+            return try await acceptSaved(saved, id: id, ticket: ticket,
+                                         intentGeneration: intentGeneration, sequence: sequence)
         } catch let error as SettingsStoreError
             where error == .staleRevision || error == .changedExternally {
             if ticket != nil {
@@ -327,10 +476,46 @@ public final class ExecutionPolicyBridge {
         }
     }
 
+    private func acceptSaved(_ saved: SettingsEnvelope, id: SettingsIntentID,
+                             ticket: PolicyUpdateTicket?, intentGeneration: UUID?,
+                             sequence: UInt64) async throws -> SettingsIntentOutcome {
+        lastSuccessfullyPersistedRevision = saved.revision
+        durableSettingsRevision = saved.revision
+        acknowledgedEnvelope = saved
+        issuedImportBinding = nil
+        _ = advanceImportLifecycle()
+        if let ticket {
+            let environment = saved.config.makePolicyEnvironment(
+                homeDirectory: homeDirectory, detectedTools: detectedTools)
+            let commit = try await coordinator.commitPolicyUpdate(ticket, environment: environment)
+            if case .applied = commit, pendingPolicyCount == 1,
+               generation == intentGeneration {
+                isExecutionEnabled = true
+                policyFailureActive = false
+                if sequence >= errorSequence { persistenceError = nil }
+            } else if pendingPolicyCount == 1, generation == intentGeneration {
+                persistenceError = "A newer settings update is pending. Cleanup remains disabled."
+                errorSequence = sequence
+                policyFailureActive = true
+                isExecutionEnabled = false
+            }
+        } else if !policyFailureActive, sequence >= errorSequence {
+            persistenceError = nil
+        }
+        return .saved(id, saved)
+    }
+
     private func reserveSequence() -> UInt64? {
         let (next, overflow) = submissionSequence.addingReportingOverflow(1)
         guard !overflow else { return nil }
         submissionSequence = next
+        return next
+    }
+
+    private func advanceImportLifecycle() -> UInt64? {
+        let (next, overflow) = importLifecycleGeneration.addingReportingOverflow(1)
+        guard !overflow else { return nil }
+        importLifecycleGeneration = next
         return next
     }
 
@@ -375,9 +560,54 @@ public final class ExecutionPolicyBridge {
             try add(delta.id.rawValue.utf8.count)
             if let value = delta.baseValue { try add(JSONEncoder().encode(value).count) }
             if let value = delta.editedValue { try add(JSONEncoder().encode(value).count) }
+        case .document(let delta):
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            total = try encoder.encode(RetainedDocumentMirror(intentID: id, delta: delta)).count
+        case .importPreview(let expectedRevision, let preview):
+            total = try Self.retainedImportAccountingData(intentID: id,
+                expectedRevision: expectedRevision, preview: preview).count
         }
         return total
     }
+
+    internal static func retainedImportAccountingData(intentID: SettingsIntentID,
+                                                       expectedRevision: UInt64,
+                                                       preview: SettingsImportPreview) throws -> Data {
+        let rows = preview.rows.map {
+            RetainedImportMirror.Row(scope: $0.scope.rawValue, profileID: $0.profileID,
+                id: $0.id, idDigest: $0.idDigest, outcome: $0.outcome.rawValue,
+                value: $0.value, valueKind: $0.valueKind?.rawValue,
+                valueDigest: $0.valueDigest)
+        }
+        let collisions = preview.collisions.map {
+            RetainedImportMirror.Collision(profileID: $0.profileID, localName: $0.localName,
+                                            importedName: $0.importedName)
+        }
+        let choices = preview.choices.map { profileID, value -> RetainedImportMirror.Choice in
+            switch value {
+            case .keepLocal: return .init(profileID: profileID, kind: "keepLocal", cloneID: nil)
+            case .replace: return .init(profileID: profileID, kind: "replace", cloneID: nil)
+            case .clone(let id): return .init(profileID: profileID, kind: "clone", cloneID: id)
+            }
+        }.sorted { $0.profileID.uuidString < $1.profileID.uuidString }
+        let mirror = RetainedImportMirror(intentID: intentID,
+            expectedRevision: expectedRevision, previewID: preview.id,
+            analysisID: preview.analysisID, rows: rows, collisions: collisions,
+            choices: choices, preferences: preview.candidate.preferences,
+            inertImports: preview.candidate.inertImports,
+            sourceDigest: preview.sourceDigest, candidateDigest: preview.candidateDigest)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(mirror)
+    }
+
+    internal static func checkedRetainedTotalForTesting(_ current: Int,
+                                                        adding: Int) throws -> Int {
+        let (total, overflow) = current.addingReportingOverflow(adding)
+        guard current >= 0, adding >= 0, !overflow else { throw SettingsStoreError.oversized }
+        return total
+    }
+
+    internal var pendingByteLimitForTesting: Int { pendingByteLimit }
 
     /// Replays accepted intent payloads in admission order over the exact last
     /// durable acknowledgement. Stored deltas are never rebased: this is only
@@ -392,6 +622,14 @@ public final class ExecutionPolicyBridge {
                 envelope = applyingPrediction(delta, to: envelope)
             case .global(let delta):
                 envelope = applyingGlobalPrediction(delta, to: envelope)
+            case .document(let delta):
+                if let applied = try? PreferencesDocumentProjection.apply(delta, to: envelope) {
+                    envelope = applied.envelope
+                }
+            case .importPreview(_, let preview):
+                if let prediction = try? importPrediction(preview.candidate, from: envelope) {
+                    envelope = prediction
+                }
             }
         }
         predictedSubmittedEnvelope = envelope
@@ -426,6 +664,19 @@ public final class ExecutionPolicyBridge {
             replacing: prior, with: preferences.global)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
             revision: envelope.revision, config: config, preferences: preferences)
+    }
+
+    private func importPrediction(_ candidate: PortableSettingsState,
+                                  from envelope: SettingsEnvelope) throws -> SettingsEnvelope {
+        var preferences = candidate.preferences
+        preferences.projects = envelope.preferences?.projects ?? [:]
+        let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
+            replacing: envelope.preferences?.global, with: preferences.global)
+        let predicted = SettingsEnvelope(schemaVersion: envelope.schemaVersion,
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: envelope.activeProfileID, inertImports: candidate.inertImports)
+        _ = try PreferencesDocumentEffect.classify(before: envelope, after: predicted)
+        return predicted
     }
 
     public func drain() async {
