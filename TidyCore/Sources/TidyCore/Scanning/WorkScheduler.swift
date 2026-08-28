@@ -120,6 +120,12 @@ internal struct SchedulerAdmissionTicket: Equatable, Sendable {
     fileprivate let controllerID: UUID
     fileprivate let transition: UInt64
 }
+/// A controller-issued hold that keeps otherwise-open admission closed across
+/// serialized bridge handoffs. Only the owning controller can create or release it.
+internal struct SchedulerAdmissionHold: Sendable {
+    fileprivate let controllerID: UUID
+    fileprivate let id: UUID
+}
 public struct ExplicitWorkCapability: Sendable {
     fileprivate let schedulerID: UUID
     fileprivate let id: UUID
@@ -162,6 +168,7 @@ private final class SchedulerAdmissionBarrier: @unchecked Sendable {
     private let lock = NSLock()
     private var state: BarrierState = .unavailable
     private var next: UInt64 = 0
+    private var admissionHolds: Set<UUID> = []
 
     func begin(controllerID: UUID) throws -> SchedulerAdmissionTicket {
         lock.lock(); defer { lock.unlock() }
@@ -173,7 +180,16 @@ private final class SchedulerAdmissionBarrier: @unchecked Sendable {
         next = value; state = .updating(value)
         return SchedulerAdmissionTicket(controllerID: controllerID, transition: value)
     }
-    func status() -> BarrierState { lock.lock(); defer { lock.unlock() }; return state }
+    func status() -> BarrierState {
+        lock.lock(); defer { lock.unlock() }
+        guard !admissionHolds.isEmpty else { return state }
+        switch state {
+        case .open, .presentationCommitting:
+            return .updating(next)
+        case .unavailable, .updating, .preparing, .committing:
+            return state
+        }
+    }
     func isCurrent(_ ticket: SchedulerAdmissionTicket) -> Bool {
         lock.lock(); defer { lock.unlock() }
         if case .updating(ticket.transition) = state { return true }
@@ -182,6 +198,7 @@ private final class SchedulerAdmissionBarrier: @unchecked Sendable {
     }
     func openEpoch() -> UInt64? {
         lock.lock(); defer { lock.unlock() }
+        guard admissionHolds.isEmpty else { return nil }
         if case .open(let epoch) = state { return epoch }
         if case .presentationCommitting(let epoch) = state { return epoch }
         return nil
@@ -216,7 +233,19 @@ private final class SchedulerAdmissionBarrier: @unchecked Sendable {
         guard case .presentationCommitting(epoch) = state else { return false }
         state = .open(epoch); return true
     }
-    func unavailable() { lock.lock(); state = .unavailable; lock.unlock() }
+    func acquireAdmissionHold(_ id: UUID) {
+        lock.lock(); admissionHolds.insert(id); lock.unlock()
+    }
+    func releaseAdmissionHold(_ id: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard admissionHolds.remove(id) != nil, admissionHolds.isEmpty else { return false }
+        if case .open = state { return true }
+        if case .presentationCommitting = state { return true }
+        return false
+    }
+    func unavailable() {
+        lock.lock(); state = .unavailable; admissionHolds.removeAll(); lock.unlock()
+    }
 }
 
 private struct SchedulerResolution: Equatable, Sendable {
@@ -546,6 +575,20 @@ internal actor SchedulerPolicyController {
         using capability: SchedulerPolicyControllerCapability) throws -> SchedulerAdmissionTicket {
         guard capability.controllerID == controllerID else { throw WorkSchedulerError.foreignController }
         return try barrier.begin(controllerID: controllerID)
+    }
+
+    nonisolated func acquireAdmissionHold(
+        using capability: SchedulerPolicyControllerCapability) throws -> SchedulerAdmissionHold {
+        guard capability.controllerID == controllerID else { throw WorkSchedulerError.foreignController }
+        let hold = SchedulerAdmissionHold(controllerID: controllerID, id: UUID())
+        barrier.acquireAdmissionHold(hold.id)
+        return hold
+    }
+
+    internal func releaseAdmissionHold(_ hold: SchedulerAdmissionHold,
+                                       using capability: SchedulerPolicyControllerCapability) async {
+        guard capability.controllerID == controllerID, hold.controllerID == controllerID else { return }
+        if barrier.releaseAdmissionHold(hold.id) { await scheduler.admissionOpened() }
     }
 
     internal func prepare(_ admission: SchedulerAdmissionTicket,
