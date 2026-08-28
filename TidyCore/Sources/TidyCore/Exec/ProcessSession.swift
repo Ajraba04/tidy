@@ -2,13 +2,26 @@ import Darwin
 import Dispatch
 import Foundation
 
-enum ProcessJobKind: Sendable { case readOnly, mutation }
-struct ProcessRequest: Sendable {
-    let executable: URL
-    let arguments: [String]
-    let environment: [String: String]
-    let kind: ProcessJobKind
-    let deadline: Duration
+/// Explicit SPI used only by the T04 process-mechanism tests. Production
+/// callers receive no raw request type and cannot choose a job kind.
+@_spi(TidyCoreTesting) public enum ProcessTestJobKind: Sendable {
+    case readOnly, mutation
+}
+@_spi(TidyCoreTesting) public struct ProcessTestRequest: Sendable {
+    public let executable: URL
+    public let arguments: [String]
+    public let environment: [String: String]
+    public let kind: ProcessTestJobKind
+    public let deadline: Duration
+
+    public init(executable: URL, arguments: [String], environment: [String: String],
+                kind: ProcessTestJobKind, deadline: Duration) {
+        self.executable = executable
+        self.arguments = arguments
+        self.environment = environment
+        self.kind = kind
+        self.deadline = deadline
+    }
 }
 enum ProcessEnd: Equatable, Sendable {
     case exited(Int32), cancelledBeforeStart, readOnlyTimedOut, uncertainAndPossiblyRunning
@@ -29,7 +42,9 @@ enum OwnedProcessExit: Equatable, Sendable {
     case reapedWithoutIdentity(pid: Int32, status: Int32)
     case unproven
 }
-enum ProcessIdentityCapture: Sendable { case system, failClosed }
+@_spi(TidyCoreTesting) public enum ProcessIdentityCapture: Sendable {
+    case system, failClosed
+}
 struct ProcessSessionObservation: Sendable {
     let ownedExit: OwnedProcessExit
     let signalAttempts: Int
@@ -149,7 +164,31 @@ private final class DirectChildOwnership: @unchecked Sendable {
 }
 
 /// Internal process mechanism, not an effect-registration or cleanup API.
-final class ProcessSession: @unchecked Sendable {
+@_spi(TidyCoreTesting) public final class ProcessSession: @unchecked Sendable {
+    private struct Request: Sendable {
+        let executable: URL
+        let arguments: [String]
+        let environment: [String: String]
+        let kind: ProcessRunner.AuthorizedJobKind
+        let deadline: Duration
+
+        init(_ authorization: ProcessRunner.AuthorizedLaunch) {
+            executable = authorization.executableURL
+            arguments = authorization.arguments
+            environment = authorization.environment
+            kind = authorization.kind
+            deadline = authorization.deadline
+        }
+
+        init(test request: ProcessTestRequest) {
+            executable = request.executable
+            arguments = request.arguments
+            environment = request.environment
+            kind = request.kind == .readOnly ? .readOnly : .mutation
+            deadline = request.deadline
+        }
+    }
+
     private final class Stream {
         var fd: Int32
         var source: DispatchSourceRead?
@@ -168,7 +207,7 @@ final class ProcessSession: @unchecked Sendable {
         let timeout: DispatchWorkItem
     }
     private let owner: DirectChildOwnership
-    private let kind: ProcessJobKind
+    private let kind: ProcessRunner.AuthorizedJobKind
     private let gate: ProcessJobGate
     private let reservation: UUID
     private let queue = DispatchQueue(label: "Tidy.process.observation", qos: .utility)
@@ -188,7 +227,7 @@ final class ProcessSession: @unchecked Sendable {
 
     var identity: ProcessInstanceIdentity? { owner.identity }
 
-    private init(pid: Int32, identity: ProcessInstanceIdentity?, kind: ProcessJobKind,
+    private init(pid: Int32, identity: ProcessInstanceIdentity?, kind: ProcessRunner.AuthorizedJobKind,
                  controlFD: Int32, stdoutFD: Int32, stderrFD: Int32,
                  gate: ProcessJobGate, reservation: UUID) {
         owner = DirectChildOwnership(pid: pid, identity: identity, controlFD: controlFD)
@@ -198,9 +237,26 @@ final class ProcessSession: @unchecked Sendable {
 
     static func validateChildWaitDisposition() throws { try ChildWaitCompatibility.shared.validate() }
 
-    static func launch(_ request: ProcessRequest, gate: ProcessJobGate,
-                       identityCapture: ProcessIdentityCapture = .system) async throws -> ProcessSession {
-        let reservation = try await gate.acquire(kind: request.kind)
+    static func launch(_ authorization: ProcessRunner.AuthorizedLaunch) async throws -> ProcessSession {
+        let gate = ProcessJobGate.shared
+        let reservation = try await gate.acquire(authorization)
+        return try await launch(Request(authorization), gate: gate, reservation: reservation,
+                                identityCapture: .system)
+    }
+
+    /// Test-only SPI for T04 mechanism fixtures. It cannot target the shared
+    /// production gate and is hidden from normal module importers.
+    @_spi(TidyCoreTesting)
+    public static func launchForTesting(_ request: ProcessTestRequest, gate: ProcessJobGate,
+        identityCapture: ProcessIdentityCapture = .system) async throws -> ProcessSession {
+        guard gate.isTestIsolation else { throw POSIXError(.EPERM) }
+        let reservation = try await gate.acquireForTesting(kind: request.kind)
+        return try await launch(Request(test: request), gate: gate, reservation: reservation,
+                                identityCapture: identityCapture)
+    }
+
+    private static func launch(_ request: Request, gate: ProcessJobGate, reservation: UUID,
+                               identityCapture: ProcessIdentityCapture) async throws -> ProcessSession {
         do {
             try Task.checkCancellation()
             let session = try spawn(request, gate: gate, reservation: reservation,
@@ -215,7 +271,7 @@ final class ProcessSession: @unchecked Sendable {
         }
     }
 
-    private static func spawn(_ request: ProcessRequest, gate: ProcessJobGate, reservation: UUID,
+    private static func spawn(_ request: Request, gate: ProcessJobGate, reservation: UUID,
                               identityCapture: ProcessIdentityCapture) throws -> ProcessSession {
         guard request.executable.isFileURL, request.executable.path.hasPrefix("/"),
               !request.executable.path.utf8.contains(0),

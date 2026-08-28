@@ -1,11 +1,43 @@
 # T08.3 sole process budget and async discovery verification
 
+## Consolidated post-review repair
+
+The single independent phase review found three related defects. They were
+handled in one corrective pass with new regressions before production edits:
+
+- **Raw-launch authority:** the former internal `ProcessRequest`,
+  `ProcessJobKind`, arbitrary gate initializer, and
+  `ProcessSession.launch(request, gate:)` surface was removed. `ProcessRunner`
+  now issues an opaque `AuthorizedLaunch` whose initializer is file-private to
+  the compiled descriptor file. Production `ProcessSession.launch` accepts
+  only that capability and selects `ProcessJobGate.shared` itself.
+- **Test isolation:** T04 mechanism fixtures use an explicit
+  `TidyCoreTesting` SPI with renamed `ProcessTestRequest` and
+  `ProcessTestJobKind` types. Its private-purpose gate factory creates only
+  test-isolated gates, and its raw launch rejects `ProcessJobGate.shared`.
+  A real compiler-negative regression imports the built module with
+  `@testable`, attempts the old mutation/custom-gate launch and direct
+  `AuthorizedLaunch` construction, and verifies compilation fails with the
+  file-private capability diagnostic.
+- **Full paused-reader queue:** a queue at its retention limit cannot reject an
+  otherwise eligible mutator merely because cap-zero readers occupy every
+  queued position. The actor grants that mutator directly when physical
+  capacity exists; active work remains bounded by two and queued retention by
+  its configured limit.
+- **Deterministic cancellation:** the FIFO regression now starts each waiter
+  only after the prior queue increment is observed, cancels the known middle
+  waiter, proves the oldest and then oldest-surviving grant order, and releases
+  every granted lease.
+
+No reviewer or agent was invoked for this corrective pass. The controller
+performs direct verification; no repeat review is claimed.
+
 ## Scope and ownership boundary
 
 - `ProcessJobGate.shared` is the only production gate identity used by
   `ProcessRunner`. Its aggregate physical limit is immutable at two.
-  Tests may construct isolated internal gates to prove queue behavior; no
-  production caller constructs another gate.
+  Tests may construct explicitly SPI-marked, purpose-tagged isolated gates to
+  prove mechanism behavior; the production raw-launch path refuses them.
 - The gate owns one revisioned runtime read-only cap in the resolved range
   `0...2`. Updates are ordered by settings revision and observation epoch;
   duplicate, stale, late, missing-revision, and out-of-range observations
@@ -17,11 +49,13 @@
   provide a gate, cap, caller ID, descendant claim, or mutation selector.
   Unknown command shapes, a claimed need above the compiled descriptor, and a
   nested launch reject before gate reservation or `ProcessSession` launch.
+  Only the descriptor file can initialize its opaque launch capability.
 - `ProcessSession` still owns the T04 direct child, bounded stdout/stderr,
   deadline and signal decisions, consuming reap, and terminal lease release.
-  The only session change is typed read-only/mutator admission through the same
-  gate plus an internal exact retained-descriptor observation for regression
-  evidence.
+  Production launch accepts no raw request or gate argument and always uses the
+  runner-issued capability with the shared gate. The explicit test SPI cannot
+  target that production identity. An internal exact retained-descriptor
+  observation remains available for regression evidence.
 - Async `ToolLocator`, `ToolchainDetector`, `SimctlClient`, `SnapshotLister`,
   `ContainerSpaceInfo`, and `ProcessSurvey` discovery now reaches subprocesses
   only through compiled `ProcessRunner` entry points. `ToolLocator` has bounded
@@ -42,6 +76,20 @@ need rejection, nested-launch rejection, and retained-descriptor observation.
 The implementation was then added and the same seven behavioral regressions
 passed.
 
+Before the consolidated repair, two new behavioral regressions ran RED:
+
+- an eligible mutator returned no reservation when two cap-zero readers filled
+  the bounded queue; and
+- an `@testable` importer successfully compiled a self-selected mutation
+  request, new one-slot gate, and raw session launch, with compiler exit zero.
+
+After the repair, the mutator is admitted and the importer fails to compile.
+The compiler diagnostic also proves direct construction of
+`ProcessRunner.AuthorizedLaunch` is inaccessible because its initializer is
+file-private. The strengthened FIFO cancellation case was deterministic and
+GREEN before and after the production change; it corrects the former test's
+uncontrolled task-start ordering rather than masking a production failure.
+
 The regressions cover:
 
 - one runner/gate identity and immutable aggregate cap two;
@@ -51,8 +99,12 @@ The regressions cover:
 - two readers delaying a future mutator, one reader coexisting with one
   mutator, and cap-one reader serialization;
 - cancelled FIFO readers leaving no reservation or queue entry;
+- a full cap-zero reader queue preserving eligible mutator admission while
+  retaining strict queue and physical bounds;
 - unknown, forged-needs, and nested launches leaving the shared gate snapshot
   unchanged; and
+- imported raw/custom-gate launch rejection, unforgeable authorized launch,
+  and test-SPI rejection of the production gate; and
 - twenty direct-child cycles returning every session-owned descriptor and
   gate lease to zero.
 
@@ -71,6 +123,10 @@ and `WorkScheduler`; the compiled acceptance fixture exits successfully.
 - A cap-zero reader remains queued and owns no physical slot. An eligible later
   mutator may use the aggregate budget, while queued readers retain their own
   FIFO order for recovery.
+- If blocked readers have filled the bounded queue, an eligible mutator with
+  physical capacity is granted immediately instead of being rejected by reader
+  retention. No eligible queued waiter can exist at that point because every
+  enqueue and release drains eligible work inside the actor.
 - Lowering the reader cap does not revoke a running reader. Raising the cap
   drains eligible work inside the gate actor.
 - Reservation transfer occurs before a resumed waiter runs. Queued
@@ -118,14 +174,16 @@ cd TidyCore
 swift test --disable-sandbox --jobs 2 --filter ProcessBudgetIntegrationTests
 ```
 
-Result: 7 tests in 1 serialized suite passed.
+Result after the consolidated repair: 10 tests in 1 serialized suite passed in
+4.058 seconds. This includes the importer compiler-negative boundary probe,
+test-SPI/shared-gate rejection, and full paused-reader queue admission.
 
 ```sh
 cd TidyCore
 swift test --disable-sandbox --jobs 2 --filter BoundedProcessRunnerTests
 ```
 
-Result: 21 tests in 1 serialized suite passed, including the T04 signal, reap,
+Result: 21 tests in 1 serialized suite passed in 24.913 seconds, including the T04 signal, reap,
 timeout, fast-exit, bounded-output, cancellation-transfer, and direct-child
 ownership cases.
 
@@ -135,14 +193,15 @@ swift test --disable-sandbox --jobs 2 \
   --filter 'BoundedProcessRunnerTests|ProcessRunnerTests|ProcessBudgetIntegrationTests|ToolLocatorTests|ToolchainDetectorTests|ProcessSurveyTests|ContainerSpaceInfoTests|SnapshotListerTests|SimctlClientTests'
 ```
 
-Result: 50 tests in 9 suites passed.
+Result after the consolidated repair: 53 tests in 9 suites passed in 25.083
+seconds.
 
 ```sh
 cd TidyCore
 swift test --disable-sandbox --jobs 2 --filter WorkSchedulerTests
 ```
 
-Result: 34 tests in 1 suite passed.
+Result: 34 tests in 1 suite passed in 4.981 seconds.
 
 ```sh
 cd TidyCore
@@ -150,14 +209,16 @@ swift test --disable-sandbox --jobs 2 --filter SettingsProcessAcceptanceTests
 ```
 
 Result: 3 test functions in 1 serialized suite passed, including 8
-parameterized acceptance cases and the standalone source-manifest compiler.
+parameterized acceptance cases and the standalone source-manifest compiler,
+in 14.895 seconds.
 
 ```sh
 cd TidyCore
 swift test --disable-sandbox --jobs 2
 ```
 
-Final full-core result: 542 tests in 58 suites passed in 49.265 seconds, exit
+Final consolidated-repair full-core result: 545 tests in 58 suites passed in
+48.490 seconds, exit
 status zero. The run retained the existing diagnostic compiler/A2P artifacts
 for descendant and process-ownership evidence; those messages were not test
 failures. No current host-only full-core failure is known for this phase.
@@ -167,9 +228,12 @@ rg -n 'Process\s*\(|waitUntilExit|DispatchSemaphore|ProcessJobGate\s*\(' \
   TidyCore/Sources
 ```
 
-Result: the only gate construction is
-`ProcessJobGate.shared = ProcessJobGate(limit: 2)`; there are no direct
-`Process`, `waitUntilExit`, or semaphore matches.
+Result: the only production-purpose gate construction is
+`ProcessJobGate.shared = ProcessJobGate(limit: 2, purpose: .production)`.
+The only other constructor call is inside the explicit SPI factory and uses
+`purpose: .testing`; its initializer is private and production launch rejects
+that purpose. There are no direct `Process`, `waitUntilExit`, or semaphore
+matches.
 
 `git diff --check` passed before staging. The staged allowlist and cached diff
 are checked separately immediately before commit.

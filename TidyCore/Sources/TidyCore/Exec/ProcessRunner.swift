@@ -35,12 +35,33 @@ public enum ProcessRunner: Sendable {
         case compatibilitySleep
     }
 
-    private struct DeclaredInvocation: Sendable {
-        let caller: BuiltInCallerID
+    enum AuthorizedJobKind: Sendable { case readOnly, mutation }
+
+    fileprivate struct DeclaredInvocation: Sendable {
         let executableURL: URL
         let arguments: [String]
+        let kind: AuthorizedJobKind
         /// Every current T08.3 declaration is a direct-child-only shape.
         let maximumDescendants: Int
+    }
+
+    /// Opaque launch authority. Its initializer is file-private so no other
+    /// TidyCore production source can manufacture a request, select mutation,
+    /// or route a launch around the compiled descriptor table.
+    struct AuthorizedLaunch: Sendable {
+        let executableURL: URL
+        let arguments: [String]
+        let environment: [String: String]
+        let kind: AuthorizedJobKind
+        let deadline: Duration
+
+        fileprivate init(_ declaration: DeclaredInvocation, timeout: TimeInterval) {
+            executableURL = declaration.executableURL
+            arguments = declaration.arguments
+            environment = ProcessRunner.minimalEnvironment
+            kind = declaration.kind
+            deadline = .seconds(timeout)
+        }
     }
 
     @TaskLocal private static var launchDepth = 0
@@ -135,10 +156,8 @@ public enum ProcessRunner: Sendable {
             throw ProcessRunnerError.needExceedsCompiledDescriptor
         }
         return try await $launchDepth.withValue(launchDepth + 1) {
-            let request = ProcessRequest(executable: declaration.executableURL,
-                arguments: declaration.arguments, environment: minimalEnvironment,
-                kind: .readOnly, deadline: .seconds(timeout))
-            let session = try await ProcessSession.launch(request, gate: ProcessJobGate.shared)
+            let authorization = AuthorizedLaunch(declaration, timeout: timeout)
+            let session = try await ProcessSession.launch(authorization)
             return legacyOutput(await session.collect())
         }
     }
@@ -148,8 +167,9 @@ public enum ProcessRunner: Sendable {
         guard matches(caller, executableURL: executableURL, arguments: arguments) else {
             throw ProcessRunnerError.undeclaredInvocation
         }
-        return DeclaredInvocation(caller: caller, executableURL: executableURL,
-                                  arguments: arguments, maximumDescendants: 0)
+        return DeclaredInvocation(executableURL: executableURL,
+                                  arguments: arguments, kind: .readOnly,
+                                  maximumDescendants: 0)
     }
 
     private static func classify(executableURL: URL,
