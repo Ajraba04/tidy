@@ -13,12 +13,14 @@ private final class LockedTraversalSource: BoundedTraversalSource, @unchecked Se
         var terminalReason: TraversalCoverageReason?
         var observedBreadth: Int?
         var readReason: TraversalCoverageReason?
+        var contentVersion: UInt64
 
         init(identity: TraversalSourceIdentity, bytes: Int64, isDirectory: Bool,
              children: [String], modifiedAt: Date? = nil, linkCount: Int = 1,
              terminalReason: TraversalCoverageReason? = nil,
              observedBreadth: Int? = nil,
-             readReason: TraversalCoverageReason? = nil) {
+             readReason: TraversalCoverageReason? = nil,
+             contentVersion: UInt64 = 0) {
             self.identity = identity
             self.bytes = bytes
             self.isDirectory = isDirectory
@@ -28,6 +30,7 @@ private final class LockedTraversalSource: BoundedTraversalSource, @unchecked Se
             self.terminalReason = terminalReason
             self.observedBreadth = observedBreadth
             self.readReason = readReason
+            self.contentVersion = contentVersion
         }
     }
 
@@ -65,8 +68,16 @@ private final class LockedTraversalSource: BoundedTraversalSource, @unchecked Se
             children: children,
             terminalReason: node.terminalReason,
             observedBreadth: node.observedBreadth ?? children.count,
-            openDescriptorHighWater: node.isDirectory ? 1 : 0
+            openDescriptorHighWater: node.isDirectory ? 1 : 0,
+            directoryWatermark: node.isDirectory ? Self.watermark(node) : nil
         ))
+    }
+
+    func validateDirectory(at path: String,
+                           watermark: TraversalDirectoryWatermark) -> TraversalCoverageReason? {
+        lock.lock(); defer { lock.unlock() }
+        guard let node = nodes[path], node.isDirectory else { return .churn }
+        return Self.watermark(node) == watermark ? nil : .churn
     }
 
     func replaceIdentity(at path: String, with identity: TraversalSourceIdentity) {
@@ -74,9 +85,147 @@ private final class LockedTraversalSource: BoundedTraversalSource, @unchecked Se
         nodes[path]?.identity = identity
     }
 
+    func appendChild(parent: String, name: String, node: Node) {
+        lock.lock(); defer { lock.unlock() }
+        nodes[parent]?.children.append(name)
+        nodes[parent]?.contentVersion += 1
+        nodes[parent + "/" + name] = node
+    }
+
     func snapshot() -> (paths: [String], mainThreadReads: Int) {
         lock.lock(); defer { lock.unlock() }
         return (inspected, mainThreadReads)
+    }
+
+    private static func watermark(_ node: Node) -> TraversalDirectoryWatermark {
+        TraversalDirectoryWatermark(identity: node.identity,
+            modifiedSeconds: Int64(bitPattern: node.contentVersion), modifiedNanoseconds: 0,
+            changedSeconds: 0, changedNanoseconds: 0, size: Int64(node.children.count),
+            linkCount: 1)
+    }
+}
+
+/// Generates a high-cardinality tree on demand so the regression exercises thousands of real
+/// traversal entries without retaining a same-sized fixture graph in the test process.
+private final class VirtualHighCardinalityTraversalSource: BoundedTraversalSource,
+    @unchecked Sendable {
+    let root: String
+    let directoryCount: Int
+    let filesPerDirectory: Int
+
+    private let lock = NSLock()
+    private var readCount = 0
+    private var maximumChildren = 0
+
+    init(root: String, directoryCount: Int, filesPerDirectory: Int) {
+        self.root = root
+        self.directoryCount = directoryCount
+        self.filesPerDirectory = filesPerDirectory
+    }
+
+    func rootIdentity(at path: String) -> TraversalRootRead {
+        path == root ? .identity(rootIdentity) : .missing
+    }
+
+    func read(_ request: TraversalSourceRequest) -> TraversalSourceRead {
+        if request.path == root {
+            let children = (0..<directoryCount).map {
+                TraversalSourceChild(name: "d\($0)", identity: directoryIdentity($0))
+            }
+            recordRead(children: children.count)
+            return directoryEntry(identity: rootIdentity, children: children)
+        }
+
+        let components = request.relativePath.split(separator: "/")
+        guard let first = components.first,
+              let directory = Self.index(after: "d", in: first) else {
+            recordRead(children: 0)
+            return .skipped(.missing)
+        }
+        if components.count == 1, directory < directoryCount {
+            let children = (0..<filesPerDirectory).map {
+                TraversalSourceChild(name: "f\($0)",
+                    identity: fileIdentity(directory: directory, file: $0))
+            }
+            recordRead(children: children.count)
+            return directoryEntry(identity: directoryIdentity(directory), children: children)
+        }
+        guard components.count == 2,
+              let file = Self.index(after: "f", in: components[1]),
+              directory < directoryCount, file < filesPerDirectory else {
+            recordRead(children: 0)
+            return .skipped(.missing)
+        }
+        let ordinal = directory * filesPerDirectory + file + 1
+        recordRead(children: 0)
+        return .entry(TraversalSourceEntry(
+            identity: fileIdentity(directory: directory, file: file),
+            bytes: Int64(ordinal), kind: .regularFile, modifiedAt: nil,
+            linkCount: file.isMultiple(of: 8) ? 2 : 1, children: [],
+            terminalReason: nil, observedBreadth: 0, openDescriptorHighWater: 0))
+    }
+
+    func validateDirectory(at path: String,
+                           watermark: TraversalDirectoryWatermark) -> TraversalCoverageReason? {
+        let expected: TraversalDirectoryWatermark?
+        if path == root {
+            expected = directoryWatermark(identity: rootIdentity, children: directoryCount)
+        } else {
+            let relative = path.dropFirst(root.count + 1)
+            if let directory = Self.index(after: "d", in: relative),
+               directory < directoryCount {
+                expected = directoryWatermark(identity: directoryIdentity(directory),
+                                              children: filesPerDirectory)
+            } else {
+                expected = nil
+            }
+        }
+        return expected == watermark ? nil : .churn
+    }
+
+    func snapshot() -> (readCount: Int, maximumChildren: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (readCount, maximumChildren)
+    }
+
+    private var rootIdentity: TraversalSourceIdentity {
+        TraversalSourceIdentity(device: 9, inode: 1, generation: 1)
+    }
+
+    private func directoryIdentity(_ directory: Int) -> TraversalSourceIdentity {
+        TraversalSourceIdentity(device: 9, inode: UInt64(directory + 2), generation: 1)
+    }
+
+    private func fileIdentity(directory: Int, file: Int) -> TraversalSourceIdentity {
+        TraversalSourceIdentity(device: 9,
+            inode: UInt64(1_000 + directory * filesPerDirectory + file), generation: 1)
+    }
+
+    private func directoryEntry(identity: TraversalSourceIdentity,
+                                children: [TraversalSourceChild]) -> TraversalSourceRead {
+        .entry(TraversalSourceEntry(identity: identity, bytes: 0, kind: .directory,
+            modifiedAt: nil, linkCount: 1, children: children, terminalReason: nil,
+            observedBreadth: children.count, openDescriptorHighWater: 1,
+            directoryWatermark: directoryWatermark(identity: identity,
+                                                    children: children.count)))
+    }
+
+    private func directoryWatermark(identity: TraversalSourceIdentity,
+                                    children: Int) -> TraversalDirectoryWatermark {
+        TraversalDirectoryWatermark(identity: identity, modifiedSeconds: 1,
+            modifiedNanoseconds: 0, changedSeconds: 1, changedNanoseconds: 0,
+            size: Int64(children), linkCount: 1)
+    }
+
+    private func recordRead(children: Int) {
+        lock.lock(); defer { lock.unlock() }
+        readCount += 1
+        maximumChildren = max(maximumChildren, children)
+    }
+
+    private static func index<S: StringProtocol>(after prefix: Character, in value: S) -> Int? {
+        guard value.first == prefix else { return nil }
+        return Int(value.dropFirst())
     }
 }
 
@@ -98,6 +247,39 @@ private final class ManualTraversalClock: @unchecked Sendable {
 
     var traversalClock: BoundedTraversalClock {
         BoundedTraversalClock(nowNanoseconds: { self.now() })
+    }
+}
+
+private final class DirectoryReplacementRace: @unchecked Sendable {
+    private let lock = NSLock()
+    private let original: URL
+    private let parked: URL
+    private let replacement: URL
+    private var didRun = false
+    private var failure: String?
+
+    init(original: URL, parked: URL, replacement: URL) {
+        self.original = original
+        self.parked = parked
+        self.replacement = replacement
+    }
+
+    func replaceBeforeOpen(_ path: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard !didRun, path == original.path else { return }
+        didRun = true
+        do {
+            try FileManager.default.moveItem(at: original, to: parked)
+            try FileManager.default.createSymbolicLink(at: original,
+                                                       withDestinationURL: replacement)
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
+    func snapshot() -> (didRun: Bool, failure: String?) {
+        lock.lock(); defer { lock.unlock() }
+        return (didRun, failure)
     }
 }
 
@@ -148,31 +330,58 @@ private actor TraversalGateHook: BoundedTraversalTestHook {
     func releaseBatch(_ batch: Int) { releases.removeValue(forKey: batch)?.resume() }
 }
 
+private actor PermitHoldGate {
+    private var started = 0
+    private var startWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func hold() async {
+        started += 1
+        let ready = startWaiters.filter { started >= $0.target }
+        startWaiters.removeAll { started >= $0.target }
+        for waiter in ready { waiter.continuation.resume() }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilStarted(_ target: Int) async {
+        if started >= target { return }
+        await withCheckedContinuation { startWaiters.append((target, $0)) }
+    }
+
+    func releaseAll() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
 struct TraversalBridgeRig {
     let root: URL
+    let bridge: ExecutionPolicyBridge
     let sessions: BridgeExplicitSessions
     let session: WorkSession
 
     @MainActor
     static func make() async throws -> TraversalBridgeRig {
-        let root = FileManager.default.temporaryDirectory
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
             .appendingPathComponent("BoundedTraversalBridge-\(UUID().uuidString)", isDirectory: true)
         let journal = root.appendingPathComponent("journal", isDirectory: true)
-        try FileManager.default.createDirectory(at: journal, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: journal, withIntermediateDirectories: false)
         let environment = CleanEnvironment(homeDirectory: root.path, protectedRoots: [])
         let coordinator = ExecutionCoordinator(environment: environment, journalDirectory: journal)
-        let settings = SettingsStore(url: root.appendingPathComponent("settings.json"))
-        let config = TidyConfig(schemaVersion: 2)
-        let envelope = SettingsEnvelope(
-            schemaVersion: 2,
-            revision: 1,
-            config: config,
-            preferences: PolicyPreferences.project(legacy: config, saved: nil)
-        )
+        let settingsURL = root.appendingPathComponent("settings/config.json")
+        let settings = SettingsStore(url: settingsURL)
+        _ = await settings.load()
+        let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+        _ = try await settings.update(expectedRevision: 0,
+            change: .preferences(.init(global: .init(fields: [rate: .integer(4)]))))
+        let loaded = await settings.load()
         let bridge = ExecutionPolicyBridge(
             coordinator: coordinator,
             settings: settings,
-            loaded: SettingsLoadResult(disposition: .loaded, envelope: envelope, recoveryReason: nil),
+            loaded: loaded,
             homeDirectory: root.path,
             detectedTools: []
         )
@@ -181,7 +390,8 @@ struct TraversalBridgeRig {
         let session = try await sessions.beginSession(
             requirements: SchedulerRequirements(features: [.projects])
         )
-        return TraversalBridgeRig(root: root, sessions: sessions, session: session)
+        return TraversalBridgeRig(root: root, bridge: bridge, sessions: sessions,
+                                  session: session)
     }
 
     func cleanup() async {
@@ -219,6 +429,31 @@ private func syntheticFlatTree(root: String, count: Int) -> [String: LockedTrave
             bytes: Int64((index * 37) % 11), isDirectory: false, children: [])
     }
     return nodes
+}
+
+private func occupyAllTraversalPermits(_ sessions: BridgeExplicitSessions,
+                                       session: WorkSession,
+                                       gate: PermitHoldGate) async -> [Task<Void, Never>] {
+    let workers = await sessions.snapshot().effectiveWorkers
+    let tasks = (0..<workers).map { _ in
+        Task<Void, Never> {
+            do {
+                try await sessions.withPermit(session: session) { _ in await gate.hold() }
+            } catch {
+                return
+            }
+        }
+    }
+    await gate.waitUntilStarted(workers)
+    return tasks
+}
+
+private func waitForTraversalQueue(_ sessions: BridgeExplicitSessions,
+                                   atLeast minimum: Int) async -> Bool {
+    for _ in 0..<10_000 {
+        if await sessions.snapshot().queued >= minimum { return true }
+    }
+    return false
 }
 
 @Suite(.serialized)
@@ -266,34 +501,49 @@ struct BoundedTraversalTests {
         #expect(result.metrics.maximumQueuedPaths == 1)
     }
 
-    @Test("synthetic million-entry breadth rejects without exceeding any retained bound")
+    @Test("virtual high-cardinality traversal processes thousands within every retained bound")
     @MainActor
     func syntheticHighCardinalityIsBounded() async throws {
         let rig = try await TraversalBridgeRig.make()
         defer { Task { await rig.cleanup() } }
-        let root = "/million"
-        let source = LockedTraversalSource(nodes: [
-            root: .init(identity: .init(device: 4, inode: 1, generation: 1), bytes: 0,
-                        isDirectory: true, children: [], terminalReason: .maxBreadth,
-                        observedBreadth: 1_000_000)
-        ])
-        let limits = try standardLimits(batchEntries: 8, queuedPaths: 32, maxDepth: 8,
-                                        hardLinks: 16, resultRecords: 16, topN: 8,
-                                        maxBreadth: 32)
+        let root = "/virtual-high-cardinality"
+        let source = VirtualHighCardinalityTraversalSource(
+            root: root, directoryCount: 16, filesPerDirectory: 256)
+        let limits = try standardLimits(batchEntries: 64, queuedPaths: 4_096, maxDepth: 8,
+                                        hardLinks: 512, resultRecords: 64, topN: 8,
+                                        maxBreadth: 256)
         let traversal = BoundedTraversal(sessions: rig.sessions, limits: limits, source: source)
-        let result = await traversal.start(root: root, session: rig.session, sessionID: UUID(),
-                                           generation: 1, options: .init(recordSelection: .none))
+        let logicalID = UUID()
+        let result = await traversal.start(root: root, session: rig.session, sessionID: logicalID,
+                                           generation: 1, options: .init(
+                                            minimumFileBytes: 0,
+                                            collectChildTotals: true,
+                                            recordSelection: .all))
 
-        #expect(result.coverage.reasons == [.maxBreadth])
-        #expect(result.cursor == nil)
-        #expect(result.metrics.maximumQueuedPaths <= limits.queuedPaths)
-        #expect(result.metrics.maximumBatchEntries <= limits.batchEntries)
-        #expect(result.metrics.maximumDepth <= limits.maxDepth)
-        #expect(result.metrics.maximumOpenDescriptors <= limits.openDescriptors)
-        #expect(result.metrics.maximumHardLinkIdentities <= limits.hardLinkIdentities)
-        #expect(result.metrics.maximumChildAggregates <= limits.childAggregates)
-        #expect(result.metrics.maximumResultRecords <= limits.resultRecords)
-        #expect(result.metrics.maximumTopN <= limits.topN)
+        var page = result
+        var recordCount = page.records.count
+        while let cursor = page.cursor {
+            page = await traversal.continue(from: cursor, session: rig.session,
+                                            sessionID: logicalID, generation: 1)
+            recordCount += page.records.count
+        }
+        let sourceSnapshot = source.snapshot()
+
+        #expect(page.coverage.isComplete)
+        #expect(recordCount == 4_113)
+        #expect(sourceSnapshot.readCount == 4_113)
+        #expect(sourceSnapshot.maximumChildren == 256)
+        #expect(page.totalBytes == 8_390_656)
+        #expect(page.childTotals.count == 16)
+        #expect(page.topItems.count == 8)
+        #expect(page.metrics.maximumQueuedPaths == limits.queuedPaths)
+        #expect(page.metrics.maximumBatchEntries <= limits.batchEntries)
+        #expect(page.metrics.maximumDepth <= limits.maxDepth)
+        #expect(page.metrics.maximumOpenDescriptors <= limits.openDescriptors)
+        #expect(page.metrics.maximumHardLinkIdentities == limits.hardLinkIdentities)
+        #expect(page.metrics.maximumChildAggregates <= limits.childAggregates)
+        #expect(page.metrics.maximumResultRecords == limits.resultRecords)
+        #expect(page.metrics.maximumTopN == limits.topN)
     }
 
     @Test("bounded top-N equals a complete bytes-descending path-ascending sort")
@@ -367,6 +617,236 @@ struct BoundedTraversalTests {
         let store = await traversal.snapshot()
         #expect(store.activeCursors == 0)
         #expect(store.cursorTombstones <= 16)
+    }
+
+    @Test("concurrent Continue calls reserve one cursor exactly once before suspension")
+    @MainActor
+    func concurrentCursorReservationIsSingleUse() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/concurrent-cursor"
+        let source = LockedTraversalSource(nodes: syntheticFlatTree(root: root, count: 4))
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(batchEntries: 1, resultRecords: 1), source: source)
+        let logicalID = UUID()
+        let first = await traversal.start(root: root, session: rig.session,
+            sessionID: logicalID, generation: 1, options: .init(recordSelection: .all))
+        let cursor = try #require(first.cursor)
+
+        let results = await withTaskGroup(of: TraversalResult.self,
+                                          returning: [TraversalResult].self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    await traversal.continue(from: cursor, session: rig.session,
+                        sessionID: logicalID, generation: 1)
+                }
+            }
+            var values: [TraversalResult] = []
+            for await value in group { values.append(value) }
+            return values
+        }
+
+        let accepted = results.filter { !$0.coverage.reasons.contains(.cursorReplay) }
+        let replayed = results.filter { $0.coverage.reasons == [.cursorReplay] }
+        #expect(accepted.count == 1)
+        #expect(replayed.count == 7)
+        #expect(replayed.allSatisfy { $0.cursor == nil && !$0.coverage.isComplete })
+        await traversal.invalidate(sessionID: logicalID)
+        #expect(await traversal.snapshot().activeCursors == 0)
+    }
+
+    @Test("a cursor expiring while queued for a permit terminalizes before resumed work")
+    @MainActor
+    func queuedCursorRevalidatesExpiryAfterPermit() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/queued-expiry"
+        let source = LockedTraversalSource(nodes: syntheticFlatTree(root: root, count: 3))
+        let clock = ManualTraversalClock()
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(batchEntries: 1, resultRecords: 1, sliceSeconds: 30),
+            clock: clock.traversalClock, source: source)
+        let logicalID = UUID()
+        let first = await traversal.start(root: root, session: rig.session,
+            sessionID: logicalID, generation: 1, options: .init(recordSelection: .all))
+        let cursor = try #require(first.cursor)
+        #expect(source.snapshot().paths == [root])
+
+        let gate = PermitHoldGate()
+        let holders = await occupyAllTraversalPermits(rig.sessions, session: rig.session, gate: gate)
+        let continuation = Task {
+            await traversal.continue(from: cursor, session: rig.session,
+                sessionID: logicalID, generation: 1)
+        }
+        let queued = await waitForTraversalQueue(rig.sessions, atLeast: 1)
+        #expect(queued)
+        clock.advance(seconds: 30)
+        await gate.releaseAll()
+        for holder in holders { await holder.value }
+
+        let result = await continuation.value
+        #expect(result.coverage.reasons == [.cursorExpired])
+        #expect(result.cursor == nil)
+        #expect(source.snapshot().paths == [root])
+        let replay = await traversal.continue(from: cursor, session: rig.session,
+            sessionID: logicalID, generation: 1)
+        #expect(replay.coverage.reasons == [.cursorReplay])
+    }
+
+    @Test("a queued cursor revalidates its policy revision after permit admission")
+    @MainActor
+    func queuedCursorRevalidatesPolicyAfterPermit() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/queued-policy"
+        let source = LockedTraversalSource(nodes: syntheticFlatTree(root: root, count: 3))
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(batchEntries: 1, resultRecords: 1), source: source)
+        let logicalID = UUID()
+        let first = await traversal.start(root: root, session: rig.session,
+            sessionID: logicalID, generation: 1, options: .init(recordSelection: .all))
+        let cursor = try #require(first.cursor)
+
+        let gate = PermitHoldGate()
+        let holders = await occupyAllTraversalPermits(rig.sessions, session: rig.session, gate: gate)
+        let continuation = Task {
+            await traversal.continue(from: cursor, session: rig.session,
+                sessionID: logicalID, generation: 1)
+        }
+        #expect(await waitForTraversalQueue(rig.sessions, atLeast: 1))
+
+        let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+        let admission = rig.bridge.submit(global: .init(baseRevision: 1, id: rate,
+            baseValue: .integer(4), editedValue: .integer(1)))
+        guard case .accepted(_, let completion) = admission else {
+            await gate.releaseAll()
+            for holder in holders { await holder.value }
+            Issue.record("rate-only revision update was rejected: \(String(describing: admission))")
+            return
+        }
+        let outcome = await completion.value
+        guard case .saved(_, let saved) = outcome else {
+            await gate.releaseAll()
+            for holder in holders { await holder.value }
+            Issue.record("rate-only revision update failed: \(String(describing: outcome))")
+            return
+        }
+        #expect(saved.revision == 2)
+        #expect(await rig.sessions.snapshot().settingsRevision == 2)
+        await gate.releaseAll()
+        for holder in holders { await holder.value }
+
+        let result = await continuation.value
+        #expect(result.coverage.reasons == [.policyRevisionMismatch])
+        #expect(result.cursor == nil)
+        #expect(source.snapshot().paths == [root])
+        let replay = await traversal.continue(from: cursor, session: rig.session,
+            sessionID: logicalID, generation: 1)
+        #expect(replay.coverage.reasons == [.cursorReplay])
+    }
+
+    @Test("an opened directory handle cannot be swapped to enumerate outside the checked root")
+    @MainActor
+    func directoryHandleBindsCheckedIdentity() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let fixture = rig.root.appendingPathComponent("checked-directory", isDirectory: true)
+        let parked = rig.root.appendingPathComponent("parked-directory", isDirectory: true)
+        let outside = rig.root.appendingPathComponent("outside-directory", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false)
+        try Data([1]).write(to: fixture.appendingPathComponent("inside"))
+        try Data([2]).write(to: outside.appendingPathComponent("outside-secret"))
+        let race = DirectoryReplacementRace(original: fixture, parked: parked,
+                                            replacement: outside)
+        let source = RealFilesystemTraversalSource(
+            beforeDirectoryOpen: { path in race.replaceBeforeOpen(path) })
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(batchEntries: 4), source: source)
+
+        let result = await traversal.start(root: fixture.path, session: rig.session,
+            sessionID: UUID(), generation: 1, options: .init(recordSelection: .all))
+        let raceState = race.snapshot()
+
+        #expect(raceState.didRun)
+        #expect(raceState.failure == nil)
+        #expect(result.coverage.reasons == [.churn])
+        #expect(!result.coverage.isComplete)
+        #expect(result.cursor == nil)
+        #expect(result.records.allSatisfy { !$0.path.contains("outside-secret") })
+    }
+
+    @Test("Continue cannot claim complete after an enumerated directory gains a child")
+    @MainActor
+    func continuationDetectsDirectoryContentChurn() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/directory-watermark"
+        let source = LockedTraversalSource(nodes: syntheticFlatTree(root: root, count: 1))
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(batchEntries: 1, resultRecords: 1), source: source)
+        let logicalID = UUID()
+        let first = await traversal.start(root: root, session: rig.session,
+            sessionID: logicalID, generation: 1, options: .init(recordSelection: .all))
+        let cursor = try #require(first.cursor)
+        source.appendChild(parent: root, name: "late", node: .init(
+            identity: .init(device: 1, inode: 999, generation: 1), bytes: 99,
+            isDirectory: false, children: []))
+
+        let resumed = await traversal.continue(from: cursor, session: rig.session,
+            sessionID: logicalID, generation: 1)
+
+        #expect(resumed.coverage.reasons == [.churn])
+        #expect(!resumed.coverage.isComplete)
+        #expect(resumed.cursor == nil)
+        #expect(resumed.records.isEmpty)
+        #expect(!source.snapshot().paths.contains(root + "/late"))
+    }
+
+    @Test("allocated-size metadata failure is unreadable, never zero-byte complete coverage")
+    @MainActor
+    func metadataFailureIsTruthful() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let file = rig.root.appendingPathComponent("metadata-failure.bin")
+        try Data(repeating: 7, count: 8_192).write(to: file)
+        let source = RealFilesystemTraversalSource(allocatedBytes: { _ in nil })
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(), source: source)
+
+        let result = await traversal.start(root: file.path, session: rig.session,
+            sessionID: UUID(), generation: 1, options: .init(recordSelection: .all))
+
+        #expect(result.coverage.reasons == [.unreadable])
+        #expect(!result.coverage.isComplete)
+        #expect(result.totalBytes == 0)
+        #expect(result.records.isEmpty)
+        #expect(result.cursor == nil)
+    }
+
+    @Test("caller-controlled selection names are bounded before cursor state can retain them")
+    @MainActor
+    func selectionStringIsBounded() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/selection-string"
+        let source = LockedTraversalSource(nodes: [
+            root: .init(identity: .init(device: 1, inode: 1, generation: 1), bytes: 0,
+                        isDirectory: true, children: [])
+        ])
+        let traversal = BoundedTraversal(sessions: rig.sessions,
+            limits: try standardLimits(), source: source)
+        let overlong = String(repeating: "n", count: 1_025)
+
+        let result = await traversal.start(root: root, session: rig.session,
+            sessionID: UUID(), generation: 1,
+            options: .init(recordSelection: .directory(named: overlong,
+                                                       modifiedBefore: Date())))
+
+        #expect(result.coverage.reasons == [.stringOverflow])
+        #expect(!result.coverage.isComplete)
+        #expect(result.cursor == nil)
+        #expect(source.snapshot().paths.isEmpty)
     }
 
     @Test("cursor expiry generation root replacement churn breadth and depth fail truthfully")
@@ -569,12 +1049,24 @@ struct BoundedTraversalTests {
             limits: try standardLimits(batchEntries: 1, resultRecords: 8,
                                        sliceSeconds: seconds),
             clock: clock.traversalClock, source: source, testHook: hook)
+        let logicalID = UUID()
         let result = await traversal.start(root: root, session: rig.session,
-            sessionID: UUID(), generation: 1, options: .init(recordSelection: .all))
+            sessionID: logicalID, generation: 1, options: .init(recordSelection: .all))
 
         #expect(result.coverage.reasons == [.sliceExpired])
         #expect(result.cursor != nil)
         #expect(result.metrics.batches == 1)
+        #expect(await hook.enqueued().isEmpty)
+
+        var paths = result.records.map(\.path)
+        var page = result
+        while let cursor = page.cursor {
+            page = await traversal.continue(from: cursor, session: rig.session,
+                                            sessionID: logicalID, generation: 1)
+            paths.append(contentsOf: page.records.map(\.path))
+        }
+        #expect(page.coverage.isComplete)
+        #expect(paths.sorted() == [root, root + "/f0", root + "/f1"].sorted())
     }
 
     @Test("twenty Continue cycles restore cursor descriptors and scheduler leases to baseline")

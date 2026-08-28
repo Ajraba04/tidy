@@ -131,6 +131,48 @@ struct ScanSessionTests {
         #expect(final.maximumBufferedEvents <= 4)
     }
 
+    @Test("session cancellation remains active until slow owned work actually ends")
+    func cancellationWaitsForOwnedWork() async throws {
+        let registry = ScanSessionRegistry(limits: try .init(maxSessions: 4,
+            subscribersPerSession: 2, streamBuffer: 4, snapshotItems: 4))
+        let sessionID = try await registry.begin(policyRevision: 9, batchesPerSecond: 4)
+        let subscription = try await registry.subscribe(sessionID: sessionID)
+        async let events = collect(subscription)
+        let gate = SessionWorkGate()
+
+        try await registry.startWork(sessionID: sessionID) { reporter in
+            await gate.hold()
+            #expect(await reporter.isCancelled())
+            return ScanSessionCompletion(terminal: .complete,
+                coverage: .init(isComplete: true, reasons: []), snapshot: snapshot(1))
+        }
+        await gate.waitUntilStarted()
+        try await registry.cancel(sessionID: sessionID)
+
+        let cancellingState = try await registry.state(sessionID: sessionID)
+        let cancellingRegistry = await registry.snapshot()
+        #expect(cancellingState.terminal == nil)
+        #expect(cancellingState.workActive)
+        #expect(cancellingRegistry.activeWork == 1)
+        #expect(cancellingRegistry.retainedTerminalStates == 0)
+
+        await gate.release()
+        let delivered = await events
+        let terminals = delivered.filter {
+            if case .terminal = $0.kind { return true }
+            return false
+        }
+        let finalState = try await registry.state(sessionID: sessionID)
+        let finalRegistry = await registry.snapshot()
+        #expect(terminals.count == 1)
+        #expect(terminals.first?.terminal == .cancelled)
+        #expect(terminals.first?.snapshot == snapshot(1))
+        #expect(finalState.terminal == .cancelled)
+        #expect(!finalState.workActive)
+        #expect(finalRegistry.activeWork == 0)
+        #expect(finalRegistry.retainedTerminalStates == 1)
+    }
+
     @Test("slow full subscriber drops bounded progress without corrupting final state")
     func slowSubscriberIsBounded() async throws {
         let clock = SessionManualClock()

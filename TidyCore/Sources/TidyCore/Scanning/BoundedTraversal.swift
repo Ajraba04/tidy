@@ -233,6 +233,21 @@ internal struct TraversalSourceIdentity: Hashable, Sendable {
     let generation: UInt64
 }
 
+internal struct TraversalDirectoryWatermark: Hashable, Sendable {
+    let identity: TraversalSourceIdentity
+    let modifiedSeconds: Int64
+    let modifiedNanoseconds: Int64
+    let changedSeconds: Int64
+    let changedNanoseconds: Int64
+    let size: Int64
+    let linkCount: UInt64
+}
+
+private struct TraversalDirectoryObservation: Sendable {
+    let path: String
+    let watermark: TraversalDirectoryWatermark
+}
+
 internal enum TraversalRootRead: Sendable {
     case identity(TraversalSourceIdentity)
     case missing
@@ -254,6 +269,24 @@ internal struct TraversalSourceEntry: Sendable {
     let terminalReason: TraversalCoverageReason?
     let observedBreadth: Int
     let openDescriptorHighWater: Int
+    let directoryWatermark: TraversalDirectoryWatermark?
+
+    init(identity: TraversalSourceIdentity, bytes: Int64, kind: TraversalRecordKind,
+         modifiedAt: Date?, linkCount: Int, children: [TraversalSourceChild],
+         terminalReason: TraversalCoverageReason?, observedBreadth: Int,
+         openDescriptorHighWater: Int,
+         directoryWatermark: TraversalDirectoryWatermark? = nil) {
+        self.identity = identity
+        self.bytes = bytes
+        self.kind = kind
+        self.modifiedAt = modifiedAt
+        self.linkCount = linkCount
+        self.children = children
+        self.terminalReason = terminalReason
+        self.observedBreadth = observedBreadth
+        self.openDescriptorHighWater = openDescriptorHighWater
+        self.directoryWatermark = directoryWatermark
+    }
 }
 
 internal struct TraversalSourceRequest: Sendable {
@@ -273,6 +306,8 @@ internal enum TraversalSourceRead: Sendable {
 internal protocol BoundedTraversalSource: Sendable {
     func rootIdentity(at path: String) -> TraversalRootRead
     func read(_ request: TraversalSourceRequest) -> TraversalSourceRead
+    func validateDirectory(at path: String,
+                           watermark: TraversalDirectoryWatermark) -> TraversalCoverageReason?
 }
 
 internal enum BoundedTraversalTestEvent: Equatable, Sendable {
@@ -355,6 +390,9 @@ public actor BoundedTraversal {
         guard options.protectedRoots.allSatisfy({ $0.utf8.count <= limits.maxPathBytes }) else {
             return .terminal(reason: .stringOverflow)
         }
+        guard options.recordSelection.retainedStringsFit(maxBytes: limits.maxPathBytes) else {
+            return .terminal(reason: .stringOverflow)
+        }
         let canonicalRoot = PathGuard.canonicalize(root)
         guard canonicalRoot.utf8.count <= limits.maxPathBytes else {
             return .terminal(reason: .stringOverflow)
@@ -410,24 +448,25 @@ public actor BoundedTraversal {
             consume(cursor.token)
             return .terminal(reason: .generationMismatch, metrics: stored.state.metrics)
         }
+
+        // Reserve the single-use token while the actor is still synchronous. Every subsequent
+        // facade call can suspend and permit actor reentrancy; a concurrent Continue must see the
+        // tombstone rather than copy the same retained work.
+        consume(cursor.token)
         guard await sessions.state(of: session) == .open else {
-            consume(cursor.token)
             return .terminal(reason: .cancelled, metrics: stored.state.metrics)
         }
         let scheduler = await sessions.snapshot()
         guard scheduler.generation == stored.state.schedulerGeneration else {
-            consume(cursor.token)
             return .terminal(reason: .generationMismatch, metrics: stored.state.metrics)
         }
         guard scheduler.settingsRevision == stored.state.policyRevision else {
-            consume(cursor.token)
             return .terminal(reason: .policyRevisionMismatch, metrics: stored.state.metrics)
         }
 
-        consume(cursor.token)
         do {
             return try await sessions.withPermit(session: session) { probe in
-                await self.continueUnderPermit(state: stored.state, probe: probe)
+                await self.continueUnderPermit(stored: stored, probe: probe)
             }
         } catch is CancellationError {
             return .terminal(reason: .cancelled, metrics: stored.state.metrics)
@@ -473,13 +512,27 @@ public actor BoundedTraversal {
             pending: [TraversalPending(path: root, relativePath: "", depth: 0,
                                        expectedIdentity: rootIdentity)],
             totalBytes: 0, topItems: BoundedRankedHeap(limit: limits.topN),
-            childBytes: [:], hardLinks: [], reasons: [], metrics: .zero.recordingQueue(1))
+            childBytes: [:], hardLinks: [], directoryObservations: [], reasons: [],
+            metrics: .zero.recordingQueue(1))
         return await executeSlice(state: &state, probe: probe)
     }
 
-    private func continueUnderPermit(state original: TraversalState,
+    private func continueUnderPermit(stored: StoredTraversalCursor,
                                      probe: SchedulerCancellationProbe) async -> TraversalResult {
-        var state = original
+        guard clock.nowNanoseconds() < stored.expiresAt else {
+            return .terminal(reason: .cursorExpired, metrics: stored.state.metrics)
+        }
+        let scheduler = await sessions.snapshot()
+        guard scheduler.generation == stored.state.schedulerGeneration else {
+            return .terminal(reason: .generationMismatch, metrics: stored.state.metrics)
+        }
+        guard scheduler.settingsRevision == stored.state.policyRevision else {
+            return .terminal(reason: .policyRevisionMismatch, metrics: stored.state.metrics)
+        }
+        guard clock.nowNanoseconds() < stored.expiresAt else {
+            return .terminal(reason: .cursorExpired, metrics: stored.state.metrics)
+        }
+        var state = stored.state
         let source = self.source
         let rootPath = state.root
         let current: TraversalRootRead
@@ -492,6 +545,9 @@ public actor BoundedTraversal {
         }
         guard case .identity(let identity) = current, identity == state.rootIdentity else {
             return makeTerminal(state: state, reason: .rootReplaced, records: [])
+        }
+        if let reason = await validateDirectories(in: state) {
+            return makeTerminal(state: state, reason: reason, records: [])
         }
         return await executeSlice(state: &state, probe: probe)
     }
@@ -553,7 +609,8 @@ public actor BoundedTraversal {
                 return makeTerminal(state: state, reason: .cancelled, records: pageRecords)
             }
 
-            for (item, read) in zip(work, reads) {
+            for (workIndex, pair) in zip(work, reads).enumerated() {
+                let (item, read) = pair
                 guard let processedMetrics = state.metrics.recordingProcessed() else {
                     return makeTerminal(state: state, reason: .arithmeticOverflow,
                                         records: pageRecords)
@@ -579,6 +636,20 @@ public actor BoundedTraversal {
                     // All compatibility scanners skip symbolic links before accounting or
                     // selection. Keeping that rule here also prevents traversal escaping a root.
                     if entry.kind == .symbolicLink { continue }
+
+                    if entry.kind == .directory {
+                        guard let watermark = entry.directoryWatermark else {
+                            return makeTerminal(state: state, reason: .unreadable,
+                                                records: pageRecords)
+                        }
+                        guard state.directoryObservations.count < limits.queuedPaths else {
+                            return makeTerminal(state: state, reason: .churn,
+                                                records: pageRecords)
+                        }
+                        state.directoryObservations.append(
+                            TraversalDirectoryObservation(path: item.path,
+                                                          watermark: watermark))
+                    }
 
                     let duplicateHardLink: Bool
                     if entry.kind != .directory, entry.linkCount > 1 {
@@ -659,11 +730,9 @@ public actor BoundedTraversal {
                             return makeTerminal(state: state, reason: .queueOverflow,
                                                 records: pageRecords)
                         }
+                        var pendingChildren: [TraversalPending] = []
+                        pendingChildren.reserveCapacity(entry.children.count)
                         for child in entry.children.sorted(by: { $0.name < $1.name }) {
-                            if await probe.isCancelled() {
-                                return makeTerminal(state: state, reason: .cancelled,
-                                                    records: pageRecords)
-                            }
                             let childPath = item.path == "/"
                                 ? "/" + child.name : item.path + "/" + child.name
                             guard childPath.utf8.count <= limits.maxPathBytes else {
@@ -672,12 +741,34 @@ public actor BoundedTraversal {
                             }
                             let relative = item.relativePath.isEmpty
                                 ? child.name : item.relativePath + "/" + child.name
-                            state.pending.append(TraversalPending(path: childPath,
+                            pendingChildren.append(TraversalPending(path: childPath,
                                 relativePath: relative, depth: item.depth + 1,
                                 expectedIdentity: child.identity))
+                        }
+                        for (childIndex, pendingChild) in pendingChildren.enumerated() {
+                            if await probe.isCancelled() {
+                                return makeTerminal(state: state, reason: .cancelled,
+                                                    records: pageRecords)
+                            }
+                            if clock.nowNanoseconds() &- sliceStart >= sliceNanoseconds {
+                                let unprocessedWork = work.dropFirst(workIndex + 1)
+                                let deferredChildren = pendingChildren.dropFirst(childIndex)
+                                guard state.pending.count + unprocessedWork.count
+                                    + deferredChildren.count <= limits.queuedPaths else {
+                                    return makeTerminal(state: state, reason: .queueOverflow,
+                                                        records: pageRecords)
+                                }
+                                state.pending.append(contentsOf: unprocessedWork)
+                                state.pending.append(contentsOf: deferredChildren)
+                                state.pending.sort { $0.relativePath < $1.relativePath }
+                                state.metrics = state.metrics.recordingQueue(state.pending.count)
+                                return issueCursor(for: state, records: pageRecords,
+                                                   reason: .sliceExpired)
+                            }
+                            state.pending.append(pendingChild)
                             state.pending.sort { $0.relativePath < $1.relativePath }
                             state.metrics = state.metrics.recordingQueue(state.pending.count)
-                            await testHook?.receive(.descendantEnqueued(childPath))
+                            await testHook?.receive(.descendantEnqueued(pendingChild.path))
                         }
                     }
                 }
@@ -689,8 +780,32 @@ public actor BoundedTraversal {
             }
         }
 
+        if let reason = await validateDirectories(in: state) {
+            return makeTerminal(state: state, reason: reason, records: pageRecords)
+        }
         return makeResult(state: state, records: pageRecords,
             reasons: state.reasons, isComplete: state.reasons.isEmpty, cursor: nil)
+    }
+
+    private func validateDirectories(in state: TraversalState) async -> TraversalCoverageReason? {
+        let observations = state.directoryObservations
+        guard !observations.isEmpty else { return nil }
+        let source = self.source
+        do {
+            return try await UtilityTraversalExecutor.shared.run {
+                for observation in observations {
+                    if let reason = source.validateDirectory(at: observation.path,
+                                                             watermark: observation.watermark) {
+                        return reason
+                    }
+                }
+                return nil
+            }
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .unreadable
+        }
     }
 
     private func issueCursor(for state: TraversalState, records: [TraversalRecord],
@@ -778,6 +893,18 @@ public actor BoundedTraversal {
             mix(String(pending.expectedIdentity.inode))
             mix(String(pending.expectedIdentity.generation))
         }
+        for observation in state.directoryObservations {
+            mix(observation.path)
+            mix(String(observation.watermark.identity.device))
+            mix(String(observation.watermark.identity.inode))
+            mix(String(observation.watermark.identity.generation))
+            mix(String(observation.watermark.modifiedSeconds))
+            mix(String(observation.watermark.modifiedNanoseconds))
+            mix(String(observation.watermark.changedSeconds))
+            mix(String(observation.watermark.changedNanoseconds))
+            mix(String(observation.watermark.size))
+            mix(String(observation.watermark.linkCount))
+        }
         return value
     }
 
@@ -811,6 +938,7 @@ private struct TraversalState: Sendable {
     var topItems: BoundedRankedHeap
     var childBytes: [String: Int64]
     var hardLinks: Set<TraversalSourceIdentity>
+    var directoryObservations: [TraversalDirectoryObservation]
     var reasons: Set<TraversalCoverageReason>
     var metrics: TraversalMetrics
 }
@@ -949,6 +1077,13 @@ private extension TraversalMetrics {
 }
 
 private extension TraversalRecordSelection {
+    func retainedStringsFit(maxBytes: Int) -> Bool {
+        switch self {
+        case .none, .all: return true
+        case .directory(let name, _): return name.utf8.count <= maxBytes
+        }
+    }
+
     func includes(_ record: TraversalRecord) -> Bool {
         switch self {
         case .none: return false
@@ -997,9 +1132,17 @@ private final class UtilityTraversalExecutor: @unchecked Sendable {
 
 internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
     private let descriptorTracker: TraversalDescriptorTracker?
+    private let beforeDirectoryOpen: @Sendable (String) -> Void
+    private let allocatedBytes: @Sendable (stat) -> Int64?
 
-    init(descriptorTracker: TraversalDescriptorTracker? = nil) {
+    init(descriptorTracker: TraversalDescriptorTracker? = nil,
+         beforeDirectoryOpen: @escaping @Sendable (String) -> Void = { _ in },
+         allocatedBytes: @escaping @Sendable (stat) -> Int64? = { metadata in
+             RealFilesystemTraversalSource.checkedAllocatedBytes(metadata)
+         }) {
         self.descriptorTracker = descriptorTracker
+        self.beforeDirectoryOpen = beforeDirectoryOpen
+        self.allocatedBytes = allocatedBytes
     }
 
     func rootIdentity(at path: String) -> TraversalRootRead {
@@ -1008,6 +1151,25 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
             return errno == ENOENT || errno == ENOTDIR ? .missing : .unreadable
         }
         return .identity(Self.identity(metadata))
+    }
+
+    func validateDirectory(at path: String,
+                           watermark: TraversalDirectoryWatermark) -> TraversalCoverageReason? {
+        beforeDirectoryOpen(path)
+        let descriptor = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            return errno == ENOENT || errno == ENOTDIR || errno == ELOOP ? .churn : .unreadable
+        }
+        descriptorTracker?.opened()
+        defer {
+            close(descriptor)
+            descriptorTracker?.closed()
+        }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else { return .unreadable }
+        guard metadata.st_mode & S_IFMT == S_IFDIR,
+              Self.identity(metadata) == watermark.identity else { return .churn }
+        return Self.watermark(metadata) == watermark ? nil : .churn
     }
 
     func read(_ request: TraversalSourceRequest) -> TraversalSourceRead {
@@ -1028,16 +1190,45 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
         }
         let kind: TraversalRecordKind = fileType == S_IFDIR ? .directory
             : (fileType == S_IFREG ? .regularFile : .other)
-        let bytes = Self.allocatedBytes(request.path)
         guard kind == .directory else {
+            guard let bytes = allocatedBytes(metadata) else { return .skipped(.unreadable) }
             return .entry(TraversalSourceEntry(identity: identity, bytes: bytes, kind: kind,
                 modifiedAt: Self.modifiedAt(metadata), linkCount: Int(metadata.st_nlink),
                 children: [], terminalReason: nil, observedBreadth: 0,
                 openDescriptorHighWater: 0))
         }
 
-        guard let directory = opendir(request.path) else { return .skipped(.unreadable) }
+        beforeDirectoryOpen(request.path)
+        let descriptor = open(request.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            return .skipped(errno == ENOENT || errno == ENOTDIR || errno == ELOOP
+                ? .churn : .unreadable)
+        }
         descriptorTracker?.opened()
+        var openedMetadata = stat()
+        guard fstat(descriptor, &openedMetadata) == 0 else {
+            close(descriptor)
+            descriptorTracker?.closed()
+            return .skipped(.unreadable)
+        }
+        let openedIdentity = Self.identity(openedMetadata)
+        guard openedIdentity == request.expectedIdentity,
+              openedIdentity.device == request.rootIdentity.device,
+              openedMetadata.st_mode & S_IFMT == S_IFDIR else {
+            close(descriptor)
+            descriptorTracker?.closed()
+            return .skipped(.churn)
+        }
+        guard let bytes = allocatedBytes(openedMetadata) else {
+            close(descriptor)
+            descriptorTracker?.closed()
+            return .skipped(.unreadable)
+        }
+        guard let directory = fdopendir(descriptor) else {
+            close(descriptor)
+            descriptorTracker?.closed()
+            return .skipped(.unreadable)
+        }
         defer {
             closedir(directory)
             descriptorTracker?.closed()
@@ -1072,7 +1263,7 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
                     observedBreadth: names.count, openDescriptorHighWater: 1))
             }
             var childMetadata = stat()
-            guard lstat(childPath, &childMetadata) == 0 else {
+            guard fstatat(dirfd(directory), name, &childMetadata, AT_SYMLINK_NOFOLLOW) == 0 else {
                 return .entry(TraversalSourceEntry(identity: identity, bytes: bytes,
                     kind: .directory, modifiedAt: Self.modifiedAt(metadata),
                     linkCount: Int(metadata.st_nlink), children: [], terminalReason: .churn,
@@ -1081,10 +1272,27 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
             children.append(TraversalSourceChild(name: name,
                                                   identity: Self.identity(childMetadata)))
         }
-        return .entry(TraversalSourceEntry(identity: identity, bytes: bytes, kind: .directory,
-            modifiedAt: Self.modifiedAt(metadata), linkCount: Int(metadata.st_nlink),
-            children: children, terminalReason: nil, observedBreadth: names.count,
-            openDescriptorHighWater: 1))
+        var finalMetadata = stat()
+        guard fstat(dirfd(directory), &finalMetadata) == 0 else {
+            return .entry(TraversalSourceEntry(identity: openedIdentity, bytes: bytes,
+                kind: .directory, modifiedAt: Self.modifiedAt(openedMetadata),
+                linkCount: Int(openedMetadata.st_nlink), children: [],
+                terminalReason: .unreadable, observedBreadth: names.count,
+                openDescriptorHighWater: 1))
+        }
+        let openedWatermark = Self.watermark(openedMetadata)
+        let finalWatermark = Self.watermark(finalMetadata)
+        guard openedWatermark == finalWatermark else {
+            return .entry(TraversalSourceEntry(identity: openedIdentity, bytes: bytes,
+                kind: .directory, modifiedAt: Self.modifiedAt(openedMetadata),
+                linkCount: Int(openedMetadata.st_nlink), children: [], terminalReason: .churn,
+                observedBreadth: names.count, openDescriptorHighWater: 1))
+        }
+        return .entry(TraversalSourceEntry(identity: openedIdentity, bytes: bytes,
+            kind: .directory, modifiedAt: Self.modifiedAt(openedMetadata),
+            linkCount: Int(openedMetadata.st_nlink), children: children, terminalReason: nil,
+            observedBreadth: names.count, openDescriptorHighWater: 1,
+            directoryWatermark: finalWatermark))
     }
 
     private static func identity(_ metadata: stat) -> TraversalSourceIdentity {
@@ -1098,9 +1306,19 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
              + TimeInterval(metadata.st_mtimespec.tv_nsec) / 1_000_000_000)
     }
 
-    private static func allocatedBytes(_ path: String) -> Int64 {
-        let url = URL(fileURLWithPath: path)
-        return Int64((try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey])
-            .totalFileAllocatedSize) ?? 0)
+    private static func watermark(_ metadata: stat) -> TraversalDirectoryWatermark {
+        TraversalDirectoryWatermark(identity: identity(metadata),
+            modifiedSeconds: Int64(metadata.st_mtimespec.tv_sec),
+            modifiedNanoseconds: Int64(metadata.st_mtimespec.tv_nsec),
+            changedSeconds: Int64(metadata.st_ctimespec.tv_sec),
+            changedNanoseconds: Int64(metadata.st_ctimespec.tv_nsec),
+            size: Int64(metadata.st_size), linkCount: UInt64(metadata.st_nlink))
+    }
+
+    private static func checkedAllocatedBytes(_ metadata: stat) -> Int64? {
+        let blocks = Int64(metadata.st_blocks)
+        guard blocks >= 0 else { return nil }
+        let (bytes, overflow) = blocks.multipliedReportingOverflow(by: 512)
+        return overflow ? nil : bytes
     }
 }
