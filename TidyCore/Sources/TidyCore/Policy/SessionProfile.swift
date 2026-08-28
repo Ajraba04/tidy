@@ -228,6 +228,35 @@ public enum SessionProfiles {
         return result
     }
 
+    public static func update(id: UUID, values: PolicyValues,
+                              inherited: PolicyValues,
+                              in profiles: [SavedProfile]) throws -> [SavedProfile] {
+        try validateCollection(profiles, inherited: inherited)
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SessionProfileError.missingProfile(id)
+        }
+        let current = profiles[index]
+        let candidate = SavedProfile(id: current.id, name: current.name, values: values)
+        try validateProfile(candidate, inherited: inherited)
+        let ids = Set(current.values.fields.keys).union(values.fields.keys)
+        for fieldID in ids {
+            guard let definition = PolicyValidator.definition(for: fieldID),
+                  definition.layers.contains(.profile),
+                  definition.resolution == .restriction else { continue }
+            let baseline = current.values.fields[fieldID] ??
+                inherited.fields[fieldID] ?? definition.defaultValue
+            let proposed = values.fields[fieldID] ??
+                inherited.fields[fieldID] ?? definition.defaultValue
+            if try PolicyRestrictionValidator.relation(
+                candidate: proposed, baseline: baseline, for: fieldID) == .weaker {
+                throw SessionProfileError.protectionWeakening(fieldID)
+            }
+        }
+        var result = profiles
+        result[index] = candidate
+        return result
+    }
+
     public static func delete(id: UUID, inherited: PolicyValues,
                               in profiles: [SavedProfile]) throws -> [SavedProfile] {
         try validateCollection(profiles, inherited: inherited)

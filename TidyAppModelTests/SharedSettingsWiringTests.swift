@@ -37,6 +37,1393 @@ private struct A3Scratch {
     }
     func remove() { try? FileManager.default.removeItem(at: root) }
 }
+private enum SettingsWorkflowGatePoint: Hashable {
+    case analyzeA, analyzeB, analyzeCancel, issue, submit, rejectCancel
+}
+
+@MainActor private final class SettingsWorkflowAsyncGate {
+    private var entered: Set<SettingsWorkflowGatePoint> = []
+    private var blocked: [SettingsWorkflowGatePoint: CheckedContinuation<Void, Never>] = [:]
+    private var entryWaiters: [SettingsWorkflowGatePoint: CheckedContinuation<Void, Never>] = [:]
+    private var released: Set<SettingsWorkflowGatePoint> = []
+    private(set) var cancelledAnalysisIDs: [SettingsImportAnalysisID] = []
+    private(set) var cancelledPreviewIDs: [SettingsImportPreviewID] = []
+
+    func suspend(at point: SettingsWorkflowGatePoint) async {
+        entered.insert(point)
+        entryWaiters.removeValue(forKey: point)?.resume()
+        if released.remove(point) != nil { return }
+        await withCheckedContinuation { continuation in
+            guard blocked[point] == nil else {
+                XCTFail("Duplicate bounded blocker: \(point)")
+                continuation.resume(); return
+            }
+            blocked[point] = continuation
+        }
+    }
+
+    func waitUntilEntered(_ point: SettingsWorkflowGatePoint) async {
+        if entered.contains(point) { return }
+        await withCheckedContinuation { continuation in
+            guard entryWaiters[point] == nil else {
+                XCTFail("Duplicate bounded entry waiter: \(point)")
+                continuation.resume(); return
+            }
+            entryWaiters[point] = continuation
+        }
+    }
+
+    func release(_ point: SettingsWorkflowGatePoint) {
+        guard let waiter = blocked.removeValue(forKey: point) else {
+            released.insert(point); return
+        }
+        waiter.resume()
+    }
+
+    func recordAnalysisCancellation(_ id: SettingsImportAnalysisID) {
+        cancelledAnalysisIDs.append(id)
+    }
+
+    func recordPreviewCancellation(_ id: SettingsImportPreviewID) {
+        cancelledPreviewIDs.append(id)
+    }
+}
+
+private enum SettingsWorkflowFixtureError: Error { case failedAnalysis, failedIssuance }
+
+extension SharedSettingsWiringTests {
+    private func workflowSummary(_ id: UUID,
+                                 collisions: [ProfileImportCollision] = []) throws
+        -> SettingsImportUISummary {
+        try SettingsImportUISummary(SettingsImportAnalysis(analysisID: id, rows: [],
+            collisions: collisions, committableImported: .init(), importedInert: [], current: .init()))
+    }
+
+    private func workflowPreview(_ summary: SettingsImportUISummary) -> SettingsImportPreview {
+        SettingsImportPreview(id: UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!,
+            analysisID: summary.analysisID, rows: summary.rows,
+            collisions: summary.collisions, choices: [:], candidate: .init(),
+            sourceDigest: String(repeating: "a", count: 64),
+            candidateDigest: String(repeating: "b", count: 64))
+    }
+
+    @MainActor func testWorkflowPreviewConfirmCancelAndTwoWindows() async throws {
+        try await run { _, services, _ in
+            let store = services.configStore
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let c = SettingsWorkflowController(store: store,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+            let id = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+            let factoryID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+            let cloneID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
+            var expectedRevision = store.settingsRevision
+            let before = store.preferences
+            try c.prepareProfile(.create(id: id, name: "Build", values: .init()))
+            XCTAssertEqual(store.preferences, before)
+            c.cancelConfirmation(); XCTAssertNil(c.confirmPreparedChange())
+            XCTAssertEqual(store.preferences, before)
+            try c.prepareProfile(.create(id: id, name: "Build", values: .init()))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain()
+            expectedRevision += 1
+            XCTAssertEqual(store.profiles.first?.id, id); XCTAssertNil(store.activeProfileID)
+            XCTAssertEqual(store.settingsRevision, expectedRevision)
+            XCTAssertEqual(second.settingsRevision, expectedRevision)
+            try c.prepareProfile(.rename(id: id, name: "Renamed"))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertEqual(store.profiles.first(where: { $0.id == id })?.name, "Renamed")
+            XCTAssertEqual(second.settingsRevision, expectedRevision)
+            let workers = SettingID(rawValue: "scan.requestedWorkers")
+            try c.prepareProfile(.update(id: id,
+                values: .init(fields: [workers: .integer(2)])))
+            guard case .profile(let updatePreview)? = c.confirmation else { return XCTFail() }
+            XCTAssertEqual(updatePreview.kind, .update)
+            XCTAssertEqual(updatePreview.fieldChanges.map(\.id), [workers])
+            c.cancelConfirmation()
+            XCTAssertNil(store.profiles.first(where: { $0.id == id })?.values.fields[workers])
+            try c.prepareProfile(.update(id: id,
+                values: .init(fields: [workers: .integer(2)])))
+            guard case .some(.accepted(_, let updateTask)) = c.confirmPreparedChange(),
+                  case .saved = await updateTask.value else { return XCTFail("Update not saved") }
+            expectedRevision += 1
+            XCTAssertEqual(store.profiles.first(where: { $0.id == id })?.values.fields[workers],
+                           .integer(2))
+            XCTAssertEqual(second.profiles, store.profiles)
+            XCTAssertEqual(second.settingsRevision, expectedRevision)
+            try c.prepareProfile(.createFactory(key: "xcode", id: factoryID, name: "Xcode"))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertNotNil(store.profiles.first(where: { $0.id == factoryID }))
+            XCTAssertNil(store.activeProfileID); XCTAssertEqual(second.settingsRevision, expectedRevision)
+            try c.prepareProfile(.clone(sourceID: id, newID: cloneID, name: "Clone"))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertEqual(store.profiles.first(where: { $0.id == cloneID })?.values,
+                           store.profiles.first(where: { $0.id == id })?.values)
+            XCTAssertNil(store.activeProfileID); XCTAssertEqual(second.settingsRevision, expectedRevision)
+            try c.prepareProfile(.activate(id))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            XCTAssertFalse(services.policyBridge.isExecutionEnabled)
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertEqual(store.activeProfileID, id); XCTAssertEqual(second.activeProfileID, id)
+            XCTAssertEqual(second.settingsRevision, expectedRevision)
+            try c.prepareProfile(.activate(nil))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertNil(store.activeProfileID); XCTAssertNil(second.activeProfileID)
+            try c.prepareProfile(.activate(id))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            try c.prepareProfile(.delete(id: factoryID))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertEqual(store.activeProfileID, id)
+            XCTAssertNil(store.profiles.first(where: { $0.id == factoryID }))
+            try c.prepareProfile(.delete(id: id))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain(); expectedRevision += 1
+            XCTAssertNil(store.profiles.first(where: { $0.id == id }))
+            XCTAssertEqual(Set(store.profiles.map(\.id)), Set([cloneID]))
+            XCTAssertNil(store.activeProfileID)
+            XCTAssertEqual(store.settingsRevision, expectedRevision)
+            XCTAssertEqual(second.settingsRevision, expectedRevision)
+        }
+    }
+
+    @MainActor func testStaleProfilePreviewsConflictAndPreserveOtherWindow() async throws {
+        let id = UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
+        let original = SavedProfile(id: id, name: "Original", values: .init())
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(), preferences: .init(profiles: [original])))
+
+        try await run(seed: seed) { _, services, _ in
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let first = services.configStore
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let a = SettingsWorkflowController(store: first, bundle: bundle)
+            let b = SettingsWorkflowController(store: second, bundle: bundle)
+            try a.prepareProfile(.rename(id: id, name: "Stale rename"))
+            try b.prepareProfile(.delete(id: id))
+            guard case .some(.accepted(_, let bTask)) = b.confirmPreparedChange()
+            else { return XCTFail("B delete rejected") }
+            guard case .saved = await bTask.value else { return XCTFail("B delete not saved") }
+            guard case .some(.rejected(_, .invalid)) = a.confirmPreparedChange()
+            else { return XCTFail("A stale rename was not synchronously rejected") }
+            await services.policyBridge.drain()
+            XCTAssertTrue(first.profiles.isEmpty); XCTAssertTrue(second.profiles.isEmpty)
+            let durable = await services.settings.load()
+            XCTAssertTrue(durable.envelope?.preferences?.profiles.isEmpty == true)
+        }
+
+        try await run(seed: seed) { _, services, _ in
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let first = services.configStore
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let a = SettingsWorkflowController(store: first, bundle: bundle)
+            let b = SettingsWorkflowController(store: second, bundle: bundle)
+            try a.prepareProfile(.delete(id: id))
+            try b.prepareProfile(.rename(id: id, name: "B wins"))
+            guard case .some(.accepted(_, let bTask)) = b.confirmPreparedChange(),
+                  case .saved = await bTask.value else { return XCTFail("B rename not saved") }
+            guard case .some(.rejected(_, .invalid)) = a.confirmPreparedChange()
+            else { return XCTFail("A stale delete was not synchronously rejected") }
+            await services.policyBridge.drain()
+            XCTAssertEqual(first.profiles, [SavedProfile(id: id, name: "B wins", values: .init())])
+            XCTAssertEqual(second.profiles, first.profiles)
+            let durable = await services.settings.load()
+            XCTAssertEqual(durable.envelope?.preferences?.profiles ?? [], first.profiles)
+        }
+
+        try await run(seed: seed) { _, services, _ in
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let first = services.configStore
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let a = SettingsWorkflowController(store: first, bundle: bundle)
+            let b = SettingsWorkflowController(store: second, bundle: bundle)
+            let workers = SettingID(rawValue: "scan.requestedWorkers")
+            try a.prepareProfile(.update(id: id,
+                values: .init(fields: [workers: .integer(2)])))
+            try b.prepareProfile(.update(id: id,
+                values: .init(fields: [workers: .integer(4)])))
+            guard case .some(.accepted(_, let bTask)) = b.confirmPreparedChange(),
+                  case .saved = await bTask.value else { return XCTFail("B update not saved") }
+            guard case .some(.rejected(_, .invalid)) = a.confirmPreparedChange()
+            else { return XCTFail("A stale value update was not rejected") }
+            await services.policyBridge.drain()
+            XCTAssertEqual(first.profiles.first?.values.fields[workers], .integer(4))
+            XCTAssertEqual(second.profiles, first.profiles)
+            let durable = await services.settings.load()
+            XCTAssertEqual(durable.envelope?.preferences?.profiles, first.profiles)
+        }
+    }
+
+    @MainActor func testOlderUnrelatedPreviewRebasesAndPendingInterleaveConverges() async throws {
+        let id = UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
+        let units = SettingID(rawValue: "ui.units")
+        let original = SavedProfile(id: id, name: "Original", values: .init())
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(), preferences: .init(profiles: [original])))
+
+        try await run(seed: seed) { _, services, _ in
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let first = services.configStore
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let a = SettingsWorkflowController(store: first,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+            try a.prepareProfile(.rename(id: id, name: "A"))
+            guard case .accepted(_, let bTask) = second.setGlobalPreference(
+                units, to: .choice("decimal")), case .saved = await bTask.value
+            else { return XCTFail("Unrelated B save failed") }
+            guard case .some(.accepted(_, let aTask)) = a.confirmPreparedChange(),
+                  case .saved = await aTask.value else {
+                return XCTFail("Older unrelated A delta did not rebase")
+            }
+            await services.policyBridge.drain()
+            XCTAssertEqual(first.profiles.first?.name, "A")
+            XCTAssertEqual(first.preferences.global.fields[units], .choice("decimal"))
+            XCTAssertEqual(second.preferences, first.preferences)
+        }
+
+        try await run(stops: ["config.1"], seed: seed) { _, services, io in
+            let acknowledged = try XCTUnwrap(services.settingsLoad.envelope)
+            let first = services.configStore
+            let second = AppConfigStore(loaded: acknowledged, bridge: services.policyBridge)
+            let a = SettingsWorkflowController(store: first,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+            try a.prepareProfile(.rename(id: id, name: "Queued A"))
+            guard case .accepted = second.setGlobalPreference(units, to: .choice("decimal"))
+            else { return XCTFail("Queued B save rejected") }
+            try await io.probe.waitFor("config.1")
+            guard case .some(.accepted) = a.confirmPreparedChange()
+            else { return XCTFail("Pending A save rejected") }
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 2)
+            io.probe.release("config.1")
+            await services.policyBridge.drain()
+            XCTAssertEqual(first.profiles.first?.name, "Queued A")
+            XCTAssertEqual(first.preferences.global.fields[units], .choice("decimal"))
+            XCTAssertEqual(second.preferences, first.preferences)
+            XCTAssertEqual(first.settingsRevision, 2)
+            XCTAssertEqual(second.settingsRevision, 2)
+        }
+    }
+
+    @MainActor func testImportTaxonomyIssueConfirmCancelAndNoActivation() async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            let profileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+            try c.prepareProfile(.create(id: profileID, name: "Collision", values: .init()))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain()
+            let data = try services.configStore.exportPortableSettings()
+            let before = services.configStore.preferences
+            let revision = services.configStore.settingsRevision
+            await c.beginImportSelection(bytes: data).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            let shown = SettingsWorkflowPresentation.importOutcomes(summary)
+            XCTAssertEqual(shown.map(\.outcome), SettingsWorkflowPresentation.importOutcomeOrder)
+            XCTAssertEqual(Set(shown.map(\.outcome.rawValue)), Set([
+                SettingsImportOutcome.committable, .collision, .inert, .redacted, .requiresLocalReassociation,
+                .rejectedAuthority, .rejectedProtectionWeakening, .rejectedInvalid,
+                .rejectedNonPortable, .rejectedUnsupportedLayer].map(\.rawValue)))
+            XCTAssertTrue(shown.allSatisfy { SettingsWorkflowPresentation.accessibilityID(
+                for: $0.outcome) == "settings.import.outcome." + $0.outcome.rawValue })
+            XCTAssertEqual(summary.collisions.map(\.profileID), [profileID])
+            XCTAssertEqual(SettingsWorkflowPresentation.canIssuePreview(
+                summary: summary, choices: [:]), false)
+            c.chooseCollision(profileID: profileID, choice: .keepLocal)
+            XCTAssertTrue(SettingsWorkflowPresentation.canIssuePreview(
+                summary: summary, choices: c.collisionChoices))
+            await c.beginImportCancellation().value
+            XCTAssertEqual(c.importState, .idle); XCTAssertEqual(services.configStore.preferences, before)
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+            await c.beginImportSelection(bytes: data).value
+            guard case .analysis(let secondAnalysis) = c.importState else { return XCTFail() }
+            for collision in secondAnalysis.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .replace)
+            }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation = c.importState else { return XCTFail() }
+            await c.beginImportCancellation().value
+            XCTAssertEqual(services.configStore.preferences, before)
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            await c.beginImportSelection(bytes: data).value
+            guard case .analysis(let thirdAnalysis) = c.importState else { return XCTFail() }
+            let cloneID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+            for collision in thirdAnalysis.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .clone(cloneID))
+            }
+            XCTAssertEqual(c.collisionChoices[profileID], .clone(cloneID))
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let preview) = c.importState else { return XCTFail() }
+            let active = services.configStore.activeProfileID
+            XCTAssertEqual(preview.candidate.preferences.projects, [:])
+            XCTAssertNotNil(preview.candidate.preferences.profiles.first(where: {
+                $0.id == cloneID
+            }))
+            await c.beginImportConfirmation().value
+            XCTAssertEqual(c.importState, .idle)
+            XCTAssertEqual(services.configStore.activeProfileID, active)
+            XCTAssertNotNil(services.configStore.profiles.first(where: { $0.id == cloneID }))
+            XCTAssertEqual(services.configStore.settingsRevision, revision + 1)
+            let generation = services.policyBridge.updateGeneration
+            await c.beginImportConfirmation().value
+            XCTAssertEqual(c.importState, .idle)
+            XCTAssertEqual(services.policyBridge.updateGeneration, generation)
+        }
+    }
+
+    @MainActor func testImportConfirmationAwaitsSavedAndConsumesTokenOnce() async throws {
+        let profileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+        let cloneID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(), preferences: .init(profiles: [
+                SavedProfile(id: profileID, name: "Local", values: .init())])))
+        try await run(stops: ["config.1"], seed: seed) { _, services, io in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            let bytes = try services.configStore.exportPortableSettings()
+            await c.beginImportSelection(bytes: bytes).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            for collision in summary.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .clone(cloneID))
+            }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let preview) = c.importState else { return XCTFail() }
+            let retainedSummary = try XCTUnwrap(c.importReviewSummary)
+            let retainedDigests = try XCTUnwrap(c.importReviewDigests)
+            let revision = services.configStore.settingsRevision
+            let confirmation = c.beginImportConfirmation()
+            try await io.probe.waitFor("config.1")
+            XCTAssertEqual(c.importState, .submitting(preview.id),
+                           "UI claimed saved before the accepted outcome")
+            XCTAssertEqual(c.importReviewSummary, retainedSummary)
+            XCTAssertEqual(c.importReviewDigests, retainedDigests)
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            io.probe.release("config.1")
+            await confirmation.value
+            XCTAssertEqual(c.importState, .idle)
+            XCTAssertNil(c.importReviewSummary); XCTAssertNil(c.importReviewDigests)
+            XCTAssertEqual(services.configStore.settingsRevision, revision + 1)
+            XCTAssertNotNil(services.configStore.profiles.first(where: { $0.id == cloneID }))
+            guard case .rejected(_, .invalid) = services.configStore.commitImport(preview)
+            else { return XCTFail("Consumed import token was accepted twice") }
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+        }
+    }
+
+    @MainActor func testImportConfirmationConflictAndPersistenceFailureNeverClaimSaved() async throws {
+        let profileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+        let cloneID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(), preferences: .init(profiles: [
+                SavedProfile(id: profileID, name: "Local", values: .init())])))
+
+        try await run(seed: seed) { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            let bytes = try services.configStore.exportPortableSettings()
+            await c.beginImportSelection(bytes: bytes).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            for collision in summary.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .clone(cloneID))
+            }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let preview) = c.importState else { return XCTFail() }
+            guard case .accepted(_, let otherTask) = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "ui.units"), to: .choice("decimal")),
+                  case .saved = await otherTask.value else { return XCTFail("Other save failed") }
+            let revision = services.configStore.settingsRevision
+            await c.beginImportConfirmation().value
+            XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                "settings.import.failure", bundle: bundle)))
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            XCTAssertNil(services.configStore.profiles.first(where: { $0.id == cloneID }))
+            guard case .rejected(_, .invalid) = services.configStore.commitImport(preview)
+            else { return XCTFail("Invalidated token remained usable") }
+        }
+
+        try await run(seed: seed, fault: .configReplaceNumber(1)) { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            let before = services.configStore.preferences
+            let revision = services.configStore.settingsRevision
+            let bytes = try services.configStore.exportPortableSettings()
+            await c.beginImportSelection(bytes: bytes).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            for collision in summary.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .clone(cloneID))
+            }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let preview) = c.importState else { return XCTFail() }
+            await c.beginImportConfirmation().value
+            XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                "settings.import.failure", bundle: bundle)))
+            XCTAssertEqual(services.configStore.preferences, before)
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            XCTAssertNil(services.configStore.profiles.first(where: { $0.id == cloneID }))
+            guard case .rejected(_, .invalid) = services.configStore.commitImport(preview)
+            else { return XCTFail("Failed import token remained reusable") }
+        }
+    }
+
+    @MainActor func testLiveRejectedConfirmationClearsIssuedBindingWithoutRetention() async throws {
+        let profileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+        let cloneID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(), preferences: .init(profiles: [
+                SavedProfile(id: profileID, name: "Local", values: .init())])))
+        try await run(stops: ["config.1"], seed: seed) { _, services, io in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            let bytes = try services.configStore.exportPortableSettings()
+            await c.beginImportSelection(bytes: bytes).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            for collision in summary.collisions {
+                c.chooseCollision(profileID: collision.profileID, choice: .clone(cloneID))
+            }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let oldPreview) = c.importState else { return XCTFail() }
+            guard case .accepted = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "ui.units"), to: .choice("decimal"))
+            else { return XCTFail("Unrelated write was not enqueued") }
+            try await io.probe.waitFor("config.1")
+            let retainedCount = services.policyBridge.pendingSnapshotCount
+            let retainedBytes = services.policyBridge.pendingSnapshotBytes
+            XCTAssertEqual(retainedCount, 1); XCTAssertGreaterThan(retainedBytes, 0)
+            let rejection = c.beginImportConfirmation()
+            XCTAssertEqual(c.importState, .submitting(oldPreview.id))
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, retainedCount)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, retainedBytes,
+                           "Rejected import retained payload bytes")
+            io.probe.release("config.1")
+            await rejection.value
+            await services.policyBridge.drain()
+            XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                "settings.import.failure", bundle: bundle)))
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+            XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+            guard case .rejected(_, .invalid) = services.configStore.commitImport(oldPreview)
+            else { return XCTFail("Cancelled issued preview binding remained reusable") }
+            XCTAssertNil(services.configStore.profiles.first(where: { $0.id == cloneID }))
+        }
+    }
+
+    @MainActor func testImportConfirmationHandlesEveryAcceptedNonSavedOutcome() async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let summary = try self.workflowSummary(UUID(uuidString:
+                "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!)
+            let preview = self.workflowPreview(summary)
+            let intent = UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE")!
+            let outcomes: [SettingsIntentOutcome] = [
+                .conflict(intent), .invalid(intent), .failed(intent, recoveryRequired: true)
+            ]
+            for outcome in outcomes {
+                var submissionCount = 0
+                let operations = SettingsWorkflowImportOperations(
+                    analyze: { _ in summary }, issue: { _, _ in preview },
+                    cancelAnalysis: { _ in }, cancelPreview: { _ in },
+                    submit: { _ in
+                        submissionCount += 1
+                        return .accepted(intent, Task { outcome })
+                    })
+                let c = SettingsWorkflowController(testing: services.configStore,
+                    importOperations: operations, bundle: bundle)
+                let revision = services.configStore.settingsRevision
+                await c.beginImportSelection(bytes: Data([1])).value
+                await c.beginImportPreviewIssuance().value
+                await c.beginImportConfirmation().value
+                XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                    "settings.import.failure", bundle: bundle)))
+                XCTAssertEqual(submissionCount, 1)
+                XCTAssertEqual(services.configStore.settingsRevision, revision)
+                await c.beginImportConfirmation().value
+                XCTAssertEqual(submissionCount, 1, "Non-saved preview was submitted twice")
+            }
+        }
+    }
+
+    @MainActor func testSynchronousImportRejectionCancelsIssuedPreviewExactlyOnce() async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let summary = try self.workflowSummary(UUID(uuidString:
+                "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!)
+            let preview = self.workflowPreview(summary)
+            let intent = UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE")!
+            let reasons: [SettingsSubmissionRejection] = [
+                .invalid, .unsupportedAuthority, .queueFull, .unavailable
+            ]
+            for reason in reasons {
+                let gate = SettingsWorkflowAsyncGate()
+                let operations = SettingsWorkflowImportOperations(
+                    analyze: { _ in summary }, issue: { _, _ in preview },
+                    cancelAnalysis: { _ in },
+                    cancelPreview: { id in
+                        gate.recordPreviewCancellation(id)
+                        await gate.suspend(at: .rejectCancel)
+                    },
+                    submit: { _ in .rejected(intent, reason) })
+                let c = SettingsWorkflowController(testing: services.configStore,
+                    importOperations: operations, bundle: bundle)
+                await c.beginImportSelection(bytes: Data([1])).value
+                await c.beginImportPreviewIssuance().value
+                let confirmation = c.beginImportConfirmation()
+                await gate.waitUntilEntered(.rejectCancel)
+                XCTAssertEqual(c.importState, .submitting(preview.id),
+                               "Failure was shown before cancellation for \(reason)")
+                XCTAssertEqual(gate.cancelledPreviewIDs, [preview.id])
+                gate.release(.rejectCancel); await confirmation.value
+                XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                    "settings.import.failure", bundle: bundle)))
+                XCTAssertEqual(gate.cancelledPreviewIDs, [preview.id])
+                await c.beginImportConfirmation().value
+                XCTAssertEqual(gate.cancelledPreviewIDs, [preview.id])
+            }
+        }
+    }
+
+    @MainActor func testImportGenerationSupersedesAndCancelsDeterministically() async throws {
+        try await run { _, services, _ in
+            let gate = SettingsWorkflowAsyncGate()
+            let a = try self.workflowSummary(UUID(uuidString:
+                "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!)
+            let b = try self.workflowSummary(UUID(uuidString:
+                "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!)
+            let preview = self.workflowPreview(b)
+            let intent = UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE")!
+            var acceptedSubmissionCount = 0
+            let operations = SettingsWorkflowImportOperations(
+                analyze: { data in
+                    switch data.first {
+                    case 1:
+                        await gate.suspend(at: .analyzeA)
+                        throw SettingsWorkflowFixtureError.failedAnalysis
+                    case 2:
+                        await gate.suspend(at: .analyzeB); return b
+                    case 3:
+                        await gate.suspend(at: .analyzeCancel); return a
+                    default: return b
+                    }
+                },
+                issue: { _, _ in await gate.suspend(at: .issue); return preview },
+                cancelAnalysis: { gate.recordAnalysisCancellation($0) },
+                cancelPreview: { gate.recordPreviewCancellation($0) },
+                submit: { _ in
+                    acceptedSubmissionCount += 1
+                    return .accepted(intent, Task {
+                        await gate.suspend(at: .submit); return .invalid(intent)
+                    })
+                })
+
+            let testBundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(testing: services.configStore,
+                                               importOperations: operations,
+                                               bundle: testBundle)
+            XCTAssertTrue(c.bundle === testBundle)
+            let first = c.beginImportSelection(bytes: Data([1]))
+            await gate.waitUntilEntered(.analyzeA)
+            let second = c.beginImportSelection(bytes: Data([2]))
+            await gate.waitUntilEntered(.analyzeB)
+            gate.release(.analyzeB); await second.value
+            XCTAssertEqual(c.importState, .analysis(b))
+            gate.release(.analyzeA); await first.value
+            XCTAssertEqual(c.importState, .analysis(b), "stale failure replaced newer success")
+
+            let cancelDuringAnalysis = c.beginImportSelection(bytes: Data([3]))
+            await gate.waitUntilEntered(.analyzeCancel)
+            await c.beginImportCancellation().value
+            XCTAssertEqual(c.importState, .idle)
+            XCTAssertTrue(gate.cancelledAnalysisIDs.contains(b.analysisID))
+            gate.release(.analyzeCancel); await cancelDuringAnalysis.value
+            XCTAssertEqual(c.importState, .idle, "cancelled analysis completed into UI")
+            XCTAssertTrue(gate.cancelledAnalysisIDs.contains(a.analysisID),
+                          "stale returned analysis token was retained")
+
+            await c.beginImportSelection(bytes: Data([9])).value
+            XCTAssertEqual(c.importState, .analysis(b))
+            let issuing = c.beginImportPreviewIssuance()
+            await gate.waitUntilEntered(.issue)
+            await c.beginImportCancellation().value
+            XCTAssertEqual(c.importState, .idle)
+            gate.release(.issue); await issuing.value
+            XCTAssertEqual(c.importState, .idle, "cancelled issuance restored preview")
+            XCTAssertTrue(gate.cancelledPreviewIDs.contains(preview.id))
+
+            await c.beginImportSelection(bytes: Data([9])).value
+            let issueForConfirmation = c.beginImportPreviewIssuance()
+            await gate.waitUntilEntered(.issue); gate.release(.issue)
+            await issueForConfirmation.value
+            guard case .confirmation = c.importState else { return XCTFail() }
+            let confirming = c.beginImportConfirmation()
+            await gate.waitUntilEntered(.submit)
+            let previewCancellationCount = gate.cancelledPreviewIDs.count
+            await c.beginImportSelection(bytes: Data([9])).value
+            await c.beginImportPreviewIssuance().value
+            await c.beginImportConfirmation().value
+            await c.beginImportCancellation().value
+            XCTAssertEqual(c.importState, .submitting(preview.id),
+                           "A public boundary superseded an accepted write")
+            XCTAssertEqual(acceptedSubmissionCount, 1,
+                           "Accepted preview was submitted more than once")
+            XCTAssertEqual(gate.cancelledPreviewIDs.count, previewCancellationCount,
+                           "Submitting cancellation touched an accepted token")
+            gate.release(.submit); await confirming.value
+            XCTAssertEqual(c.importState, .failed(SettingsCopy.resolve(
+                "settings.import.failure", bundle: testBundle)),
+                "Accepted invalid outcome was generation-suppressed")
+
+            let cancellationCount = gate.cancelledAnalysisIDs.count
+            let failing = SettingsWorkflowImportOperations(analyze: { _ in b },
+                issue: { _, _ in throw SettingsWorkflowFixtureError.failedIssuance },
+                cancelAnalysis: { gate.recordAnalysisCancellation($0) },
+                cancelPreview: { gate.recordPreviewCancellation($0) },
+                submit: { services.configStore.commitImport($0) })
+            let failed = SettingsWorkflowController(testing: services.configStore,
+                                                    importOperations: failing,
+                                                    bundle: testBundle)
+            await failed.beginImportSelection(bytes: Data([9])).value
+            await failed.beginImportPreviewIssuance().value
+            guard case .failed(let message) = failed.importState else { return XCTFail() }
+            XCTAssertEqual(message, SettingsCopy.resolve("settings.import.failure",
+                bundle: testBundle))
+            XCTAssertEqual(gate.cancelledAnalysisIDs.count, cancellationCount + 1)
+        }
+    }
+
+    @MainActor func testLiveImportIssuanceRejectsWhileSettingsWriteIsQueued() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore,
+                bundle: bundle)
+            XCTAssertTrue(c.bundle === bundle)
+            let bytes = try services.configStore.exportPortableSettings()
+            await c.beginImportSelection(bytes: bytes).value
+            guard case .analysis(let summary) = c.importState else { return XCTFail() }
+            await c.beginImportPreviewIssuance().value
+            guard case .confirmation(let preview) = c.importState else { return XCTFail() }
+            guard case .accepted = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "ui.units"), to: .choice("decimal"))
+            else { return XCTFail("Queue head rejected") }
+            try await io.probe.waitFor("config.1")
+            let generation = services.policyBridge.updateGeneration
+            let confirmation = c.beginImportConfirmation()
+            XCTAssertEqual(c.importState, .submitting(preview.id))
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 1)
+            XCTAssertEqual(services.policyBridge.updateGeneration, generation)
+            io.probe.release("config.1")
+            await confirmation.value
+            guard case .failed(let message) = c.importState else { return XCTFail() }
+            XCTAssertEqual(message, SettingsCopy.resolve("settings.import.failure",
+                bundle: bundle))
+            await services.policyBridge.drain()
+            guard case .rejected(_, .invalid) = services.configStore.commitImport(preview)
+            else { return XCTFail("Rejected issued preview was reusable") }
+            XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+            _ = summary // The issued analysis is intentionally no longer retained by the controller.
+        }
+    }
+
+    @MainActor func testResetExportAndDeferredBoundaries() async throws {
+        try await run { _, services, _ in
+            let id = SettingID(rawValue: "cleanup.inactiveDays")
+            _ = services.configStore.setGlobalPreference(id, to: .integer(90))
+            await services.policyBridge.drain()
+            let config = services.configStore.config, inert = services.configStore.inertImports
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let c = SettingsWorkflowController(store: services.configStore, bundle: bundle)
+            try c.prepareReset(.init(globalPreferenceIDs: [id]))
+            guard case .reset(let preview)? = c.confirmation else { return XCTFail() }
+            XCTAssertEqual(preview.immutableBoundaries, Set(SettingsResetBoundary.allCases))
+            XCTAssertTrue(preview.delta.inert.isEmpty && !preview.delta.touchesActiveProfile)
+            c.cancelConfirmation(); XCTAssertEqual(services.configStore.config, config)
+            XCTAssertEqual(services.configStore.inertImports, inert)
+            let revision = services.configStore.settingsRevision
+            try c.prepareReset(.init(globalPreferenceIDs: [id]))
+            guard case .some(.accepted) = c.confirmPreparedChange() else { return XCTFail() }
+            await services.policyBridge.drain()
+            XCTAssertNil(services.configStore.preferences.global.fields[id])
+            XCTAssertEqual(services.configStore.settingsRevision, revision + 1)
+            XCTAssertEqual(services.configStore.config, config)
+            XCTAssertEqual(services.configStore.inertImports, inert)
+            let a = try services.configStore.exportPortableSettings()
+            let b = try services.configStore.exportPortableSettings()
+            XCTAssertEqual(a, b); XCTAssertLessThanOrEqual(a.count, 1_048_576)
+            for deferred in SettingsDeferredWorkflow.allCases {
+                let key = "settings.deferred.\(deferred.rawValue).explanation"
+                XCTAssertEqual(SettingsWorkflowPresentation.deferredExplanationKey(deferred), key)
+                let copy = SettingsWorkflowPresentation.deferredExplanation(
+                    deferred, bundle: bundle)
+                XCTAssertFalse(copy.isEmpty)
+                XCTAssertNotEqual(copy, key)
+                XCTAssertNotEqual(copy, "Description unavailable.")
+                XCTAssertTrue(copy.localizedCaseInsensitiveContains("unavailable"))
+            }
+        }
+    }
+
+    func testSyntheticImportTaxonomyHasExactOrderCountsAndCollisions() throws {
+        let order = SettingsWorkflowPresentation.importOutcomeOrder
+        XCTAssertEqual(order, [.committable, .collision, .inert, .redacted,
+            .requiresLocalReassociation, .rejectedAuthority, .rejectedProtectionWeakening,
+            .rejectedInvalid, .rejectedNonPortable, .rejectedUnsupportedLayer])
+        var rows: [SettingsImportRow] = []
+        for (index, outcome) in order.enumerated() {
+            rows += (0...index).map { occurrence in
+                SettingsImportRow(scope: .global, profileID: nil,
+                    id: "fixture.\(outcome.rawValue).\(occurrence)", idDigest: nil,
+                    outcome: outcome, value: nil, valueKind: nil, valueDigest: nil)
+            }
+        }
+        let collisions = [
+            ProfileImportCollision(profileID: UUID(uuidString:
+                "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!, localName: "A", importedName: "A2"),
+            ProfileImportCollision(profileID: UUID(uuidString:
+                "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!, localName: "B", importedName: "B2"),
+            ProfileImportCollision(profileID: UUID(uuidString:
+                "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!, localName: "D", importedName: "D2")
+        ]
+        let analysis = SettingsImportAnalysis(analysisID: UUID(uuidString:
+            "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!, rows: rows,
+            collisions: collisions, committableImported: .init(), importedInert: [], current: .init())
+        let summary = try SettingsImportUISummary(analysis)
+        let shown = SettingsWorkflowPresentation.importOutcomes(summary)
+        XCTAssertEqual(shown.map(\.outcome), order)
+        XCTAssertEqual(shown.map(\.count), Array(1...10))
+        XCTAssertEqual(summary.collisions, collisions)
+        XCTAssertEqual(summary.collisions.count, 3)
+        XCTAssertEqual(shown.first(where: { $0.outcome == .collision })?.count, 2)
+        XCTAssertEqual(shown.map(\.id), order.map(\.rawValue))
+    }
+
+    func testWorkflowControlProjectionIsExhaustiveStableAndContiguous() throws {
+        let a = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        let b = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let globalField = SettingID(rawValue: "cleanup.inactiveDays")
+        let profileField = SettingID(rawValue: "scan.requestedWorkers")
+        let restriction = SettingID(rawValue: "feature.headroom")
+        let collisions = [
+            ProfileImportCollision(profileID: b, localName: "B", importedName: "Imported B"),
+            ProfileImportCollision(profileID: a, localName: "A", importedName: "Imported A")
+        ]
+        let localize: (String) -> String = { "Resolved " + $0 }
+        let empty = try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: [], activeProfileID: nil, profileEditor: nil,
+            importPhase: .idle, collisions: [], hasCompleteCollisionChoices: false,
+            hasPreparedProfile: false, resetGlobalFieldIDs: [], resetProfileID: nil,
+            resetProfileFieldIDs: [], ownedRestrictionFieldIDs: [], hasResetSelection: false,
+            hasPreparedReset: false), localize: localize)
+        let full = try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: [b, a, b], activeProfileID: a,
+            profileEditor: .init(target: .profile(a),
+                                 valueFieldIDs: [restriction, profileField, restriction]),
+            importPhase: .analysis, collisions: collisions,
+            hasCompleteCollisionChoices: true, hasPreparedProfile: true,
+            resetGlobalFieldIDs: [globalField, globalField], resetProfileID: a,
+            resetProfileFieldIDs: [restriction, profileField, restriction],
+            ownedRestrictionFieldIDs: [restriction], hasResetSelection: true,
+            hasPreparedReset: true), localize: localize)
+        for controls in [empty, full] {
+            XCTAssertEqual(controls.map(\.focusOrder), Array(controls.indices))
+            XCTAssertEqual(Set(controls.map(\.id)).count, controls.count)
+            XCTAssertTrue(controls.allSatisfy { !$0.label.isEmpty && $0.label != $0.titleKey })
+            for descriptor in controls {
+                if case .unavailable(let key, let label) = descriptor.availability {
+                    XCTAssertFalse(key.isEmpty); XCTAssertFalse(label.isEmpty)
+                    XCTAssertNotEqual(key, label)
+                }
+            }
+        }
+        XCTAssertEqual(Set(empty.map(\.role)).union(full.map(\.role)),
+                       Set(SettingsWorkflowControlRole.allCases))
+        XCTAssertEqual(SettingsWorkflowPresentation.maximumControlDescriptors, 3_423)
+        XCTAssertLessThanOrEqual(full.count, SettingsWorkflowPresentation.maximumControlDescriptors)
+        let factories = full.filter { $0.role == .createFactory }
+        XCTAssertEqual(factories.count, 6)
+        XCTAssertEqual(Set(factories.compactMap(\.identity)),
+                       Set(SessionProfiles.factoryKeys.map {
+                           SettingsWorkflowControlIdentity.factory($0)
+                       }))
+        for key in SessionProfiles.factoryKeys {
+            let descriptor = try XCTUnwrap(factories.first { $0.identity == .factory(key) })
+            XCTAssertEqual(descriptor.id, "settings.profile.factory." + key)
+            XCTAssertTrue(descriptor.label.contains(key))
+            XCTAssertEqual(descriptor.availability, .unavailable(
+                reasonKey: "settings.control.unavailable.issuedPreview",
+                label: "Resolved settings.control.unavailable.issuedPreview"))
+        }
+        for role in [SettingsWorkflowControlRole.cloneProfile, .renameProfile,
+                     .deleteProfile, .activateProfile, .deactivateProfile] {
+            let actions = full.filter { $0.role == role }
+            XCTAssertEqual(actions.count, 2)
+            XCTAssertEqual(actions.compactMap(\.identity), [
+                SettingsWorkflowControlIdentity.profile(a), .profile(b)
+            ])
+            XCTAssertEqual(actions.map(\.id), [a, b].map {
+                "settings.profile.action.\(role.rawValue).\($0.uuidString)"
+            })
+            XCTAssertTrue(actions.allSatisfy { descriptor in
+                guard case .profile(let id)? = descriptor.identity else { return false }
+                return descriptor.label.contains(id.uuidString)
+            })
+        }
+        let name = try XCTUnwrap(full.first { $0.role == .profileNameEditor })
+        XCTAssertEqual(name.id, "settings.profile.editor.name." + a.uuidString)
+        XCTAssertEqual(name.identity, .profileName(.profile(a)))
+        XCTAssertTrue(name.label.contains(a.uuidString))
+        XCTAssertEqual(name.availability, .unavailable(
+            reasonKey: "settings.control.unavailable.issuedPreview",
+            label: "Resolved settings.control.unavailable.issuedPreview"))
+        let values = full.filter { $0.role == .profileValueEditor }
+        XCTAssertEqual(values.count, 2)
+        XCTAssertEqual(Set(values.map(\.id)), Set([profileField, restriction].map {
+            "settings.profile.editor.value.\(a.uuidString).\($0.rawValue)"
+        }))
+        XCTAssertTrue(values.allSatisfy { descriptor in
+            descriptor.label.contains(a.uuidString) &&
+                [profileField.rawValue, restriction.rawValue].contains(where: {
+                    descriptor.label.contains($0)
+                })
+        })
+        XCTAssertTrue(values.allSatisfy {
+            $0.availability == .unavailable(
+                reasonKey: "settings.control.unavailable.issuedPreview",
+                label: "Resolved settings.control.unavailable.issuedPreview")
+        })
+        let newEditor = try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: [a], activeProfileID: nil,
+            profileEditor: .init(target: .newProfile, valueFieldIDs: [profileField]),
+            importPhase: .idle, collisions: [], hasCompleteCollisionChoices: false,
+            hasPreparedProfile: false, resetGlobalFieldIDs: [], resetProfileID: nil,
+            resetProfileFieldIDs: [], ownedRestrictionFieldIDs: [], hasResetSelection: false,
+            hasPreparedReset: false), localize: localize)
+        XCTAssertEqual(newEditor.first { $0.role == .profileNameEditor }?.id,
+                       "settings.profile.editor.name.new")
+        XCTAssertEqual(newEditor.first { $0.role == .profileValueEditor }?.id,
+                       "settings.profile.editor.value.new." + profileField.rawValue)
+        XCTAssertTrue(newEditor.filter {
+            $0.role == .profileNameEditor || $0.role == .profileValueEditor
+        }.allSatisfy { $0.label.contains("new") })
+        for (role, choice) in [
+            (SettingsWorkflowControlRole.collisionKeepLocal,
+             ProfileCollisionControlChoice.keepLocal),
+            (.collisionReplace, .replace), (.collisionClone, .clone)
+        ] {
+            let choices = full.filter { $0.role == role }
+            XCTAssertEqual(choices.count, 2)
+            XCTAssertEqual(choices.compactMap(\.identity), [
+                SettingsWorkflowControlIdentity.collision(a, choice), .collision(b, choice)
+            ])
+            XCTAssertEqual(choices.map(\.id), [a, b].map {
+                "settings.import.collision.\($0.uuidString).\(choice.rawValue)"
+            })
+            XCTAssertTrue(choices.allSatisfy { descriptor in
+                guard case .collision(let id, _)? = descriptor.identity else { return false }
+                guard let collision = collisions.first(where: { $0.profileID == id }) else {
+                    return false
+                }
+                return descriptor.label.contains(choice.rawValue) &&
+                    descriptor.label.contains(id.uuidString) &&
+                    descriptor.label.contains(collision.localName) &&
+                    descriptor.label.contains(collision.importedName)
+            })
+            XCTAssertTrue(choices.allSatisfy { $0.availability == .enabled })
+        }
+        XCTAssertEqual(full.filter { $0.role == .resetGlobalField }.map(\.id),
+                       ["settings.reset.global." + globalField.rawValue])
+        let resetFields = full.filter {
+            $0.role == .resetGlobalField || $0.role == .resetProfileField
+        }
+        XCTAssertTrue(resetFields.allSatisfy { descriptor in
+            switch descriptor.identity {
+            case .some(.globalResetField(let id)): return descriptor.label.contains(id.rawValue)
+            case .some(.profileResetField(let profileID, let id)):
+                return descriptor.label.contains(profileID.uuidString) &&
+                    descriptor.label.contains(id.rawValue)
+            default: return false
+            }
+        })
+        XCTAssertTrue(resetFields.allSatisfy { $0.availability == .unavailable(
+            reasonKey: "settings.control.unavailable.resetPreview",
+            label: "Resolved settings.control.unavailable.resetPreview") })
+        XCTAssertEqual(Set(full.filter { $0.role == .resetProfileField }.map(\.id)),
+            Set([profileField, restriction].map {
+                "settings.reset.profile.\(a.uuidString).\($0.rawValue)"
+            }))
+        let optIn = try XCTUnwrap(full.first { $0.role == .resetRestrictionOptIn })
+        XCTAssertEqual(optIn.id,
+            "settings.reset.restrictionOptIn.\(a.uuidString).\(restriction.rawValue)")
+        XCTAssertTrue(optIn.label.contains(a.uuidString))
+        XCTAssertTrue(optIn.label.contains(restriction.rawValue))
+        XCTAssertEqual(optIn.availability, .unavailable(
+            reasonKey: "settings.control.unavailable.resetPreview",
+            label: "Resolved settings.control.unavailable.resetPreview"))
+        XCTAssertEqual(full.first(where: { $0.role == .issueImport })?.availability, .enabled)
+        XCTAssertEqual(full.first(where: { $0.role == .confirmProfile })?.availability, .enabled)
+        guard case .some(.unavailable) = empty.first(where: {
+            $0.role == .confirmProfile
+        })?.availability
+        else { return XCTFail("Profile confirmation enabled without a preview") }
+        XCTAssertEqual(empty.first(where: { $0.role == .issueImport })?.availability,
+                       .unavailable(reasonKey: "settings.control.unavailable.importAnalysis",
+                                    label: "Resolved settings.control.unavailable.importAnalysis"))
+        for role in [SettingsWorkflowControlRole.localReassociation,
+                     .historyAndIndexClearing] {
+            guard case .some(.unavailable) = full.first(where: {
+                $0.role == role
+            })?.availability
+            else { return XCTFail("Deferred control became available: \(role)") }
+        }
+        var confirmationDescriptorIDs: [String] = []
+        for phase in SettingsWorkflowImportPhase.allCases {
+            let controls = try SettingsWorkflowPresentation.controls(context: .init(
+                profileIDs: [a], activeProfileID: a,
+                profileEditor: .init(target: .profile(a), valueFieldIDs: [profileField]),
+                importPhase: phase, collisions: [collisions[1]],
+                hasCompleteCollisionChoices: true, hasPreparedProfile: true,
+                resetGlobalFieldIDs: [globalField], resetProfileID: a,
+                resetProfileFieldIDs: [profileField], ownedRestrictionFieldIDs: [],
+                hasResetSelection: true,
+                hasPreparedReset: true), localize: localize)
+            let enabled: (SettingsWorkflowControlRole) -> Bool = { role in
+                controls.first(where: { $0.role == role })?.availability == .enabled
+            }
+            if phase == .confirmation { confirmationDescriptorIDs = controls.map(\.id) }
+            if phase == .submitting {
+                XCTAssertEqual(controls.map(\.id), confirmationDescriptorIDs,
+                               "Submitting removed readable/focus-stable rows")
+                for descriptor in controls {
+                    if Set([SettingsWorkflowControlRole.localReassociation,
+                            .historyAndIndexClearing]).contains(descriptor.role) {
+                        XCTAssertEqual(descriptor.availability, .unavailable(
+                            reasonKey: "settings.control.unavailable.deferred",
+                            label: "Resolved settings.control.unavailable.deferred"))
+                    } else {
+                        XCTAssertEqual(descriptor.availability, .unavailable(
+                            reasonKey: "settings.control.unavailable.submitting",
+                            label: "Resolved settings.control.unavailable.submitting"),
+                            descriptor.id)
+                    }
+                    XCTAssertFalse(descriptor.label.isEmpty)
+                }
+                continue
+            }
+            XCTAssertEqual(enabled(.issueImport), phase == .analysis)
+            XCTAssertEqual(enabled(.confirmImport), phase == .confirmation)
+            XCTAssertEqual(enabled(.cancelImport),
+                Set([.analyzing, .analysis, .issuing, .confirmation]).contains(phase))
+            for role in [SettingsWorkflowControlRole.collisionKeepLocal,
+                         .collisionReplace, .collisionClone] {
+                XCTAssertEqual(enabled(role), phase == .analysis)
+            }
+            XCTAssertTrue(enabled(.previewReset)); XCTAssertTrue(enabled(.confirmReset))
+            XCTAssertFalse(enabled(.resetGlobalField)); XCTAssertFalse(enabled(.resetProfileField))
+            XCTAssertFalse(enabled(.profileNameEditor)); XCTAssertFalse(enabled(.profileValueEditor))
+        }
+        let actionable = try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: [a], activeProfileID: a, profileEditor: nil,
+            importPhase: .idle, collisions: [], hasCompleteCollisionChoices: false,
+            hasPreparedProfile: false, resetGlobalFieldIDs: [], resetProfileID: nil,
+            resetProfileFieldIDs: [], ownedRestrictionFieldIDs: [], hasResetSelection: false,
+            hasPreparedReset: false), localize: localize)
+        let activeActions = actionable.filter { $0.identity == .profile(a) }
+        XCTAssertEqual(activeActions.first(where: { $0.role == .activateProfile })?.availability,
+                       .unavailable(reasonKey: "settings.control.unavailable.activeProfile",
+                                    label: "Resolved settings.control.unavailable.activeProfile"))
+        XCTAssertEqual(activeActions.first(where: { $0.role == .deactivateProfile })?.availability,
+                       .enabled)
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: [], activeProfileID: a, profileEditor: nil,
+            importPhase: .idle, collisions: [], hasCompleteCollisionChoices: false,
+            hasPreparedProfile: false, resetGlobalFieldIDs: [], resetProfileID: nil,
+            resetProfileFieldIDs: [], ownedRestrictionFieldIDs: [], hasResetSelection: false,
+            hasPreparedReset: false), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError,
+                               .invalidActiveProfile(a))
+            }
+        let tooMany = (0...50).map { index in UUID(uuidString: String(format:
+            "A0000000-0000-0000-0000-%012d", index))! }
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(context: .init(
+            profileIDs: tooMany, activeProfileID: nil, profileEditor: nil,
+            importPhase: .idle, collisions: [], hasCompleteCollisionChoices: false,
+            hasPreparedProfile: false, resetGlobalFieldIDs: [], resetProfileID: nil,
+            resetProfileFieldIDs: [], ownedRestrictionFieldIDs: [], hasResetSelection: false,
+            hasPreparedReset: false), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError, .tooManyProfiles)
+            }
+    }
+
+    func testWorkflowControlDynamicBoundsRejectWithoutTruncation() throws {
+        let profile = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        let localize: (String) -> String = { "Resolved " + $0 }
+        func context(collisions: [ProfileImportCollision] = [],
+                     editorFields: [SettingID] = [], resetGlobal: [SettingID] = [],
+                     resetProfile: [SettingID] = [], restrictions: Set<SettingID> = [])
+            -> SettingsWorkflowControlContext {
+            .init(profileIDs: [profile], activeProfileID: nil,
+                profileEditor: editorFields.isEmpty ? nil : .init(
+                    target: .profile(profile), valueFieldIDs: editorFields),
+                importPhase: .analysis, collisions: collisions,
+                hasCompleteCollisionChoices: true, hasPreparedProfile: false,
+                resetGlobalFieldIDs: resetGlobal,
+                resetProfileID: resetProfile.isEmpty ? nil : profile,
+                resetProfileFieldIDs: resetProfile,
+                ownedRestrictionFieldIDs: restrictions,
+                hasResetSelection: !resetGlobal.isEmpty || !resetProfile.isEmpty,
+                hasPreparedReset: false)
+        }
+        let collision = ProfileImportCollision(profileID: profile,
+            localName: "Local", importedName: "Imported")
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(
+            context: context(collisions: [collision, collision]), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError,
+                               .duplicateCollision(profile))
+            }
+        let tooManyCollisions = (0...50).map { index in
+            ProfileImportCollision(profileID: UUID(uuidString: String(format:
+                "B0000000-0000-0000-0000-%012d", index))!,
+                localName: "L", importedName: "I")
+        }
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(
+            context: context(collisions: tooManyCollisions), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError, .tooManyCollisions)
+            }
+        let tooManyFields = (0...1_000).map {
+            SettingID(rawValue: "fixture.field.\($0)")
+        }
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(
+            context: context(editorFields: tooManyFields), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError, .tooManyEditorFields)
+            }
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(
+            context: context(resetGlobal: tooManyFields), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError, .tooManyResetFields)
+            }
+        let preference = SettingID(rawValue: "scan.requestedWorkers")
+        let restriction = SettingID(rawValue: "feature.headroom")
+        XCTAssertThrowsError(try SettingsWorkflowPresentation.controls(context: context(
+            resetProfile: [preference], restrictions: [restriction]), localize: localize)) {
+                XCTAssertEqual($0 as? SettingsWorkflowPresentationError,
+                               .invalidRestrictionOptIn(restriction))
+            }
+        let valid = try SettingsWorkflowPresentation.controls(context: context(
+            editorFields: [preference], resetProfile: [preference, restriction],
+            restrictions: [restriction]), localize: localize)
+        XCTAssertLessThanOrEqual(valid.count,
+            SettingsWorkflowPresentation.maximumControlDescriptors)
+    }
+
+    @MainActor func testWorkflowRenderDoesZeroWork() async throws {
+        try await run { _, services, _ in
+            let generation = services.policyBridge.updateGeneration
+            let revision = services.configStore.settingsRevision
+            let admission = services.coordinator.policyAdmission()
+            for tab in SettingsWorkflowTab.allCases {
+                for scheme in [ColorScheme.light, .dark] {
+                    for width in [CGFloat(480), 620] {
+                        for size in [DynamicTypeSize.large, .accessibility3] {
+                            let view = SettingsWorkflowSurface(store: services.configStore,
+                                bundle: Bundle(for: SharedSettingsWiringTests.self),
+                                                               initialTab: tab)
+                            .frame(width: width, height: 900)
+                            .environment(services.configStore)
+                            .environment(\.colorScheme, scheme)
+                            .environment(\.dynamicTypeSize, size)
+                            XCTAssertNotNil(ImageRenderer(content: view).cgImage,
+                                "\(tab) \(scheme) \(width) \(size)")
+                        }
+                    }
+                }
+            }
+            XCTAssertEqual(services.policyBridge.updateGeneration, generation)
+            XCTAssertEqual(services.configStore.settingsRevision, revision)
+            XCTAssertEqual(services.coordinator.policyAdmission(), admission)
+            XCTAssertFalse(services.configStore.hasPendingSettingsWrites)
+        }
+    }
+
+    func testWorkflowLocalizationIsCompleteAndResolved() throws {
+        let bundle = Bundle(for: SharedSettingsWiringTests.self)
+        var keys = [
+            "settings.workflow.tab.profiles", "settings.workflow.tab.transfer",
+            "settings.workflow.tab.reset", "settings.workflow.revision",
+            "settings.profile.create", "settings.profile.createFactory",
+            "settings.profile.clone", "settings.profile.rename", "settings.profile.delete",
+            "settings.profile.activate", "settings.profile.deactivate",
+            "settings.profile.preview", "settings.profile.confirm", "settings.profile.cancel",
+            "settings.profile.diff", "settings.profile.activeBefore",
+            "settings.profile.activeAfter", "settings.profile.editor.name",
+            "settings.profile.editor.value", "settings.import.choose", "settings.import.analyze",
+            "settings.import.issue", "settings.import.confirm", "settings.import.cancel",
+            "settings.import.failure", "settings.import.sourceDigest",
+            "settings.import.candidateDigest", "settings.import.collision.keepLocal",
+            "settings.import.collision.replace", "settings.import.collision.clone",
+            "settings.export.choose", "settings.export.ready", "settings.export.failure",
+            "settings.reset.select", "settings.reset.ownedRestrictionOptIn",
+            "settings.reset.field.global", "settings.reset.field.profile",
+            "settings.reset.preview", "settings.reset.confirm", "settings.reset.cancel",
+            "settings.reset.immutable", "settings.control.unavailable.noProfile",
+            "settings.control.unavailable.activeProfile",
+            "settings.control.unavailable.importAnalysis",
+            "settings.control.unavailable.issuedPreview",
+            "settings.control.unavailable.resetSelection",
+            "settings.control.unavailable.resetPreview",
+            "settings.control.unavailable.deferred",
+            "settings.control.unavailable.submitting"
+        ]
+        keys += SessionProfiles.factoryKeys.map { "settings.profile.factory." + $0 }
+        keys += SettingsWorkflowPresentation.importOutcomeOrder.flatMap {
+            ["settings.import.outcome.\($0.rawValue).title",
+             "settings.import.outcome.\($0.rawValue).explanation"]
+        }
+        keys += SettingsResetBoundary.allCases.map {
+            "settings.reset.boundary." + $0.rawValue
+        }
+        keys += SettingsDeferredWorkflow.allCases.flatMap {
+            ["settings.deferred.\($0.rawValue).title",
+             "settings.deferred.\($0.rawValue).explanation"]
+        }
+        XCTAssertEqual(keys.count, Set(keys).count)
+        for key in keys {
+            let value = SettingsCopy.resolve(key, bundle: bundle)
+            XCTAssertFalse(value.isEmpty, key)
+            XCTAssertNotEqual(value, key)
+            XCTAssertNotEqual(value, "Description unavailable.", key)
+        }
+    }
+
+    func testWorkflowFixtureHostIsDeterministicBoundedAndInert() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "TidyUITestHost/TestHostApp.swift"), encoding: .utf8)
+        for state in ["profilesEmpty", "profilesTwo", "profilesActive",
+                      "activeDeleteConfirmation", "profileFieldDiff", "importAllOutcomes",
+                      "importIncompleteCollision", "importIssuedConfirmation", "importSubmitting",
+                      "importMalformedFailure", "resetEmpty", "resetSelected",
+                      "resetOwnedRestriction", "immutableAndDeferred"] {
+            XCTAssertTrue(source.contains("case " + state), state)
+        }
+        XCTAssertTrue(source.contains("settings.workflow.fixture.state"))
+        XCTAssertTrue(source.contains("settings.workflow.fixture.workCount"))
+        XCTAssertTrue(source.contains("Workflow fixture work: 0"))
+        XCTAssertTrue(source.contains("SettingsWorkflowPresentation.controls(context:"))
+        XCTAssertTrue(source.contains("settings.workflow.fixture.submitting.snapshot"))
+        XCTAssertTrue(source.contains("settings.workflow.fixture.submitting.controlCount"))
+        XCTAssertTrue(source.contains("descriptor.availability != .enabled"))
+        XCTAssertTrue(source.contains("settings.workflow.fixture.projectionFailure"))
+        for token in ["UUID()", "Date()", "Data(contentsOf:", "SettingsStore(",
+                      "ExecutionPolicyBridge(", "SettingsTransfer.", "requestPlan",
+                      "loadPlan", "CleanEngine", "SettingsWorkflowController(testing:"] {
+            XCTAssertFalse(source.contains(token), token)
+        }
+    }
+
+    func testRestrictionResetRequiresEveryMatchingOptInAndProfileFieldsAreExhaustive() {
+        let first = SettingID(rawValue: "cleanup.hardBatchGiB")
+        let second = SettingID(rawValue: "cleanup.hardBatchItems")
+        let preference = SettingID(rawValue: "cleanup.inactiveDays")
+        XCTAssertFalse(SettingsWorkflowPresentation.canPreviewReset(
+            selectedProfileFieldIDs: [first, second],
+            ownedRestrictionFieldIDs: [first, second],
+            optedInRestrictionIDs: [first], hasOtherSelection: false),
+            "An unrelated restriction opt-in authorized the other selected protection")
+        XCTAssertTrue(SettingsWorkflowPresentation.canPreviewReset(
+            selectedProfileFieldIDs: [preference, first, second],
+            ownedRestrictionFieldIDs: [first, second],
+            optedInRestrictionIDs: [first, second], hasOtherSelection: false))
+        let expected = Set(SettingsPresentationRegistry.renderedUniverse(volumeIDs: [])
+            .filter(SettingsWorkflowPresentation.isEditableProfileField)
+            .map(\.id))
+        XCTAssertEqual(Set(SettingsWorkflowPresentation.profileEditorFieldIDs), expected)
+        XCTAssertEqual(SettingsWorkflowPresentation.profileEditorFieldIDs.count,
+                       expected.count)
+        XCTAssertFalse(expected.contains(SettingID(rawValue: "scope.currentProject")))
+        for (offset, id) in SettingsWorkflowPresentation.profileEditorFieldIDs.enumerated() {
+            let definition = try? XCTUnwrap(SettingsPresentationRegistry
+                .renderedUniverse(volumeIDs: []).first(where: { $0.id == id }))
+            guard let definition else { return XCTFail("Missing definition for \(id)") }
+            XCTAssertNoThrow(try SessionProfiles.create(
+                id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                               UInt8(truncatingIfNeeded: offset + 1), 1)),
+                name: "Field \(offset)", values: .init(fields: [id: definition.defaultValue]),
+                inherited: .init(), in: []), id.rawValue)
+        }
+    }
+
+    func testWorkflowDeferredCopyAccessibilityAndProjectionFailureAreExplicit() throws {
+        let bundle = Bundle(for: SharedSettingsWiringTests.self)
+        let reassociation = SettingsWorkflowPresentation.deferredExplanation(
+            .localReassociation, bundle: bundle)
+        XCTAssertTrue(reassociation.contains("T22.3"))
+        XCTAssertTrue(reassociation.contains("cannot authorize this Mac"))
+        let clearing = SettingsWorkflowPresentation.deferredExplanation(
+            .historyAndIndexClearing, bundle: bundle)
+        for token in ["T07.3d", "T09", "mandatory safety journal", "never cleared"] {
+            XCTAssertTrue(clearing.contains(token), token)
+        }
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tidy/Settings/SettingsView.swift"), encoding: .utf8)
+        XCTAssertFalse(source.contains(".prefix(12)"))
+        XCTAssertTrue(source.contains("settings.workflow.projectionFailure"))
+        XCTAssertTrue(source.contains(".accessibilityHint(descriptor.accessibilityHint)"))
+        XCTAssertTrue(source.contains(".accessibilityHint(tabHint)"))
+        XCTAssertTrue(source.contains("String(describing: change.oldSource)"))
+        XCTAssertTrue(source.contains("String(describing: change.newSource)"))
+        XCTAssertTrue(source.contains("describe(change.defaultValue)"))
+        XCTAssertTrue(source.contains("describe(change.effect)"))
+    }
+
+    func testImportFileReaderRejectsOversizeBeforeReadingPayload() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "tidy-import-reader-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let accepted = directory.appendingPathComponent("accepted.json")
+        let oversized = directory.appendingPathComponent("oversized.json")
+        try Data(repeating: 0x61, count: SettingsImportFileReader.maximumByteCount)
+            .write(to: accepted)
+        try Data(repeating: 0x62, count: SettingsImportFileReader.maximumByteCount + 1)
+            .write(to: oversized)
+        XCTAssertEqual(try SettingsImportFileReader.read(accepted).count,
+                       SettingsImportFileReader.maximumByteCount)
+        XCTAssertThrowsError(try SettingsImportFileReader.read(oversized)) {
+            XCTAssertEqual($0 as? SettingsImportFileReaderError, .tooLarge)
+        }
+    }
+
+    @MainActor func testBackToBackCancellationCannotLoseRetainedActorToken() async throws {
+        try await run { _, services, _ in
+            let summary = try self.workflowSummary(UUID(uuidString:
+                "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!)
+            let gate = SettingsWorkflowAsyncGate()
+            let operations = SettingsWorkflowImportOperations(
+                analyze: { _ in summary }, issue: { _, _ in self.workflowPreview(summary) },
+                cancelAnalysis: { gate.recordAnalysisCancellation($0) },
+                cancelPreview: { gate.recordPreviewCancellation($0) },
+                submit: { services.configStore.commitImport($0) })
+            let controller = SettingsWorkflowController(testing: services.configStore,
+                importOperations: operations, bundle: Bundle(for: SharedSettingsWiringTests.self))
+            await controller.beginImportSelection(bytes: Data([1])).value
+            guard case .analysis = controller.importState else { return XCTFail() }
+            let cancellation = controller.beginImportCancellation()
+            let replacement = controller.beginImportSelection(bytes: Data([2]))
+            await cancellation.value; await replacement.value
+            XCTAssertEqual(gate.cancelledAnalysisIDs, [summary.analysisID])
+            guard case .analysis = controller.importState else { return XCTFail() }
+        }
+    }
+
+    func testWorkflowSourceHasNoOpenWorkOrSecondOwner() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "Tidy/Settings/SettingsView.swift"), encoding: .utf8)
+        for token in [".task", ".onAppear", ".onReceive", ".refreshable", "Timer",
+                      "Process(", "Process.", "ProcessSurvey", "CookieDomainSuggester",
+                      "GitRootDiscovery", "SimctlClient", "CleanEngine", "requestPlan",
+                      "loadPlan", "FileManager", "URLSession", "NSWorkspace",
+                      "DispatchSource", "NotificationCenter", "SettingsStore(",
+                      "ExecutionPolicyBridge(", "SettingsTransfer.resolve"] {
+            XCTAssertFalse(source.contains(token), token)
+        }
+        XCTAssertFalse(source.contains("Task.detached"))
+        let begin = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_BEGIN"
+        let end = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_END"
+        XCTAssertEqual(source.components(separatedBy: begin).count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: end).count - 1, 1)
+        let beginRange = try XCTUnwrap(source.range(of: begin))
+        let endRange = try XCTUnwrap(source.range(of: end))
+        XCTAssertLessThan(beginRange.lowerBound, endRange.lowerBound)
+        let block = String(source[beginRange.lowerBound..<endRange.upperBound])
+        let beforeBlock = String(source[..<beginRange.lowerBound])
+        let afterBlock = String(source[endRange.upperBound...])
+        XCTAssertEqual(block.components(separatedBy: "Task {").count - 1, 4)
+        XCTAssertFalse(beforeBlock.contains("Task {"))
+        XCTAssertFalse(afterBlock.contains("Task {"))
+        var remainder = block
+        for helper in ["beginImportSelection", "beginImportPreviewIssuance",
+                       "beginImportConfirmation", "beginImportCancellation"] {
+            let helperBegin = "// SETTINGS_WORKFLOW_TASK_BEGIN_" + helper
+            let helperEnd = "// SETTINGS_WORKFLOW_TASK_END_" + helper
+            XCTAssertEqual(block.components(separatedBy: helperBegin).count - 1, 1)
+            XCTAssertEqual(block.components(separatedBy: helperEnd).count - 1, 1)
+            let helperBeginRange = try XCTUnwrap(remainder.range(of: helperBegin))
+            let helperEndRange = try XCTUnwrap(remainder.range(of: helperEnd))
+            XCTAssertLessThan(helperBeginRange.lowerBound, helperEndRange.lowerBound)
+            let extracted = String(remainder[
+                helperBeginRange.lowerBound..<helperEndRange.upperBound])
+            XCTAssertTrue(extracted.contains("func " + helper), helper)
+            XCTAssertEqual(extracted.components(separatedBy: "Task {").count - 1, 1,
+                           helper)
+            if helper == "beginImportConfirmation" {
+                let rejected = try XCTUnwrap(extracted.range(of: "case .rejected"))
+                let cancellation = try XCTUnwrap(extracted.range(
+                    of: "await importOperations.cancelPreview(preview.id)"))
+                XCTAssertLessThan(rejected.lowerBound, cancellation.lowerBound)
+            }
+            let submitting = try XCTUnwrap(extracted.range(of: "case .submitting"))
+            let increment = try XCTUnwrap(extracted.range(of: "operationGeneration &+="))
+            XCTAssertLessThan(submitting.lowerBound, increment.lowerBound,
+                "\(helper) must decide submitting no-op before generation supersession")
+            remainder.replaceSubrange(
+                helperBeginRange.lowerBound..<helperEndRange.upperBound, with: "")
+        }
+        remainder = remainder.replacingOccurrences(of: begin, with: "")
+            .replacingOccurrences(of: end, with: "")
+        XCTAssertTrue(remainder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      "Statements exist outside the four task helpers")
+        XCTAssertTrue(source.contains("fileImporter")); XCTAssertTrue(source.contains("fileExporter"))
+        XCTAssertTrue(source.contains("startAccessingSecurityScopedResource"))
+        XCTAssertTrue(source.contains("stopAccessingSecurityScopedResource"))
+        XCTAssertFalse(source.contains("Data(contentsOf:"))
+        XCTAssertTrue(source.contains("seekToEnd()"))
+        XCTAssertTrue(source.contains("read(upToCount: 1_048_577)"))
+        XCTAssertTrue(source.contains("operationGeneration &+="))
+        XCTAssertTrue(source.contains("let bundle: Bundle"))
+        XCTAssertTrue(source.contains("bundle: Bundle = .main"))
+        XCTAssertTrue(source.contains("SettingsImportUISummary"))
+        XCTAssertTrue(source.contains("SettingsWorkflowPresentation.controls(context:"))
+        XCTAssertTrue(source.contains("descriptorControls"))
+        XCTAssertTrue(source.contains("LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))])"))
+        XCTAssertTrue(source.contains(".accessibilityLabel(descriptor.label)"))
+        XCTAssertTrue(source.contains("case .failed(let message)"))
+        XCTAssertTrue(source.contains("profileValueEditor(descriptor)"))
+        XCTAssertTrue(source.contains(".update(id:"))
+        XCTAssertTrue(source.contains("resetProfileField"))
+        XCTAssertTrue(source.contains("resetRestrictionOptIn"))
+        XCTAssertTrue(source.contains("importReviewSummary"))
+        XCTAssertTrue(source.contains("importReviewDigests"))
+        XCTAssertFalse(source.contains("ForEach(store.preferences.global.fields.keys"))
+        XCTAssertTrue(source.contains("beginImportConfirmation"))
+        XCTAssertTrue(source.contains("deferredExplanationKey"))
+        XCTAssertTrue(source.contains("deferredExplanation("))
+        XCTAssertTrue(source.contains("bundle: bundle"))
+        XCTAssertFalse(source.contains("case analysis(SettingsImportAnalysis)"))
+        XCTAssertFalse(source.contains("case issuingPreview(SettingsImportAnalysis)"))
+        XCTAssertFalse(source.contains("PortableSettingsState"))
+        XCTAssertFalse(source.contains("var importBytes"))
+        XCTAssertFalse(source.contains("var sourceBytes"))
+        XCTAssertFalse(source.contains("SettingsWorkflowController(testing:"))
+        XCTAssertTrue(source.contains("store.commitImport"))
+        XCTAssertTrue(source.contains("store.commitProfileWorkflow"))
+        XCTAssertTrue(source.contains("store.commitSelectiveReset"))
+        for id in ["settings.deferred.localReassociation",
+                   "settings.deferred.historyAndIndexClearing",
+                   "settings.profile.confirm", "settings.import.confirm",
+                   "settings.reset.confirm"] {
+            XCTAssertTrue(source.contains(id), id)
+        }
+    }
+}
 
 // Observation/pause only. The finite watchdog releases this fixture's wait;
 // it never closes an FD, signals a process, invents success or cancels storage.
@@ -2190,7 +3577,7 @@ extension SharedSettingsWiringTests {
             repository.appendingPathComponent("Tidy/Settings/SettingsView.swift"),
             encoding: .utf8)
         let forbidden = [
-            ".task", "Task {", "Task.detached", ".onAppear", ".onReceive",
+            ".task", "Task.detached", ".onAppear", ".onReceive",
             ".refreshable", "Timer", "Process(", "Process.", "ProcessSurvey",
             "CookieDomainSuggester", "GitRootDiscovery", "SimctlClient", "CleanEngine",
             "requestPlan", "loadPlan", "FileManager", "URLSession", "NSWorkspace",
@@ -2199,6 +3586,32 @@ extension SharedSettingsWiringTests {
         for token in forbidden {
             XCTAssertFalse(source.contains(token), "Settings on-open source contains \(token)")
         }
+        let taskBoundaryBegin = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_BEGIN"
+        let taskBoundaryEnd = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_END"
+        XCTAssertEqual(source.components(separatedBy: taskBoundaryBegin).count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: taskBoundaryEnd).count - 1, 1)
+        let taskBeginRange = try XCTUnwrap(source.range(of: taskBoundaryBegin))
+        let taskEndRange = try XCTUnwrap(source.range(of: taskBoundaryEnd))
+        let taskBlock = String(source[taskBeginRange.lowerBound..<taskEndRange.upperBound])
+        XCTAssertEqual(taskBlock.components(separatedBy: "Task {").count - 1, 4)
+        XCTAssertFalse(source[..<taskBeginRange.lowerBound].contains("Task {"))
+        XCTAssertFalse(source[taskEndRange.upperBound...].contains("Task {"))
+        var taskRemainder = taskBlock
+        for helper in ["beginImportSelection", "beginImportPreviewIssuance",
+                       "beginImportConfirmation", "beginImportCancellation"] {
+            let helperBegin = "// SETTINGS_WORKFLOW_TASK_BEGIN_" + helper
+            let helperEnd = "// SETTINGS_WORKFLOW_TASK_END_" + helper
+            let helperBeginRange = try XCTUnwrap(taskRemainder.range(of: helperBegin))
+            let helperEndRange = try XCTUnwrap(taskRemainder.range(of: helperEnd))
+            let extracted = String(taskRemainder[
+                helperBeginRange.lowerBound..<helperEndRange.upperBound])
+            XCTAssertEqual(extracted.components(separatedBy: "Task {").count - 1, 1)
+            taskRemainder.replaceSubrange(
+                helperBeginRange.lowerBound..<helperEndRange.upperBound, with: "")
+        }
+        taskRemainder = taskRemainder.replacingOccurrences(of: taskBoundaryBegin, with: "")
+            .replacingOccurrences(of: taskBoundaryEnd, with: "")
+        XCTAssertTrue(taskRemainder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         XCTAssertFalse(source.contains("ExecutionPolicyBridge"))
         XCTAssertFalse(source.contains("SettingsStore"))
         XCTAssertFalse(source.contains("Color(red:"))
