@@ -174,4 +174,27 @@ struct HomeSurveyTests {
         #expect(survey.largeFiles.isEmpty)
         #expect(survey.childTotals.isEmpty)
     }
+
+    @Test("bounded walk uses the supplied bridge facade and preserves survey totals")
+    @MainActor
+    func boundedWalkPreservesTotals() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let fixture = rig.root.appendingPathComponent("home-survey-bounded", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        try buildFixture(at: fixture)
+        let limits = try standardLimits(batchEntries: 8, resultRecords: 8, topN: 8)
+
+        let page = await HomeSurvey.walkBounded(sessions: rig.sessions, session: rig.session,
+            sessionID: UUID(), generation: 1, root: fixture.path, protectedRoots: [],
+            largeFileThreshold: 200_000, breakOutChildren: true, limits: limits)
+        let oracle = HomeSurvey.walk(root: fixture.path, protectedRoots: [],
+            largeFileThreshold: 200_000, breakOutChildren: true)
+
+        #expect(page.result.coverage.isComplete)
+        #expect(page.result.totalBytes == oracle.totalBytes)
+        #expect(page.result.topItems.map(\.path) == oracle.largeFiles.map(\.path))
+        #expect(Dictionary(uniqueKeysWithValues: page.result.childTotals.map { ($0.path, $0.bytes) })
+                == Dictionary(uniqueKeysWithValues: oracle.childTotals.map { ($0.path, $0.bytes) }))
+    }
 }

@@ -152,6 +152,36 @@ public enum HomeSurvey: Sendable {
         return Result(totalBytes: total, largeFiles: largeFiles, childTotals: childTotals)
     }
 
+    /// Starts the T08 bounded form of the survey through a caller-owned explicit bridge session.
+    /// The synchronous compatibility path above remains in place until ScanEngine adoption in
+    /// T08.4; this adapter neither creates nor retains scheduler authority.
+    public static func walkBounded(
+        sessions: BridgeExplicitSessions,
+        session: WorkSession,
+        sessionID: UUID,
+        generation: UInt64,
+        root rootPath: String,
+        protectedRoots: [String],
+        largeFileThreshold: Int64,
+        breakOutChildren: Bool,
+        limits: TraversalLimits
+    ) async -> BoundedTraversalPage {
+        let traversal = BoundedTraversal(sessions: sessions, limits: limits)
+        let result = await traversal.start(
+            root: rootPath,
+            session: session,
+            sessionID: sessionID,
+            generation: generation,
+            options: TraversalOptions(
+                protectedRoots: protectedRoots,
+                minimumFileBytes: largeFileThreshold > 0 ? largeFileThreshold : nil,
+                collectChildTotals: breakOutChildren,
+                recordSelection: .none
+            )
+        )
+        return BoundedTraversalPage(traversal: traversal, result: result)
+    }
+
     private static func isProtected(_ path: String, protectedRoots: [String]) -> Bool {
         protectedRoots.contains { PathGuard.isEqualOrDescendant(path, of: $0) }
     }

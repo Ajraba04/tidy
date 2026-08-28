@@ -147,6 +147,28 @@ public actor SizeScanner {
         return total
     }
 
+    /// Starts bounded disk-usage enumeration with the exact bridge facade supplied by the caller.
+    /// Existing engine-facing synchronous measurement remains unchanged until T08.4.
+    public nonisolated static func diskUsageBounded(
+        sessions: BridgeExplicitSessions,
+        session: WorkSession,
+        sessionID: UUID,
+        generation: UInt64,
+        rootPath: String,
+        protectedRoots: [String],
+        limits: TraversalLimits
+    ) async -> BoundedTraversalPage {
+        let traversal = BoundedTraversal(sessions: sessions, limits: limits)
+        let result = await traversal.start(
+            root: rootPath,
+            session: session,
+            sessionID: sessionID,
+            generation: generation,
+            options: TraversalOptions(protectedRoots: protectedRoots, recordSelection: .none)
+        )
+        return BoundedTraversalPage(traversal: traversal, result: result)
+    }
+
     private static func isProtected(_ path: String, protectedRoots: [String]) -> Bool {
         protectedRoots.contains { PathGuard.isEqualOrDescendant(path, of: $0) }
     }
