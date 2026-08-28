@@ -136,6 +136,15 @@ T07.1b adds no active selection or persistence.
 
 ## T07.2 — Durable profile state, issued previews and shared app handoff
 
+### Controlled T07.2 checkpoint split — 2026-08-28
+
+T07.2 is executed as two bounded checkpoints, each requiring its own approved preimplementation card, observed RED, full relevant verification and fresh adversarial source review:
+
+- **T07.2a — durable profile state and issued import store:** the additive schema-2 wire, exact base-bound preferences-document delta, active/inert validation, and `SettingsStore`-issued analysis/preview/one-attempt commit lifecycle. It has no app caller and cannot complete T07.2.
+- **T07.2b — shared bridge and app handoff:** bounded queue retention/accounting, effect aggregation, synchronous invalidation, ordered acknowledgement/replay/failure reconciliation, selected-profile input to `PolicyResolver`, relaunch restoration, and two-window app-visible synchronization.
+
+T07.2 remains incomplete until both checkpoints are independently accepted. T07.2a must not claim bridge replay, invalidation, selected-profile resolution, relaunch UI behavior or two-window behavior; T07.2b may not weaken or replace the accepted store token/delta contract.
+
 Extend the existing typed settings document compatibly:
 
 - `activeProfileID: UUID?`, missing on older schema-2 data means nil;
@@ -159,6 +168,7 @@ Only `SettingsStore` may issue a commit-capable import preview. Analysis is not 
 analyzeImport(bytes:) -> SettingsImportAnalysis
 issueImportPreview(analysisID:choices:) -> SettingsImportPreview
 commitImport(expectedRevision:previewID:) -> SettingsEnvelope
+cancelImport(analysisID:)
 cancelImport(previewID:)
 ```
 
