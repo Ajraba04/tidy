@@ -1096,6 +1096,17 @@ private final class FailingT072IO: JournalPOSIXIO, @unchecked Sendable {
 }
 ```
 
+## Post-review binding amendment
+
+The authoritative executable artifact is `TidyCore/Tests/TidyCoreTests/SettingsProfilePersistenceTests.swift`. The initial block above was created verbatim for RED. The reviewed RED-to-GREEN cycle then made these binding test amendments:
+
+- intentionally over-bound 1,001-inert and 4,097-byte hostile persisted fixtures are emitted through the explicit closed Codable wire because `StrictJSON.canonicalData` correctly refuses to construct values beyond its own bounds; production limits were not weakened;
+- `durableGlobalEligibilityOptInPersistsWhileProfileAndImportCannotWeaken` separates locally owned durable global opt-ins from stricter profile/import monotonicity;
+- the closed inert matrix rejects a recognized safe tag accompanied by an unknown tag;
+- `rollbackRestoresProfilesActiveSelectionAndInertStateTogether` binds rollback to the complete backed-up profile graph, active selection and inert state instead of mixing backup preferences with current active/inert values.
+
+These regressions and the corresponding rollback fields on `SettingsRollbackPreview`/the internal store binding are part of this card's acceptance contract.
+
 ## Execution steps
 
 - [ ] Create only `SettingsProfilePersistenceTests.swift`; run `cd TidyCore && swift test --jobs 2 --filter SettingsProfilePersistenceTests`; preserve the missing-symbol RED.
