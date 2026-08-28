@@ -136,6 +136,11 @@ private final class DirectChildOwnership: @unchecked Sendable {
         lock.unlock()
     }
 
+    func openControlDescriptorCount() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return controlFD >= 0 ? 1 : 0
+    }
+
     func snapshot() -> ProcessSessionObservation {
         lock.lock(); defer { lock.unlock() }
         return ProcessSessionObservation(ownedExit: exit, signalAttempts: signals,
@@ -195,7 +200,7 @@ final class ProcessSession: @unchecked Sendable {
 
     static func launch(_ request: ProcessRequest, gate: ProcessJobGate,
                        identityCapture: ProcessIdentityCapture = .system) async throws -> ProcessSession {
-        let reservation = try await gate.acquire()
+        let reservation = try await gate.acquire(kind: request.kind)
         do {
             try Task.checkCancellation()
             let session = try spawn(request, gate: gate, reservation: reservation,
@@ -465,4 +470,12 @@ final class ProcessSession: @unchecked Sendable {
     }
 
     func observationSnapshot() -> ProcessSessionObservation { owner.snapshot() }
+
+    /// Per-session resource evidence avoids process-global FD counts that can
+    /// be perturbed by unrelated concurrently running test suites.
+    func retainedDescriptorCountForTesting() -> Int {
+        owner.openControlDescriptorCount() + queue.sync {
+            [stdout, stderr].reduce(into: 0) { if $1.fd >= 0 && !$1.closed { $0 += 1 } }
+        }
+    }
 }
