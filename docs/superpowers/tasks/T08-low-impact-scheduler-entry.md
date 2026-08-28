@@ -21,7 +21,10 @@ Hard limits remain:
 T06 policy/revision owners       T04 process ownership/reaping
            │                                │
            ▼                                │
-T08.1 scheduler policy/admission             │
+T08.1a scheduler core/envelope resolution    │
+           │                                │
+           ▼                                │
+T08.1b ExecutionPolicyBridge handoff          │
            │                                │
            ▼                                ▼
 T08.2 bounded traversal/session       T08.3 existing process gate
@@ -33,7 +36,7 @@ T08.2 bounded traversal/session       T08.3 existing process gate
               T08.5 app owner and UI
 ```
 
-T08.1 → T08.2 → T08.4 → T08.5 is sequential. T08.3 depends on T04 and the T08.1 revision-bound policy snapshot and must finish before T08.4. Checkpoint numbering is binding.
+T08.1a → T08.1b → T08.2 → T08.4 → T08.5 is sequential. T08.3 depends on T04 and the accepted T08.1a/1b scheduler and must finish before T08.4. T08.1a has no persistence-integration claim; T08.1b is the first real durable handoff owner. Checkpoint numbering is binding.
 
 ## Production escape-route inventory
 
@@ -57,7 +60,7 @@ Add a source-negative regression that scans the exact production manifest for di
 
 ---
 
-## T08.1 — Revision-bound scheduler policy and filesystem admission
+## T08.1a — Scheduler core and exact-envelope resolution
 
 ### Scope and allowlist
 
@@ -65,43 +68,29 @@ Create only:
 
 - `TidyCore/Sources/TidyCore/Scanning/WorkScheduler.swift`
 - `TidyCore/Tests/TidyCoreTests/WorkSchedulerTests.swift`
-- `docs/verification/T08-1-work-scheduler.md` after GREEN
+- `docs/verification/T08-1a-work-scheduler-core.md` after GREEN
 
 No filesystem, process, engine, app, package, or PBX source changes.
 
 ### Contract
 
-`WorkScheduler` is one injected/app-owned actor; a convenience shared production reference may exist only after T08.5 establishes the owner. It has no private per-session pool. It consumes one atomic snapshot derived from the real resolved `EffectivePolicy`, never recomputes `ScanBudget` arithmetic:
+`WorkScheduler` and its internal nonforgeable controller start unavailable. The controller accepts an exact `SettingsEnvelope` plus explicit internal `SchedulerResolutionInputs`; it constructs global/selected-profile `PolicyInputs` with a neutral absent project and neutral volume/capacity/exclusion facts, calls production `PolicyResolver.resolve`, and derives effect using `PreferencesDocumentEffect.classify(previous,candidate)`. There is no supplied-policy, supplied-effect, or public update API.
 
 ```swift
-public enum DynamicScanObservation: Equatable, Sendable {
-    case unknown
-    case nominal
-    case constrainedPowerOrSeriousPressure
-    case criticalPressure
-}
-
-public struct SchedulerPolicySnapshot: Equatable, Sendable {
-    public let revision: UInt64
-    public let featureEnabled: Bool
-    public let admission: ScanAdmission
-    public let resolvedWalkWorkers: Int       // accepted 0...4
-    public let resolvedReadOnlyProcesses: Int // runtime 0...2; persisted preference is 1...2
-    public let sliceSeconds: Int              // accepted 30...1800
-    public let uiBatchesPerSecond: Int        // accepted 1...4
-    public let observation: DynamicScanObservation
-}
+internal struct SchedulerResolutionInputs: Equatable, Sendable { let logicalCPUCount: Int }
+internal enum SchedulerObservation: Equatable, Sendable { case unknown, nominal, constrained, critical }
 ```
 
-Unknown observation is conservative until T10 exists: explicit user scans only, at most one walk worker, no discretionary admission. Critical admits no new scan work. Constrained/serious admits at most one. Feature disable cancels pending and active read-only scan work cooperatively; a presentation-only revision does not. Updates require monotonic revision plus exact policy identity; stale/late snapshots reject and cannot resurrect work.
+The internal nonisolated admission barrier closes synchronously before async invalidating prepare and is checked before every session/grant. `prepare(candidate:inputs:)` validates/resolves the candidate behind that ticket. A separately typed async non-closing `preparePresentation(candidate:observation:using:)` independently validates and resolves the exact candidate and succeeds only when the production classifier is `.none` and exact scheduler execution identity (features, budgets, admission, slice, and any consumed scope) equals acknowledged identity. Malformed/invalidating presentation candidates reject without save or install. Both paths require production-canonical four-pair legacy-config/global projection semantics, including absent globals only for exact defaults. Invalidating `commit`/`fail` and presentation `commitPresentation`/`discardPresentation` accept only their own single-use exact token type; discard/save failure never changes admission. First install is invalidating. T08.1a does not claim acknowledgement is durable; T08.1b owns the real persistence call site. Observation changes use a strictly monotonic epoch over the same acknowledged envelope and never invent a settings revision.
 
 Permit leases are nonforgeable, exact-release, FIFO, cancellation-safe, and session-bound. Queue/session cardinalities are finite and overflow rejects. Shrinking a cap does not revoke a running batch; it prevents new admission. Scan cancellation never signals, cancels, or releases a T04 mutator.
 
 ### Mandatory tests and gates
 
 - Ten sessions never exceed the one effective aggregate cap.
-- Unknown, critical, constrained, and nominal transitions are deterministic.
-- Stale revision, late old policy, feature disable, and presentation-only edit behavior are exact.
+- Exact global and active-profile layers plus logical CPU resolve through production policy; project/volume/capacity/mandatory exclusions are neutral and owned later; malformed/missing active profile fails closed.
+- Unknown, critical, constrained, and nominal observation epochs are monotonic and deterministic without settings-revision changes.
+- Stale/superseded/foreign prepare/commit/fail, candidate mismatch, feature loss, slice/admission/cap/rate transitions are exact.
 - Queued cancellation grants no extra permit; acquire/cancel/release races end at zero.
 - Cancelling session A leaves B intact; subscriber termination is not session cancellation.
 - Queue overflow rejects; 20 cancel/finish cycles end with zero active/queued/sessions.
@@ -111,15 +100,54 @@ Run focused policy/scheduler tests, ordinary core tests, `git diff --check`, and
 
 ---
 
+## T08.1b — Real ExecutionPolicyBridge durable handoff
+
+### Scope and allowlist
+
+After T08.1a is accepted, modify only:
+
+- `TidyCore/Sources/TidyCore/Execution/ExecutionPolicyBridge.swift`
+- `TidyAppModelTests/SharedSettingsWiringTests.swift`
+- `docs/verification/T08-1b-scheduler-policy-handoff.md` after GREEN
+
+No `SettingsStore`, app view/model, `AppExecutionServices`, coordinator, scheduler-core, package, or PBX edit. If an existing core fixture cannot compile without correction, stop for an amended exact allowlist.
+
+### Contract
+
+`ExecutionPolicyBridge` owns the internal scheduler controller/capability and supplies the existing-owner fact `SchedulerResolutionInputs(logicalCPUCount:)`. Its synchronous `submit` admission mirrors the existing coordinator pattern. Only an exact recognized `GlobalPreferenceDelta` for `scan.uiBatchesPerSecond`, with the expected integer base/edit tags and no other touched document state, may take async non-closing `preparePresentation`; all document replacement, import, legacy edit, active-profile edit, project edit, authority edit, and every other global delta synchronously call the scheduler admission barrier before returning `.accepted`, then pass that ticket to invalidating `prepare` before the real save starts. A presentation prepare rejection ends invalid before `SettingsStore` save and installs nothing; cancellation/conflict/write failure after presentation prepare calls `discardPresentation` exactly once. Session creation and every grant check the barrier, so a blocked invalidating task inserted after submit acceptance but before async prepare/save cannot execute. The barrier stays closed through conflict, invalid, persistence failure, recovery, cancellation, supersession, and late outcomes. Only `.saved(id, exactEnvelope)` commits that exact durable returned envelope; an invalidating commit opens the current transition, while `commitPresentation` updates only acknowledged revision/rate without changing scheduler generation. A newer valid invalidating transition may supersede/recover. A predicted envelope never commits. Initial load uses the same first-install barrier/prepare/commit only for an acknowledged non-recovery envelope.
+
+Within the existing `ExecutionPolicyBridge.swift` allowlist, T08.1b creates one bounded public explicit-session façade exposing only begin-session, with-permit, cancel, finish, and state/snapshot operations. The façade has no public/memberwise initializer; only the bridge's read-only public accessor can vend its operative instance. It issues required explicit capabilities internally and exposes no controller, admission-barrier capability, prepared token, raw policy update, supplied policy/effect, discretionary start, lease, or release. T08.1b adds no UI, background work, or implicit session start. Later core/app owners receive this same façade; T08.5 may only inject/consume it in app/UI wiring and may not create an alternate scheduler/session authority. RED app-model tests use the real façade and existing `SettingsStore` seams to prove synchronous close-before-accepted, an executable blocked session/grant between acceptance and async invalidating prepare/save, exact saved-envelope commit, conflict/failure fail-closed, recovery unavailable, queued/superseded/late isolation, and UI-rate-only preservation.
+
+```text
+public struct BridgeExplicitSessions: Sendable { // no public/memberwise initializer
+    public func beginSession(requirements: SchedulerRequirements) async throws -> WorkSession
+    public func withPermit<T: Sendable>(session: WorkSession,
+        operation: @Sendable (SchedulerCancellationProbe) async throws -> T) async throws -> T
+    public func cancel(session: WorkSession) async
+    public func finish(session: WorkSession) async
+    public func state(of session: WorkSession) async -> WorkSessionState?
+    public func snapshot() async -> WorkSchedulerSnapshot
+}
+public extension ExecutionPolicyBridge {
+    var explicitSessions: BridgeExplicitSessions { get }
+}
+```
+
+The invalidating blocked-task regression is behavioral, not a source substring check. `ExecutionPolicyBridge` may add an internal test-only hook in the same source at exactly `acceptedAfterBarrierBeforePrepareAndSave(intentID)`; production initialization supplies nil. The test blocks that continuation, calls real `submit` and receives `.accepted`, then attempts both a pre-issued session and a queued grant through the bounded bridge façade and observes `admissionUpdating` with closure-never-ran while settings bytes/revision remain unchanged. Releasing the hook permits real prepare/save; only the exact `.saved` envelope opens admission. The test also drives conflict and write failure from that point and proves the barrier stays closed until a newer valid save.
+
+A separate deterministic presentation regression blocks the controller at `.presentationPrepared(revision:)` and the bridge at `acceptedAfterPresentationPrepareBeforeSave(intentID)`. While each stage is blocked and durable bytes/revision remain unchanged, a new explicit session is created through the real bridge façade and a previously queued façade grant advances after its active predecessor releases. Releasing both gates permits the real rate-only save and exact acknowledgement without generation/capability invalidation. Companion cases prove wrong-tag rate, rate plus any second touch, document/import/legacy/project/active-profile routes, classifier-invalidating candidates, identity changes, and malformed candidates never use the non-closing path; they close synchronously or reject before save as specified.
+
+---
+
 ## T08.2 — Bounded traversal, cursor, cumulative events, and session registry core
 
 ### Scope and allowlist
 
-May create `Scanning/{BoundedTraversal,ScanSession}.swift` and focused tests; may modify `Measure/{HomeSurvey,SizeScanner}.swift`, `Detect/{LargestItemsScanner,StaleNodeModulesScanner,UnclaimedSpaceScanner}.swift`, their exact tests, and create `docs/verification/T08-2-bounded-traversal.md`. No engine, process, app, package, or PBX edits.
+May create `Scanning/{BoundedTraversal,ScanSession}.swift` and focused tests; may modify `Measure/{HomeSurvey,SizeScanner}.swift`, `Detect/{LargestItemsScanner,StaleNodeModulesScanner,UnclaimedSpaceScanner}.swift`, their exact tests, and create `docs/verification/T08-2-bounded-traversal.md`. It consumes the bounded explicit-session façade created by T08.1b; it may not expose or construct scheduler/controller/barrier authority. No engine, process, app, package, or PBX edits.
 
 ### Traversal contract
 
-Blocking enumeration runs only on a bounded dedicated utility executor after a T08.1 lease; never synchronously on MainActor or Swift's cooperative pool. It checks cancellation/deadline between finite batches and before every descendant enqueue. Bounds cover queued paths, entries/batch, depth, open descriptors, hard-link identities, child aggregates, strings, checked byte/count arithmetic, result queue, and top-N heap. Top-N retains at most N and orders deterministically by bytes then stable path.
+Blocking enumeration runs only on a bounded dedicated utility executor after an accepted T08.1a/1b lease; never synchronously on MainActor or Swift's cooperative pool. It checks cancellation/deadline between finite batches and before every descendant enqueue. Bounds cover queued paths, entries/batch, depth, open descriptors, hard-link identities, child aggregates, strings, checked byte/count arithmetic, result queue, and top-N heap. Top-N retains at most N and orders deterministically by bytes then stable path.
 
 Missing/unreadable/protected/cross-volume/churned/overflow work produces explicit coverage and reason. No truncated result is complete. Hard-link-bound overflow is incomplete rather than double-counted. Production does not retain every large file then sort.
 
@@ -176,11 +204,11 @@ No mutation authority or daemon-descendant guarantee is claimed.
 
 ### Scope and allowlist
 
-May modify `Engine/{ScanEngine,CleanEngine}.swift`, exact catalog `locate`/`discover` owners identified by the inventory, core scan/planning tests, and create `docs/verification/T08-4-core-orchestration.md`. It consumes T08.1–T08.3; it may not create a pool, gate, policy cache, app owner, index, monitor, or effect path.
+May modify `Engine/{ScanEngine,CleanEngine}.swift`, exact catalog `locate`/`discover` owners identified by the inventory, core scan/planning tests, and create `docs/verification/T08-4-core-orchestration.md`. It consumes T08.1a, T08.1b, T08.2, and T08.3; it may not create a pool, gate, policy cache, app owner, index, monitor, or effect path.
 
 ### Contract
 
-`ScanEngine` produces/feeds a registered session rather than assembling an unbounded one-shot report. Every traversal/survey/stale-node/unclaimed-space/catalog-locate/measurement job acquires the same filesystem scheduler. Every command-backed probe uses the one T08.3 gate and compiled declaration. Pure path construction is explicitly inventoried and exempt. `CleanEngine.makePlan` receives the same scheduler; planning cancellation cannot alter sealed-review or mutation semantics.
+`ScanEngine` produces/feeds a registered session rather than assembling an unbounded one-shot report. Every traversal/survey/stale-node/unclaimed-space/catalog-locate/measurement job acquires the same filesystem scheduler only through the T08.1b explicit-session façade. Every command-backed probe uses the one T08.3 gate and compiled declaration. Pure path construction is explicitly inventoried and exempt. `CleanEngine.makePlan` receives the same façade; planning cancellation cannot alter sealed-review or mutation semantics.
 
 First cumulative partial state may publish before slow probes finish. Slice expiry is partial with a valid single-use Continue cursor or explicitly unavailable continuation. Critical is paused, not complete/failed. Serious/constrained runs at one. Parser/tool failure becomes unavailable evidence, not empty success. Events bind session and policy revision; late work cannot overwrite a newer generation.
 
@@ -190,7 +218,7 @@ First cumulative partial state may publish before slow probes finish. Slice expi
 - Two scans plus one planning request share one walk budget.
 - First useful snapshot precedes blocked probes; terminal is exactly once.
 - Cancel at every orchestration stage launches/publishes nothing later except terminal cancellation.
-- Actual production rate/slice/policy transitions match the T08.1 snapshot.
+- Actual production rate/slice/policy transitions match the T08.1a snapshot acknowledged through T08.1b.
 - Complete fixture matches legacy reference semantics where unchanged.
 - Exhaustive locate/discover/process/traversal source-negative audit has no unassigned escape.
 - Full relevant core and T04 partitions pass; existing sealed execution remains unchanged.
@@ -205,7 +233,7 @@ May modify the exact definitions of `AppExecutionServices`, app bootstrap (`Tidy
 
 ### Contract
 
-`AppExecutionServices` owns exactly one scheduler and one `ScanSessionRegistry` after bootstrap, without starting work. It atomically projects the acknowledged effective policy revision into T08.1/T08.3. Until T10 provides live observations, production observation is `.unknown`: explicit-only, one worker. Feature disable cancels read-only scan work; presentation-only edits preserve it.
+`AppExecutionServices` retains exactly one T08.1b-provided bounded explicit-session façade and one `ScanSessionRegistry` after bootstrap, without starting work. It does not receive the scheduler controller, admission barrier/capability, prepared tokens, or any alternate session authority, and T08.5's allowlist may not add one. It consumes the shared T08.3 process cap and never projects or updates policy itself. Until T10 provides live observations, production observation is `.unknown`: explicit-only, one worker. Feature disable cancels read-only scan work; presentation-only edits preserve it.
 
 Run creates or attaches to one explicit session. A view model stores only session/subscription IDs and cumulative bounded presentation. Two windows subscribe independently to the same session. Closing/deinit detaches the subscription only. Explicit Cancel targets one session ID and remains available through the global/menu owner after its window closes. Continue consumes the issued cursor. Rescan after terminal creates a new generation; late old events are ignored.
 
