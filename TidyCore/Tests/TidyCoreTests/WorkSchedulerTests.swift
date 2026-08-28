@@ -326,6 +326,49 @@ struct WorkSchedulerTests {
         try await rig.scheduler.withPermit(session: existing) { _ in }
     }
 
+    @Test func bridgeAdmissionHoldsBlockQueuedPermitUntilAllAcceptedHandoffsFinish() async throws {
+        let rig = try Rig.make(); try await rig.install(envelope(1, workers: 1))
+        let active = try await rig.session(); let queued = try await rig.session(); let gate = Gate()
+        let activeTask = Task { try await rig.scheduler.withPermit(session: active) {
+            try await gate.hold(0, $0)
+        } }
+        await gate.wait(0)
+        let queuedTask = Task { try await rig.scheduler.withPermit(session: queued) {
+            try await gate.hold(1, $0)
+        } }
+        await rig.hook.wait(.enqueued(2))
+
+        let firstHold = try rig.controller.acquireAdmissionHold(using: rig.owner)
+        let secondHold = try rig.controller.acquireAdmissionHold(using: rig.owner)
+        let firstAdmission = try rig.controller.beginAdmissionTransition(using: rig.owner)
+        let firstCandidate = envelope(2, workers: 1, projectDays: 42)
+        let firstPrepared = await rig.controller.prepare(firstAdmission, candidate: firstCandidate,
+            observation: .nominal, using: rig.owner)
+        let firstToken = try #require(firstPrepared.token)
+        #expect(await rig.controller.commit(firstToken, acknowledgedEnvelope: firstCandidate,
+            using: rig.owner) == .committed(settingsRevision: 2))
+
+        await gate.release(0); _ = try await activeTask.value
+        #expect(await rig.scheduler.snapshot().queued == 1)
+        #expect(!(await gate.order().contains(1)))
+        await rig.controller.releaseAdmissionHold(firstHold, using: rig.owner)
+        #expect(await rig.scheduler.snapshot().queued == 1)
+        #expect(!(await gate.order().contains(1)))
+
+        let secondAdmission = try rig.controller.beginAdmissionTransition(using: rig.owner)
+        let secondCandidate = envelope(3, workers: 1, projectDays: 43)
+        let secondPrepared = await rig.controller.prepare(secondAdmission, candidate: secondCandidate,
+            observation: .nominal, using: rig.owner)
+        let secondToken = try #require(secondPrepared.token)
+        #expect(await rig.controller.commit(secondToken, acknowledgedEnvelope: secondCandidate,
+            using: rig.owner) == .committed(settingsRevision: 3))
+        #expect(!(await gate.order().contains(1)))
+
+        await rig.controller.releaseAdmissionHold(secondHold, using: rig.owner)
+        await gate.wait(1)
+        await gate.release(1); _ = try await queuedTask.value
+    }
+
     @Test func presentationPrepareAndAcknowledgementNeverCloseSessionsOrQueuedGrant() async throws {
         let rig = try Rig.make(); try await rig.install(envelope(1, workers: 1, rate: 4))
         let before = await rig.scheduler.snapshot()
@@ -940,7 +983,8 @@ struct WorkSchedulerTests {
             "public func preparePresentation",
             "public init(policy:", "public var userInitiated", "public func release",
             "public struct WorkLease", "public struct SchedulerAdmissionTicket",
-            "public struct SchedulerPolicyControllerCapability", "Task.detached", "Timer(", "Process(",
+            "public struct SchedulerPolicyControllerCapability", "public struct SchedulerAdmissionHold",
+            "Task.detached", "Timer(", "Process(",
             "FileManager.default", "&+=", "wrappingIncrement"] {
             #expect(!source.contains(forbidden), "forbidden T08.1a surface: \(forbidden)")
         }

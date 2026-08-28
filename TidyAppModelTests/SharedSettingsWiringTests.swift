@@ -1428,8 +1428,11 @@ extension SharedSettingsWiringTests {
 private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
     enum Point: Hashable {
         case invalidatingAdmission
+        case invalidatingTerminal
         case presentationPrepared
         case presentationAdmission
+        case queuedPermit
+        case durablySavedBeforeCommit
     }
 
     private var blocked: Set<Point> = []
@@ -1469,13 +1472,24 @@ private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
         switch event {
         case .acceptedAfterBarrierBeforePrepareAndSave:
             await hit(.invalidatingAdmission)
+        case .terminalBeforeAdmissionHoldRelease:
+            await hit(.invalidatingTerminal)
         case .acceptedAfterPresentationPrepareBeforeSave:
             await hit(.presentationAdmission)
+        case .durablySavedBeforeCommit:
+            await hit(.durablySavedBeforeCommit)
         }
     }
 
     func receive(_ event: SchedulerTestEvent) async {
-        if case .presentationPrepared = event { await hit(.presentationPrepared) }
+        switch event {
+        case .presentationPrepared:
+            await hit(.presentationPrepared)
+        case .enqueued:
+            await hit(.queuedPermit)
+        default:
+            break
+        }
     }
 }
 
@@ -1512,6 +1526,19 @@ extension SharedSettingsWiringTests {
             config: .init(), preferences: .init(global: .init(fields: [rate: .integer(4)]))))
     }
 
+    private func t081EnvelopeWithActiveProfileAndInertImport() -> Data {
+        let profileID = UUID(uuidString: "81000000-0000-0000-0000-000000000001")!
+        let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+        let profile = SavedProfile(id: profileID, name: "Active", values: .init())
+        let inert = InertPortableSetting(scope: .global, profileID: nil,
+            id: "future.flag", value: .bool(true), valueKind: nil,
+            valueDigest: nil, redacted: false)
+        return try! SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 1,
+            config: .init(), preferences: .init(global: .init(fields: [rate: .integer(4)]),
+                                                profiles: [profile]),
+            activeProfileID: profileID, inertImports: [inert]))
+    }
+
     private func t081Bridge(_ scratch: A3Scratch, _ services: AppExecutionServices,
                             hook: T081BridgeGate) -> ExecutionPolicyBridge {
         ExecutionPolicyBridge(coordinator: services.coordinator, settings: services.settings,
@@ -1521,6 +1548,106 @@ extension SharedSettingsWiringTests {
 
     private func t081HeadroomRequirements() throws -> SchedulerRequirements {
         try SchedulerRequirements(features: [.headroom])
+    }
+
+    func testT081bGlobalCandidatePreservesActiveProfileAndInertImports() async throws {
+        try await run(seed: t081EnvelopeWithActiveProfileAndInertImport()) { scratch, services, _ in
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let batch = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: batch, baseValue: nil, editedValue: .integer(12))),
+                  case .saved(_, let saved) = await completion.value else {
+                return XCTFail("global update did not durably save")
+            }
+            let loadResult = await services.settings.load()
+            let durable = try XCTUnwrap(loadResult.envelope)
+            XCTAssertEqual(saved, durable)
+            XCTAssertNotNil(durable.activeProfileID)
+            XCTAssertEqual(durable.inertImports.count, 1)
+            let snapshot = await sessions.snapshot()
+            XCTAssertEqual(snapshot.settingsRevision, durable.revision)
+            _ = try await sessions.beginSession(requirements: self.t081HeadroomRequirements())
+        }
+    }
+
+    func testT081bCancellationAfterDurablePublicationAcknowledgesExactEnvelope() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            await hook.block(.durablySavedBeforeCommit)
+            let batch = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: batch, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("durable-cancellation setup was not admitted")
+            }
+            await hook.wait(for: .durablySavedBeforeCommit)
+
+            let loadResult = await services.settings.load()
+            let published = try XCTUnwrap(loadResult.envelope)
+            XCTAssertEqual(published.revision, 2)
+            completion.cancel()
+            await hook.release(.durablySavedBeforeCommit)
+
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("the published envelope was not acknowledged")
+            }
+            XCTAssertEqual(saved, published)
+            let snapshot = await bridge.explicitSessions.snapshot()
+            XCTAssertEqual(snapshot.settingsRevision, published.revision)
+        }
+    }
+
+    func testT081bQueuedPermitStaysClosedAcrossTwoAcceptedInvalidatingHandoffs() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let requirements = try self.t081HeadroomRequirements()
+            let active = try await sessions.beginSession(requirements: requirements)
+            let queued = try await sessions.beginSession(requirements: requirements)
+            let permits = T081PermitGate()
+            let activeTask = Task { try await sessions.withPermit(session: active) {
+                try await permits.hold(1, $0)
+            } }
+            await permits.wait(for: 1)
+            let queuedTask = Task { try await sessions.withPermit(session: queued) {
+                try await permits.hold(2, $0)
+            } }
+            await hook.wait(for: .queuedPermit)
+
+            await hook.block(.invalidatingTerminal)
+            let units = SettingID(rawValue: "ui.units")
+            let batch = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let first) = bridge.submit(global: .init(baseRevision: 1,
+                id: units, baseValue: nil, editedValue: .choice("decimal"))),
+                  case .accepted(_, let second) = bridge.submit(global: .init(baseRevision: 1,
+                id: batch, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("serialized invalidating handoffs were not admitted")
+            }
+            await hook.wait(for: .invalidatingTerminal)
+
+            await permits.release(1)
+            _ = try await activeTask.value
+            let queuedHasEntered = await permits.hasEntered(2)
+            XCTAssertFalse(queuedHasEntered)
+            let pending = await sessions.snapshot()
+            XCTAssertEqual(pending.queued, 1)
+
+            await hook.release(.invalidatingTerminal)
+            guard case .saved(_, let firstSaved) = await first.value,
+                  case .saved(_, let secondSaved) = await second.value else {
+                return XCTFail("serialized handoffs did not acknowledge durable envelopes")
+            }
+            XCTAssertEqual(firstSaved.revision, 2)
+            XCTAssertEqual(secondSaved.revision, 3)
+            await permits.wait(for: 2)
+            await permits.release(2)
+            _ = try await queuedTask.value
+        }
     }
 
     func testT081bInvalidatingAdmissionClosesFacadeBeforePrepareAndExactSave() async throws {
@@ -1540,7 +1667,7 @@ extension SharedSettingsWiringTests {
             let queuedTask = Task { try await sessions.withPermit(session: queued) {
                 try await permits.hold(2, $0)
             } }
-            await Task.yield()
+            await hook.wait(for: .queuedPermit)
 
             let before = try Data(contentsOf: scratch.paths.settings)
             await hook.block(.invalidatingAdmission)
@@ -1794,7 +1921,7 @@ extension SharedSettingsWiringTests {
             let queuedTask = Task { try await sessions.withPermit(session: queued) {
                 try await permits.hold(2, $0)
             } }
-            await Task.yield()
+            await hook.wait(for: .queuedPermit)
 
             await hook.block(.presentationPrepared)
             await hook.block(.presentationAdmission)

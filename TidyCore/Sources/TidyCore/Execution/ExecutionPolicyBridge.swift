@@ -22,6 +22,8 @@ public enum SettingsSubmissionAdmission: Sendable {
 internal enum ExecutionPolicyBridgeTestPoint: Hashable, Sendable {
     case acceptedAfterBarrierBeforePrepareAndSave(SettingsIntentID)
     case acceptedAfterPresentationPrepareBeforeSave(SettingsIntentID)
+    case durablySavedBeforeCommit(SettingsIntentID)
+    case terminalBeforeAdmissionHoldRelease(SettingsIntentID)
 }
 
 internal protocol ExecutionPolicyBridgeTestHook: Sendable {
@@ -96,6 +98,7 @@ public final class ExecutionPolicyBridge {
     private var schedulerAdmissionPendingCount = 0
     private var pendingSchedulerInvalidations: Set<SettingsIntentID> = []
     private var pendingSchedulerTickets: [SettingsIntentID: SchedulerAdmissionTicket] = [:]
+    private var pendingSchedulerHolds: [SettingsIntentID: SchedulerAdmissionHold] = [:]
 
     private enum SchedulerPreparation {
         case invalidating(PreparedSchedulerPolicy)
@@ -451,6 +454,20 @@ public final class ExecutionPolicyBridge {
             ticket = nil
         }
 
+        let schedulerHold: SchedulerAdmissionHold?
+        if presentation {
+            schedulerHold = nil
+        } else {
+            do {
+                schedulerHold = try schedulerController.acquireAdmissionHold(
+                    using: schedulerCapability)
+            } catch {
+                persistenceError = "Settings could not be applied. Cleanup remains disabled."
+                errorSequence = sequence
+                return .rejected(id, .unavailable)
+            }
+        }
+
         pendingSnapshotCount += 1
         pendingSnapshotBytes = retainedTotal
         pendingPayloadOrder.append(id)
@@ -459,6 +476,7 @@ public final class ExecutionPolicyBridge {
             schedulerAdmissionPendingCount += 1
             pendingSchedulerInvalidations.insert(id)
             if let schedulerTicket { pendingSchedulerTickets[id] = schedulerTicket }
+            if let schedulerHold { pendingSchedulerHolds[id] = schedulerHold }
         }
         rebuildPredictedSubmission()
         storageUpdatePending = true
@@ -484,6 +502,12 @@ public final class ExecutionPolicyBridge {
             let outcome = await perform(id: id, ticket: ticket,
                                         intentGeneration: intentGeneration,
                                         sequence: sequence)
+            await testHook?.receive(.terminalBeforeAdmissionHoldRelease(id))
+            let schedulerHold = pendingSchedulerHolds.removeValue(forKey: id)
+            if let schedulerHold {
+                await schedulerController.releaseAdmissionHold(schedulerHold,
+                                                               using: schedulerCapability)
+            }
             pendingPayloadOrder.removeAll { $0 == id }
             pendingPayloads[id] = nil
             if pendingSchedulerInvalidations.remove(id) != nil {
@@ -539,7 +563,7 @@ public final class ExecutionPolicyBridge {
                     saved = try await settings.commitImport(expectedRevision: expectedRevision,
                                                             previewID: preview.id)
                 }
-                try Task.checkCancellation()
+                await testHook?.receive(.durablySavedBeforeCommit(id))
                 return try await acceptSaved(saved, id: id, ticket: ticket,
                                              intentGeneration: intentGeneration, sequence: sequence,
                                              preparation: preparation)
@@ -872,7 +896,8 @@ public final class ExecutionPolicyBridge {
         let preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
             from: base, to: config, saved: envelope.preferences)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
-            revision: envelope.revision, config: config, preferences: preferences)
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: envelope.activeProfileID, inertImports: envelope.inertImports)
     }
 
     private func applyingGlobalPrediction(_ delta: GlobalPreferenceDelta,
@@ -883,7 +908,8 @@ public final class ExecutionPolicyBridge {
         let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
             replacing: prior, with: preferences.global)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
-            revision: envelope.revision, config: config, preferences: preferences)
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: envelope.activeProfileID, inertImports: envelope.inertImports)
     }
 
     private func importPrediction(_ candidate: PortableSettingsState,
