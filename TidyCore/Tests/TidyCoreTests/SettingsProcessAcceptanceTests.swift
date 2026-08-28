@@ -2,7 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 import Testing
-@testable import TidyCore
+@_spi(TidyCoreTesting) @testable import TidyCore
 
 private enum A2PError: Error { case invalid, missing, incomplete, timeout }
 private struct A2PFile: Equatable {
@@ -162,9 +162,9 @@ private actor A2PBuild {
         let args = ["swiftc", "-parse-as-library", "-swift-version", "5", "-Onone", "-j", "2", "-target", target,
                     "-module-name", "TidySettingsProcessFixture"] + sources.map(\.path) + ["-lsqlite3", "-o", output.path]
         try a2pWrite(try JSONEncoder().encode(args), root.appendingPathComponent("compiler-arguments.json"))
-        let compiler = try await ProcessSession.launch(ProcessRequest(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
+        let compiler = try await ProcessSession.launchForTesting(ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
             arguments: args, environment: a2pEnvironment(root: root),
-            kind: .readOnly, deadline: .seconds(120)), gate: ProcessJobGate(limit: 1), identityCapture: .failClosed)
+            kind: .readOnly, deadline: .seconds(120)), gate: ProcessJobGate.isolatedForTesting(limit: 1), identityCapture: .failClosed)
         retainedCompiler = compiler
         // The Controller may raise this bounded compiler budget after reviewing a real timeout.
         do {
@@ -200,14 +200,14 @@ private final class A2PRun {
         guard geteuid() != 0 else { throw A2PError.invalid }
         self.binary = binary
         root = try a2pRoot(); directory = root.appendingPathComponent("settings")
-        gate = try ProcessJobGate(limit: 2)
+        gate = try ProcessJobGate.isolatedForTesting(limit: 2)
         guard mkdir(directory.path, 0o700) == 0 else { throw A2PError.invalid }
         try a2pWrite(a2pLegacy(), directory.appendingPathComponent("config.json"))
     }
     func launch(_ mode: String) async throws -> (ProcessSession, URL) {
         let control = root.appendingPathComponent(UUID().uuidString)
         guard mkdir(control.path, 0o700) == 0 else { throw A2PError.invalid }
-        let session = try await ProcessSession.launch(ProcessRequest(executable: binary,
+        let session = try await ProcessSession.launchForTesting(ProcessTestRequest(executable: binary,
             arguments: [mode, root.path, control.lastPathComponent],
             environment: a2pEnvironment(root: root),
             kind: .readOnly, deadline: .seconds(10)), gate: gate, identityCapture: .failClosed)

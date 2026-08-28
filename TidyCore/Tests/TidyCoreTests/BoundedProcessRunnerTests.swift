@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import Testing
-@testable import TidyCore
+@_spi(TidyCoreTesting) @testable import TidyCore
 
 private enum FixtureError: Error { case observationIncomplete, markerMissing }
 private func fixtureEnvironment(root: URL) throws -> [String: String] {
@@ -125,11 +125,11 @@ private final class ProcessScratch: @unchecked Sendable {
             .appendingPathComponent("Fixtures/T04ProcessFixture.c")
         let buildEnvironment = try fixtureEnvironment(root: build)
         inheritedHome = buildEnvironment["HOME"]!
-        let request = ProcessRequest(executable: URL(fileURLWithPath: "/usr/bin/clang"),
+        let request = ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/clang"),
             arguments: ["-O0", "-Wall", source.path, "-o", binary.path],
             environment: buildEnvironment,
             kind: .readOnly, deadline: .seconds(30))
-        let compiler = try await ProcessSession.launch(request, gate: ProcessJobGate(limit: 1))
+        let compiler = try await ProcessSession.launchForTesting(request, gate: ProcessJobGate.isolatedForTesting(limit: 1))
         let output = await compiler.collect()
         // Evidence only; successful writes do not replace compiler/reap checks.
         // On any write error the root stays intact and the production session
@@ -152,10 +152,10 @@ private final class ProcessScratch: @unchecked Sendable {
         if orphan { unobservedDescendants += 1 }; lock.unlock()
     }
     private func markAmbiguousLaunch() { lock.lock(); ambiguousLaunch = true; lock.unlock() }
-    func launch(_ request: ProcessRequest, gate: ProcessJobGate,
+    func launch(_ request: ProcessTestRequest, gate: ProcessJobGate,
                 identityCapture: ProcessIdentityCapture = .system) async throws -> ProcessSession {
         do {
-            let session = try await ProcessSession.launch(request, gate: gate,
+            let session = try await ProcessSession.launchForTesting(request, gate: gate,
                                                           identityCapture: identityCapture)
             add(session, orphan: request.arguments.first == "orphan")
             return session
@@ -179,8 +179,8 @@ private final class ProcessScratch: @unchecked Sendable {
     func environment(for root: URL) -> [String: String] {
         ["HOME": inheritedHome, "PATH": "/usr/bin:/bin", "TMPDIR": root.path]
     }
-    func request(_ mode: String, _ kind: ProcessJobKind, seconds: Double = 5) -> ProcessRequest {
-        ProcessRequest(executable: binary, arguments: [mode, root.path],
+    func request(_ mode: String, _ kind: ProcessTestJobKind, seconds: Double = 5) -> ProcessTestRequest {
+        ProcessTestRequest(executable: binary, arguments: [mode, root.path],
             environment: environment(for: root),
             kind: kind, deadline: .seconds(seconds))
     }
@@ -245,7 +245,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func bothStreamsDrainWithBoundedRetention() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("flood", .readOnly),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             let out = await session.collect()
             #expect(out.end == .exited(0))
             #expect(out.stdout.bytes.count == 1_048_576)
@@ -258,7 +258,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
         try await withProcessScratch { s in
             let start = ContinuousClock.now
             let session = try await s.launch(s.request("orphan", .mutation, seconds: 0.4),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try await s.registerOrphanBeforeParentExit(session)
             let out = await session.collect()
             #expect(out.end == .uncertainAndPossiblyRunning)
@@ -270,7 +270,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func mutatingTimeoutLeavesActualChildRunning() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("slow", .mutation, seconds: 0.2),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             let out = await session.collect()
             #expect(out.end == .uncertainAndPossiblyRunning)
             #expect(session.observationSnapshot().signalAttempts == 0)
@@ -288,7 +288,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func abandonmentBeforeReleaseDoesNotPerformFixtureEffect() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("gated", .mutation),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try await s.waitFor("ready")
             #expect(!s.has("effect"))
             session.abandonWithoutSignal()
@@ -299,7 +299,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func abandonmentAfterReleaseDoesNotEraseSurvivingEffect() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("gated", .mutation),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try await s.waitFor("ready")
             try session.releaseStartByte()
             try await s.waitFor("effect")
@@ -330,7 +330,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
                 executableInode: UInt64(metadata.st_ino), childPID: nil, childStartSeconds: nil,
                 childStartMicroseconds: nil, phase: .prepared))
             let session = try await s.launch(s.request("gated", .mutation),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try await s.waitFor("ready")
             let child = try #require(session.identity)
             try journal.recordChild(PendingEffectIntent(runID: run, operationID: operation,
@@ -354,8 +354,8 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     }
     @Test func queuedCancellationNeverLaunchesChild() async throws {
         try await withProcessScratch { s in
-            let gate = try ProcessJobGate(limit: 1)
-            let reservation = try await gate.acquire()
+            let gate = try ProcessJobGate.isolatedForTesting(limit: 1)
+            let reservation = try await gate.acquireForTesting()
             let receipt = QueueReceipt()
             let queued = Task {
                 do {
@@ -389,16 +389,16 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
         }
     }
     @Test func releasedSlotIsTransferredBeforeWaiterResumes() async throws {
-        let gate = try ProcessJobGate(limit: 1)
-        let first = try await gate.acquire()
-        let queued = Task { try await gate.acquire() }
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 1)
+        let first = try await gate.acquireForTesting()
+        let queued = Task { try await gate.acquireForTesting() }
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
         while await gate.snapshot().queued != 1, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(1))
         }
         #expect(await gate.snapshot().queued == 1)
         await gate.release(first)
-        let newcomer = Task { try await gate.acquire() }
+        let newcomer = Task { try await gate.acquireForTesting() }
         let second = try await queued.value
         let nextDeadline = ContinuousClock.now.advanced(by: .seconds(1))
         while await gate.snapshot().queued != 1, ContinuousClock.now < nextDeadline {
@@ -412,12 +412,12 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
         #expect(await gate.snapshot().active == 0)
     }
     @Test func transferRacingCancellationDoesNotLeakOrDuplicateReservation() async throws {
-        let gate = try ProcessJobGate(limit: 1)
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 1)
         for _ in 0..<25 {
-            let first = try await gate.acquire()
+            let first = try await gate.acquireForTesting()
             let receipt = QueueReceipt()
             let queued = Task {
-                do { await receipt.record(.granted(try await gate.acquire())) }
+                do { await receipt.record(.granted(try await gate.acquireForTesting())) }
                 catch is CancellationError { await receipt.record(.cancelled) }
                 catch { await receipt.record(.failed) }
             }
@@ -434,7 +434,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
             }
             #expect(await gate.snapshot().active == 0)
             #expect(await gate.snapshot().queued == 0)
-            let next = try await gate.acquire()
+            let next = try await gate.acquireForTesting()
             await gate.release(next)
         }
     }
@@ -464,7 +464,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func reusedPIDShapeCannotMatchActualIdentity() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("slow", .mutation),
-                                                         gate: ProcessJobGate(limit: 1))
+                                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             let actual = try #require(session.identity)
             let mismatched = ProcessInstanceIdentity(bootID: actual.bootID, pid: actual.pid,
                 startSeconds: actual.startSeconds + 1, startMicroseconds: actual.startMicroseconds,
@@ -479,7 +479,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     func identityCaptureFailureStillReapsActualFastChild(_ item: (String, Int32)) async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request(item.0, .readOnly),
-                gate: ProcessJobGate(limit: 1), identityCapture: .failClosed)
+                gate: ProcessJobGate.isolatedForTesting(limit: 1), identityCapture: .failClosed)
             #expect(session.identity == nil)
             let output = await session.collect()
             #expect(output.identity == nil && output.end == .exited(item.1))
@@ -497,7 +497,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func identityCaptureFailureCannotSignalAtDeadline() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("slow", .readOnly, seconds: 0.2),
-                gate: ProcessJobGate(limit: 1), identityCapture: .failClosed)
+                gate: ProcessJobGate.isolatedForTesting(limit: 1), identityCapture: .failClosed)
             let output = await session.collect()
             #expect(output.end == .readOnlyTimedOut && output.identity == nil)
             #expect(session.observationSnapshot().signalAttempts == 0)
@@ -510,7 +510,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test(arguments: [("exit-zero", Int32(0)), ("exit-seven", Int32(7))])
     func actualFastExitIsCached(_ item: (String, Int32)) async throws {
         try await withProcessScratch { s in
-            let session = try await s.launch(s.request(item.0, .readOnly), gate: ProcessJobGate(limit: 1))
+            let session = try await s.launch(s.request(item.0, .readOnly), gate: ProcessJobGate.isolatedForTesting(limit: 1))
             let output = await session.collect()
             #expect(output.end == .exited(item.1))
             #expect(output.identity == session.identity)
@@ -531,7 +531,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func reapedChildCannotSignalAtLaterDeadline() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("exit-zero", .readOnly, seconds: 0.5),
-                                             gate: ProcessJobGate(limit: 1))
+                                             gate: ProcessJobGate.isolatedForTesting(limit: 1))
             #expect(await session.collect().end == .exited(0))
             _ = try await requireOwnedStatus(session)
             let before = session.observationSnapshot()
@@ -548,7 +548,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     func realOutputIsBoundedAndTruthful(_ mode: String) async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request(mode, .readOnly, seconds: 15),
-                                             gate: ProcessJobGate(limit: 1))
+                                             gate: ProcessJobGate.isolatedForTesting(limit: 1))
             let captured = await session.collect()
             #expect(captured.end == .exited(0))
             #expect(captured.stdout.eofObserved && captured.stderr.eofObserved)
@@ -574,7 +574,7 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
     @Test func inheritedPipeDeadlineIsNotCommandTimeout() async throws {
         try await withProcessScratch { s in
             let session = try await s.launch(s.request("orphan", .readOnly, seconds: 8),
-                                             gate: ProcessJobGate(limit: 1))
+                                             gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try await s.registerOrphanBeforeParentExit(session)
             let start = ContinuousClock.now
             let captured = await session.collect()
@@ -617,10 +617,10 @@ private func waitForReceipt(_ receipt: QueueReceipt) async throws -> QueueReceip
             foundation = try FoundationExitWitness(executable: s.binary, root: s.root)
             try ProcessSession.validateChildWaitDisposition()
             session = try await s.launch(s.request("slow", .readOnly, seconds: 8),
-                                         gate: ProcessJobGate(limit: 1))
+                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
         } else {
             session = try await s.launch(s.request("slow", .readOnly, seconds: 8),
-                                         gate: ProcessJobGate(limit: 1))
+                                         gate: ProcessJobGate.isolatedForTesting(limit: 1))
             try ProcessSession.validateChildWaitDisposition()
             foundation = try FoundationExitWitness(executable: s.binary, root: s.root)
         }

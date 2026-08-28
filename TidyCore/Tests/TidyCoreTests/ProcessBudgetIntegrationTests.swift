@@ -1,11 +1,20 @@
 import Foundation
 import Testing
-@testable import TidyCore
+@_spi(TidyCoreTesting) @testable import TidyCore
 
 private actor BudgetReceipt {
     private var values: [Int] = []
     func append(_ value: Int) { values.append(value) }
     func snapshot() -> [Int] { values }
+}
+
+private func waitForBudgetReceipt(_ receipt: BudgetReceipt, count: Int) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while ContinuousClock.now < deadline {
+        if await receipt.snapshot().count == count { return }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+    Issue.record("process-budget receipt did not reach the expected count")
 }
 
 private func waitForBudgetQueue(_ gate: ProcessJobGate, readers: Int? = nil,
@@ -18,6 +27,32 @@ private func waitForBudgetQueue(_ gate: ProcessJobGate, readers: Int? = nil,
         try await Task.sleep(for: .milliseconds(1))
     }
     Issue.record("process-budget queue did not reach the expected state")
+}
+
+private func compileRawLaunchProbe(_ source: String) async throws -> BoundedProcessOutput {
+    let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let package = tests.deletingLastPathComponent().deletingLastPathComponent()
+    let modules = package.appendingPathComponent(".build/debug")
+    let module = modules.appendingPathComponent("TidyCore.swiftmodule")
+    guard FileManager.default.fileExists(atPath: module.path) else {
+        throw CocoaError(.fileNoSuchFile)
+    }
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tidy-t083-capability-\(UUID())", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let probe = root.appendingPathComponent("RawLaunchProbe.swift")
+    try Data(source.utf8).write(to: probe, options: .withoutOverwriting)
+    let cache = root.appendingPathComponent("module-cache", isDirectory: true)
+    let arguments = ["swiftc", "-typecheck", "-swift-version", "5", "-enable-testing",
+                     "-I", modules.path, "-module-cache-path", cache.path, probe.path]
+    let request = ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
+        arguments: arguments, environment: ProcessRunner.minimalEnvironment,
+        kind: .readOnly, deadline: .seconds(30))
+    let session = try await ProcessSession.launchForTesting(request,
+        gate: ProcessJobGate.isolatedForTesting(limit: 1),
+                                                  identityCapture: .failClosed)
+    return await session.collect()
 }
 
 @Suite(.serialized)
@@ -45,7 +80,7 @@ struct ProcessBudgetIntegrationTests {
             resolvedReadOnlyCap: recovered.effectiveReadOnlyProcesses) == .applied)
         #expect(await ProcessJobGate.shared.snapshot().readOnlyCap == 2)
 
-        let gate = try ProcessJobGate(limit: 2)
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2)
         let first = ProcessPolicyRevision(settings: 7, observation: 3)
         #expect(await gate.applyReadOnlyCap(0, revision: first) == .applied)
         #expect(await gate.applyReadOnlyCap(1, revision: first) == .rejectedStale(current: first))
@@ -60,14 +95,14 @@ struct ProcessBudgetIntegrationTests {
     }
 
     @Test func zeroPausesReadersWithoutRevokingWorkOrChangingMutatorOwnership() async throws {
-        let gate = try ProcessJobGate(limit: 2)
-        let runningReader = try await gate.acquire(kind: .readOnly)
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2)
+        let runningReader = try await gate.acquireForTesting(kind: .readOnly)
         #expect(await gate.applyReadOnlyCap(0,
             revision: .init(settings: 1, observation: 1)) == .applied)
 
-        let queuedReader = Task { try await gate.acquire(kind: .readOnly) }
+        let queuedReader = Task { try await gate.acquireForTesting(kind: .readOnly) }
         try await waitForBudgetQueue(gate, readers: 1)
-        let mutator = try await gate.acquire(kind: .mutation)
+        let mutator = try await gate.acquireForTesting(kind: .mutation)
         var snapshot = await gate.snapshot()
         #expect(snapshot.activeReaders == 1)
         #expect(snapshot.activeMutators == 1)
@@ -88,11 +123,50 @@ struct ProcessBudgetIntegrationTests {
         await gate.release(resumed)
     }
 
+    @Test func fullPausedReaderQueueCannotRejectEligibleMutator() async throws {
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2, queueLimit: 2)
+        #expect(await gate.applyReadOnlyCap(0,
+            revision: .init(settings: 1, observation: 0)) == .applied)
+        let receipt = BudgetReceipt()
+        let readerA = Task<UUID?, Never> {
+            do { return try await gate.acquireForTesting(kind: .readOnly) }
+            catch { return nil }
+        }
+        try await waitForBudgetQueue(gate, readers: 1)
+        let readerB = Task<UUID?, Never> {
+            do { return try await gate.acquireForTesting(kind: .readOnly) }
+            catch { return nil }
+        }
+        try await waitForBudgetQueue(gate, readers: 2)
+
+        let mutator = Task<UUID?, Never> {
+            do {
+                let reservation = try await gate.acquireForTesting(kind: .mutation)
+                await receipt.append(1)
+                return reservation
+            } catch {
+                await receipt.append(-1)
+                return nil
+            }
+        }
+        try await waitForBudgetReceipt(receipt, count: 1)
+        let mutatorReservation = await mutator.value
+        #expect(await receipt.snapshot() == [1])
+        #expect(mutatorReservation != nil)
+        if let mutatorReservation { await gate.release(mutatorReservation) }
+
+        readerA.cancel(); readerB.cancel()
+        #expect(await readerA.value == nil)
+        #expect(await readerB.value == nil)
+        try await waitForBudgetQueue(gate, readers: 0)
+        #expect(await gate.snapshot().active == 0)
+    }
+
     @Test func aggregateTwoAndReaderOneCapsComposeWithoutASecondGate() async throws {
-        let gate = try ProcessJobGate(limit: 2)
-        let readerA = try await gate.acquire(kind: .readOnly)
-        let readerB = try await gate.acquire(kind: .readOnly)
-        let mutatorTask = Task { try await gate.acquire(kind: .mutation) }
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2)
+        let readerA = try await gate.acquireForTesting(kind: .readOnly)
+        let readerB = try await gate.acquireForTesting(kind: .readOnly)
+        let mutatorTask = Task { try await gate.acquireForTesting(kind: .mutation) }
         try await waitForBudgetQueue(gate, mutators: 1)
         await gate.release(readerA)
         let mutator = try await mutatorTask.value
@@ -103,10 +177,10 @@ struct ProcessBudgetIntegrationTests {
 
         #expect(await gate.applyReadOnlyCap(1,
             revision: .init(settings: 1, observation: 0)) == .applied)
-        let serializedA = try await gate.acquire(kind: .readOnly)
-        let serializedBTask = Task { try await gate.acquire(kind: .readOnly) }
+        let serializedA = try await gate.acquireForTesting(kind: .readOnly)
+        let serializedBTask = Task { try await gate.acquireForTesting(kind: .readOnly) }
         try await waitForBudgetQueue(gate, readers: 1)
-        let concurrentMutator = try await gate.acquire(kind: .mutation)
+        let concurrentMutator = try await gate.acquireForTesting(kind: .mutation)
         snapshot = await gate.snapshot()
         #expect(snapshot.activeReaders == 1 && snapshot.activeMutators == 1)
         #expect(snapshot.queuedReaders == 1)
@@ -117,33 +191,75 @@ struct ProcessBudgetIntegrationTests {
     }
 
     @Test func cancelledReaderLeavesEligibleFIFOOrderExact() async throws {
-        let gate = try ProcessJobGate(limit: 2)
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2)
         #expect(await gate.applyReadOnlyCap(0,
             revision: .init(settings: 1, observation: 0)) == .applied)
         let receipt = BudgetReceipt()
-        let tasks: [Task<UUID?, Never>] = (0..<3).map { value in
-            Task<UUID?, Never> {
+        var tasks: [Task<UUID?, Never>] = []
+        for value in 0..<3 {
+            tasks.append(Task<UUID?, Never> {
                 do {
-                    let reservation = try await gate.acquire(kind: .readOnly)
+                    let reservation = try await gate.acquireForTesting(kind: .readOnly)
                     await receipt.append(value)
                     return reservation
                 } catch { return nil }
-            }
+            })
+            try await waitForBudgetQueue(gate, readers: value + 1)
         }
-        try await waitForBudgetQueue(gate, readers: 3)
         tasks[1].cancel()
         try await waitForBudgetQueue(gate, readers: 2)
         #expect(await gate.applyReadOnlyCap(1,
             revision: .init(settings: 1, observation: 1)) == .applied)
-        let first = try #require(await tasks[0].value)
+        let first = await tasks[0].value
         #expect(await receipt.snapshot() == [0])
-        await gate.release(first)
-        let third = try #require(await tasks[2].value)
+        if let first { await gate.release(first) }
+        else { Issue.record("oldest queued reader was not granted") }
+        let third = await tasks[2].value
         #expect(await receipt.snapshot() == [0, 2])
-        await gate.release(third)
+        if let third { await gate.release(third) }
+        else { Issue.record("oldest surviving queued reader was not granted") }
         #expect(await tasks[1].value == nil)
         #expect(await gate.snapshot().active == 0)
         #expect(await gate.snapshot().queued == 0)
+    }
+
+    @Test func rawMutationGateAndSessionLaunchDoNotCompileForImporters() async throws {
+        let output = try await compileRawLaunchProbe("""
+        import Foundation
+        @testable import TidyCore
+
+        func bypassCompiledDescriptors() async throws {
+            let request = ProcessRequest(
+                executable: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [], environment: [:], kind: .mutation,
+                deadline: .seconds(1))
+            let gate = try ProcessJobGate(limit: 1)
+            _ = try await ProcessSession.launch(request, gate: gate)
+
+            _ = ProcessRunner.AuthorizedLaunch(
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [], environment: [:], kind: .mutation,
+                deadline: .seconds(1))
+        }
+        """)
+        #expect(output.end != .exited(0))
+        let diagnostics = String(decoding: output.stderr.bytes, as: UTF8.self)
+        #expect(diagnostics.contains("ProcessRequest"))
+        #expect(diagnostics.contains("ProcessJobGate") || diagnostics.contains("ProcessSession"))
+        #expect(diagnostics.contains("AuthorizedLaunch"))
+        #expect(diagnostics.contains("fileprivate"))
+    }
+
+    @Test func testSPIIsolatedLaunchCannotTargetProductionGate() async throws {
+        let request = ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/true"),
+            arguments: [], environment: ProcessRunner.minimalEnvironment,
+            kind: .readOnly, deadline: .seconds(1))
+        do {
+            _ = try await ProcessSession.launchForTesting(request, gate: ProcessJobGate.shared)
+            Issue.record("test SPI unexpectedly launched against the production gate")
+        } catch let error as POSIXError {
+            #expect(error.code == .EPERM)
+        }
     }
 
     @Test func undeclaredForgedAndNestedLaunchesRejectBeforeGateActivity() async throws {
@@ -171,12 +287,12 @@ struct ProcessBudgetIntegrationTests {
     }
 
     @Test func twentyDirectChildCyclesReturnEveryLeaseAndOwnedDescriptor() async throws {
-        let gate = try ProcessJobGate(limit: 2)
+        let gate = try ProcessJobGate.isolatedForTesting(limit: 2)
         for _ in 0..<20 {
-            let request = ProcessRequest(executable: URL(fileURLWithPath: "/usr/bin/true"),
+            let request = ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/true"),
                 arguments: [], environment: ProcessRunner.minimalEnvironment,
                 kind: .readOnly, deadline: .seconds(5))
-            let session = try await ProcessSession.launch(request, gate: gate)
+            let session = try await ProcessSession.launchForTesting(request, gate: gate)
             #expect(await session.collect().end == .exited(0))
             #expect(session.retainedDescriptorCountForTesting() == 0)
             #expect(await gate.snapshot().active == 0)
@@ -200,11 +316,22 @@ struct ProcessBudgetIntegrationTests {
         }
         let runner = try String(contentsOf: sources.appendingPathComponent("Exec/ProcessRunner.swift"),
                                 encoding: .utf8)
+        let session = try String(contentsOf: sources.appendingPathComponent("Exec/ProcessSession.swift"),
+                                 encoding: .utf8)
         let gate = try String(contentsOf: sources.appendingPathComponent("Exec/ProcessJobGate.swift"),
                               encoding: .utf8)
         #expect(runner.contains("ProcessJobGate.shared"))
         #expect(!runner.contains("ProcessJobGate(limit:"))
+        #expect(runner.contains("fileprivate init(_ declaration: DeclaredInvocation"))
         #expect(gate.contains("static let shared"))
+        #expect(gate.contains("private init(limit:"))
+        #expect(gate.contains("purpose: .production"))
+        #expect(gate.contains("purpose: .testing"))
+        #expect(session.contains("static func launch(_ authorization: ProcessRunner.AuthorizedLaunch"))
+        #expect(session.contains("let gate = ProcessJobGate.shared"))
+        #expect(session.contains("@_spi(TidyCoreTesting)"))
+        #expect(!session.contains("struct ProcessRequest"))
+        #expect(!session.contains("enum ProcessJobKind"))
         #expect(!runner.contains("descendantsBounded:"))
     }
 }
