@@ -18,16 +18,19 @@ struct TestHostApp: App {
 
 private enum FixtureSurface: String, CaseIterable, Identifiable {
     case safe = "Safe", normal = "Normal", deep = "Deep", custom = "Custom"
+    case settings = "Settings"
     var id: String { rawValue }
-    var tier: Tier {
+    var cleanupTier: Tier? {
         switch self {
         case .safe: .safe
         case .normal: .normal
         case .deep, .custom: .deep
+        case .settings: nil
         }
     }
 }
 
+@MainActor
 private enum ReviewFixtures {
     static let marker = "TIDY_MANUAL_FIXTURE_HOST_ONLY"
     static let presets = [
@@ -37,7 +40,11 @@ private enum ReviewFixtures {
         ])
     ]
     static func plan(for surface: FixtureSurface) -> CleanPlan {
-        var rows = CleanCatalog.allItems.filter { $0.tier <= surface.tier }.map { item -> PlannedItem in
+        guard let tier = surface.cleanupTier else {
+            return CleanPlan(tier: .safe, plannedItems: [],
+                             generatedAt: Date(timeIntervalSince1970: 0))
+        }
+        var rows = CleanCatalog.allItems.filter { $0.tier <= tier }.map { item -> PlannedItem in
             let status: ReviewStatus
             let reason: String
             if case .unavailable(let tombstoneReason) = item.action {
@@ -79,8 +86,10 @@ private enum ReviewFixtures {
                     reason: reason, requiresPerRunOptIn: false)
             ))
         }
-        return CleanPlan(tier: surface.tier, plannedItems: rows, generatedAt: Date(timeIntervalSince1970: 0))
+        return CleanPlan(tier: tier, plannedItems: rows, generatedAt: Date(timeIntervalSince1970: 0))
     }
+
+    static let settingsRows = SettingsSurfaceModel.fixtureRows(bundle: .main)
 }
 
 @MainActor
@@ -89,7 +98,8 @@ private struct FixtureChooser: View {
     @State private var surface: FixtureSurface = .safe
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Manual fixtures: no discovery, settings or cleanup").font(.headline)
+            Text("Manual fixtures: no discovery, persistence, settings write or cleanup.")
+                .font(.headline)
             Text("Descriptive data, not findings about this Mac. All actions are unavailable, blocked or no-work.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Review surface", selection: $surface) {
@@ -98,7 +108,11 @@ private struct FixtureChooser: View {
                 }
             }
             .pickerStyle(.segmented)
-            FixtureReviewSurface(surface: surface).id(surface)
+            if surface == .settings {
+                SettingsFixtureSurface()
+            } else {
+                FixtureReviewSurface(surface: surface).id(surface)
+            }
             Text("\(ReviewFixtures.marker) · \(Int(observedContentSize.width.rounded())) × \(Int(observedContentSize.height.rounded())) pt")
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -131,6 +145,39 @@ private struct FixtureReviewSurface: View {
             } else {
                 CleanPlanView(selection: selection, onConfirm: {})
             }
+        }
+    }
+}
+
+@MainActor
+private struct SettingsFixtureSurface: View {
+    @State private var dark = false
+    @State private var compactWidth = false
+    @State private var accessibilityText = false
+    @State private var submissions = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Picker("Scheme", selection: $dark) {
+                    Text("Light").tag(false); Text("Dark").tag(true)
+                }.accessibilityIdentifier("fixture.settings.scheme")
+                Picker("Width", selection: $compactWidth) {
+                    Text("620").tag(false); Text("480").tag(true)
+                }.accessibilityIdentifier("fixture.settings.width")
+                Picker("Text size", selection: $accessibilityText) {
+                    Text("Default").tag(false); Text("Accessibility 3").tag(true)
+                }.accessibilityIdentifier("fixture.settings.textSize")
+            }
+            Text("Fixture submissions: \(submissions)")
+                .accessibilityIdentifier("fixture.settings.submissions")
+            RegistrySettingsSurface(rows: ReviewFixtures.settingsRows) { _, _ in
+                submissions += 1
+            }
+            .frame(width: compactWidth ? 480 : 620)
+            .environment(\.dynamicTypeSize, accessibilityText ? .accessibility3 : .large)
+            .preferredColorScheme(dark ? .dark : .light)
+            .accessibilityIdentifier("fixture.settings.surface")
         }
     }
 }
