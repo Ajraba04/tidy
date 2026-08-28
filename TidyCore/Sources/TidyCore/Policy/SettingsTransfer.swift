@@ -1,11 +1,11 @@
 import CryptoKit
 import Foundation
 
-public enum InertScope: String, Equatable, Sendable { case global, profile }
+public enum InertScope: String, Codable, Equatable, Sendable { case global, profile }
 public enum InertSafeValue: Equatable, Sendable { case bool(Bool), integer(Int64), null }
-public enum RedactedValueKind: String, Equatable, Sendable { case choice, strings, volume }
+public enum RedactedValueKind: String, Codable, Equatable, Sendable { case choice, strings, volume }
 
-public struct InertPortableSetting: Equatable, Sendable {
+public struct InertPortableSetting: Codable, Equatable, Sendable {
     public let scope: InertScope
     public let profileID: UUID?
     public let id: String
@@ -18,6 +18,61 @@ public struct InertPortableSetting: Equatable, Sendable {
                 valueKind: RedactedValueKind?, valueDigest: String?, redacted: Bool) {
         self.scope = scope; self.profileID = profileID; self.id = id; self.value = value
         self.valueKind = valueKind; self.valueDigest = valueDigest; self.redacted = redacted
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case scope, profileID, id, value, valueKind, valueDigest, redacted
+    }
+    private enum ValueKeys: String, CodingKey { case bool, integer, null }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard Set(container.allKeys) == Set(CodingKeys.allCases) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                     debugDescription: "Invalid inert keys"))
+        }
+        scope = try container.decode(InertScope.self, forKey: .scope)
+        profileID = try container.decodeIfPresent(UUID.self, forKey: .profileID)
+        id = try container.decode(String.self, forKey: .id)
+        valueKind = try container.decodeIfPresent(RedactedValueKind.self, forKey: .valueKind)
+        valueDigest = try container.decodeIfPresent(String.self, forKey: .valueDigest)
+        redacted = try container.decode(Bool.self, forKey: .redacted)
+        if try container.decodeNil(forKey: .value) {
+            value = nil
+        } else {
+            let nested = try container.nestedContainer(keyedBy: ValueKeys.self, forKey: .value)
+            guard nested.allKeys.count == 1, let key = nested.allKeys.first else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                         debugDescription: "Invalid inert value"))
+            }
+            switch key {
+            case .bool: value = .bool(try nested.decode(Bool.self, forKey: .bool))
+            case .integer: value = .integer(try nested.decode(Int64.self, forKey: .integer))
+            case .null:
+                guard try nested.decode(Bool.self, forKey: .null) else {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                             debugDescription: "Invalid null marker"))
+                }
+                value = .null
+            }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(profileID, forKey: .profileID)
+        try container.encode(id, forKey: .id)
+        try container.encode(valueKind, forKey: .valueKind)
+        try container.encode(valueDigest, forKey: .valueDigest)
+        try container.encode(redacted, forKey: .redacted)
+        guard let value else { try container.encodeNil(forKey: .value); return }
+        var nested = container.nestedContainer(keyedBy: ValueKeys.self, forKey: .value)
+        switch value {
+        case .bool(let value): try nested.encode(value, forKey: .bool)
+        case .integer(let value): try nested.encode(value, forKey: .integer)
+        case .null: try nested.encode(true, forKey: .null)
+        }
     }
 }
 
@@ -69,22 +124,46 @@ public struct ProfileImportCollision: Equatable, Sendable {
 }
 
 public struct SettingsImportAnalysis: Equatable, Sendable {
+    public let analysisID: UUID?
     public let rows: [SettingsImportRow]
     public let collisions: [ProfileImportCollision]
     internal let committableImported: PolicyPreferences
     internal let importedInert: [InertPortableSetting]
     internal let current: PortableSettingsState
 
-    internal init(rows: [SettingsImportRow], collisions: [ProfileImportCollision],
+    internal init(analysisID: UUID? = nil, rows: [SettingsImportRow], collisions: [ProfileImportCollision],
                   committableImported: PolicyPreferences,
                   importedInert: [InertPortableSetting], current: PortableSettingsState) {
-        self.rows = rows; self.collisions = collisions
+        self.analysisID = analysisID; self.rows = rows; self.collisions = collisions
         self.committableImported = committableImported; self.importedInert = importedInert
         self.current = current
     }
 }
 
 public enum ProfileCollisionChoice: Equatable, Sendable { case keepLocal, replace, clone(UUID) }
+
+public typealias SettingsImportAnalysisID = UUID
+public typealias SettingsImportPreviewID = UUID
+
+public struct SettingsImportPreview: Equatable, Sendable {
+    public let id: SettingsImportPreviewID
+    public let analysisID: SettingsImportAnalysisID
+    public let rows: [SettingsImportRow]
+    public let collisions: [ProfileImportCollision]
+    public let choices: [UUID: ProfileCollisionChoice]
+    public let candidate: PortableSettingsState
+    public let sourceDigest: String
+    public let candidateDigest: String
+
+    internal init(id: SettingsImportPreviewID, analysisID: SettingsImportAnalysisID,
+                  rows: [SettingsImportRow], collisions: [ProfileImportCollision],
+                  choices: [UUID: ProfileCollisionChoice], candidate: PortableSettingsState,
+                  sourceDigest: String, candidateDigest: String) {
+        self.id = id; self.analysisID = analysisID; self.rows = rows
+        self.collisions = collisions; self.choices = choices; self.candidate = candidate
+        self.sourceDigest = sourceDigest; self.candidateDigest = candidateDigest
+    }
+}
 
 public struct ResolvedSettingsImport: Equatable, Sendable {
     public let candidate: PortableSettingsState
@@ -244,6 +323,18 @@ public enum SettingsTransfer {
         catch let error as SettingsTransferError { throw error }
         catch is StrictJSONError { throw SettingsTransferError.malformed }
         catch { throw SettingsTransferError.invalidDocument }
+    }
+
+    static func validatePersistedState(_ state: PortableSettingsState) throws {
+        try validateRawStringBounds(state)
+        try validateCandidate(state)
+    }
+
+    static func issuedAnalysis(_ analysis: SettingsImportAnalysis,
+                               identity: SettingsImportAnalysisID) -> SettingsImportAnalysis {
+        SettingsImportAnalysis(analysisID: identity, rows: analysis.rows,
+            collisions: analysis.collisions, committableImported: analysis.committableImported,
+            importedInert: analysis.importedInert, current: analysis.current)
     }
 
     private static func analyze(_ value: StrictJSON.Value,
@@ -415,7 +506,7 @@ public enum SettingsTransfer {
                                  inherited: sanitized.preferences.global))
             }.sorted { $0.id.uuidString < $1.id.uuidString }
         } catch { throw SettingsTransferError.invalidDocument }
-        do { try validateCandidate(sanitized) }
+        do { try validateCandidate(sanitized, enforcePortableGlobalDefaults: true) }
         catch { throw SettingsTransferError.invalidDocument }
         let root: StrictJSON.Value = .object([
             "schemaVersion": .number("1"),
@@ -501,7 +592,8 @@ public enum SettingsTransfer {
         return true
     }
 
-    private static func validateCandidate(_ state: PortableSettingsState) throws {
+    private static func validateCandidate(_ state: PortableSettingsState,
+                                          enforcePortableGlobalDefaults: Bool = false) throws {
         guard state.preferences.profiles.count <= 50, state.inertImports.count <= 1_000 else {
             throw SettingsTransferError.invalidDocument
         }
@@ -515,8 +607,12 @@ public enum SettingsTransfer {
             throw SettingsTransferError.invalidDocument
         }
         try add(state.preferences.global.fields.count)
-        try PolicyRestrictionValidator.validate(state.preferences.global,
-                                                 inherited: .init(), at: .global)
+        if enforcePortableGlobalDefaults {
+            try PolicyRestrictionValidator.validate(state.preferences.global,
+                                                     inherited: .init(), at: .global)
+        } else {
+            try PolicyValidator.validateStructure(state.preferences.global, at: .global)
+        }
         try validateValueStringBounds(state.preferences.global)
         if let id = relationError(global: state.preferences.global, overlay: .init()) {
             throw PolicyFieldError(id: id, reason: .invalidRelation)

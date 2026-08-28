@@ -11,13 +11,45 @@ public struct SettingsEnvelope: Codable, Equatable, Sendable {
     public let revision: UInt64
     public let config: TidyConfig
     public let preferences: PolicyPreferences?
+    public let activeProfileID: UUID?
+    public let inertImports: [InertPortableSetting]
 
     public init(schemaVersion: Int, revision: UInt64, config: TidyConfig,
-                preferences: PolicyPreferences? = nil) {
+                preferences: PolicyPreferences? = nil, activeProfileID: UUID? = nil,
+                inertImports: [InertPortableSetting] = []) {
         self.schemaVersion = schemaVersion
         self.revision = revision
         self.config = config
         self.preferences = preferences
+        self.activeProfileID = activeProfileID
+        self.inertImports = inertImports
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, revision, config, preferences, activeProfileID, inertImports
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        config = try container.decode(TidyConfig.self, forKey: .config)
+        preferences = try container.decodeIfPresent(PolicyPreferences.self, forKey: .preferences)
+        activeProfileID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
+        inertImports = try container.decodeIfPresent([InertPortableSetting].self,
+                                                      forKey: .inertImports) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(config, forKey: .config)
+        if let preferences {
+            try container.encode(preferences, forKey: .preferences)
+            try container.encode(inertImports, forKey: .inertImports)
+            try container.encodeIfPresent(activeProfileID, forKey: .activeProfileID)
+        }
     }
 }
 public struct SettingsLoadResult: Equatable, Sendable {
@@ -31,6 +63,49 @@ public enum SettingsChange: Equatable, Sendable {
     case preferences(PolicyPreferences)
     case legacyPreferenceDelta(LegacyPreferenceDelta)
     case globalPreferenceDelta(GlobalPreferenceDelta)
+    case preferencesDocument(PreferencesDocumentDelta)
+}
+
+public struct PreferenceFieldEdit: Equatable, Sendable {
+    public let id: SettingID
+    public let baseValue: SettingValue?
+    public let editedValue: SettingValue?
+    public init(id: SettingID, baseValue: SettingValue?, editedValue: SettingValue?) {
+        self.id = id; self.baseValue = baseValue; self.editedValue = editedValue
+    }
+}
+
+public enum ProfileDocumentEdit: Equatable, Sendable {
+    case insert(SavedProfile)
+    case update(id: UUID, base: SavedProfile, edited: SavedProfile)
+    case delete(id: UUID, base: SavedProfile)
+}
+
+public struct InertImportEdit: Equatable, Sendable {
+    public let item: InertPortableSetting
+    public let presentInBase: Bool
+    public let presentAfterEdit: Bool
+    public init(item: InertPortableSetting, presentInBase: Bool, presentAfterEdit: Bool) {
+        self.item = item; self.presentInBase = presentInBase; self.presentAfterEdit = presentAfterEdit
+    }
+}
+
+public struct PreferencesDocumentDelta: Equatable, Sendable {
+    public let baseRevision: UInt64
+    public let global: [PreferenceFieldEdit]
+    public let profiles: [ProfileDocumentEdit]
+    public let activeProfileBase: UUID?
+    public let activeProfileEdit: UUID?
+    public let touchesActiveProfile: Bool
+    public let inert: [InertImportEdit]
+    public init(baseRevision: UInt64, global: [PreferenceFieldEdit] = [],
+                profiles: [ProfileDocumentEdit] = [], activeProfileBase: UUID? = nil,
+                activeProfileEdit: UUID? = nil, touchesActiveProfile: Bool = false,
+                inert: [InertImportEdit] = []) {
+        self.baseRevision = baseRevision; self.global = global; self.profiles = profiles
+        self.activeProfileBase = activeProfileBase; self.activeProfileEdit = activeProfileEdit
+        self.touchesActiveProfile = touchesActiveProfile; self.inert = inert
+    }
 }
 
 public struct GlobalPreferenceDelta: Equatable, Sendable {
@@ -154,11 +229,17 @@ struct SettingsPublicationFailure: Equatable, Sendable {
 public struct SettingsRollbackPreview: Sendable {
     public let config: TidyConfig
     public let preferences: PolicyPreferences?
+    public let activeProfileID: UUID?
+    public let inertImports: [InertPortableSetting]
     internal let identity: UUID
 
-    internal init(config: TidyConfig, preferences: PolicyPreferences? = nil, identity: UUID) {
+    internal init(config: TidyConfig, preferences: PolicyPreferences? = nil,
+                  activeProfileID: UUID? = nil,
+                  inertImports: [InertPortableSetting] = [], identity: UUID) {
         self.config = config
         self.preferences = preferences
+        self.activeProfileID = activeProfileID
+        self.inertImports = inertImports
         self.identity = identity
     }
 }
@@ -194,6 +275,16 @@ enum SettingsDecoding {
         if let preferences = envelope.preferences {
             do { try validate(preferences, stringBudget: &budget) }
             catch is PolicyFieldError { throw SettingsStoreError.invalidChange }
+            guard envelope.activeProfileID == nil ||
+                  preferences.profiles.contains(where: { $0.id == envelope.activeProfileID }) else {
+                throw SettingsStoreError.invalidChange
+            }
+            do {
+                try SettingsTransfer.validatePersistedState(.init(preferences: preferences,
+                                                                  inertImports: envelope.inertImports))
+            } catch { throw SettingsStoreError.invalidChange }
+        } else if envelope.activeProfileID != nil || !envelope.inertImports.isEmpty {
+            throw SettingsStoreError.invalidChange
         }
         // The raw-string budget also bounds encoder allocation before the exact byte check.
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -237,16 +328,37 @@ enum SettingsDecoding {
                     config: try config(root, legacy: true)), recoveryReason: nil)
         }
         let keys = Set(root.keys)
-        guard keys == ["schemaVersion", "revision", "config"] ||
-              keys == ["schemaVersion", "revision", "config", "preferences"] else {
+        let legacy = Set(["schemaVersion", "revision", "config"])
+        let withPreferences = legacy.union(["preferences"])
+        let withInert = withPreferences.union(["inertImports"])
+        let withActive = withInert.union(["activeProfileID"])
+        guard keys == legacy || keys == withPreferences || keys == withInert || keys == withActive else {
             throw Failure.malformed
         }
         let revision = try required(root, "revision").unsignedInteger()
         let decodedPreferences = try root["preferences"].map(preferences)
+        let decodedInert = try root["inertImports"].map(inertImports) ?? []
+        let activeProfileID: UUID?
+        if let value = root["activeProfileID"] {
+            let text = try value.string()
+            guard let id = UUID(uuidString: text), text == id.uuidString else { throw Failure.malformed }
+            activeProfileID = id
+        } else { activeProfileID = nil }
+        if let decodedPreferences {
+            guard activeProfileID == nil ||
+                  decodedPreferences.profiles.contains(where: { $0.id == activeProfileID }) else {
+                throw Failure.malformed
+            }
+            do {
+                try SettingsTransfer.validatePersistedState(.init(preferences: decodedPreferences,
+                                                                  inertImports: decodedInert))
+            } catch { throw Failure.malformed }
+        } else if activeProfileID != nil || !decodedInert.isEmpty { throw Failure.malformed }
         return SettingsLoadResult(disposition: .loaded,
             envelope: SettingsEnvelope(schemaVersion: 2, revision: revision,
                 config: try config(required(root, "config").object(), legacy: false),
-                preferences: decodedPreferences), recoveryReason: nil)
+                preferences: decodedPreferences, activeProfileID: activeProfileID,
+                inertImports: decodedInert), recoveryReason: nil)
     }
 
     private static func required(_ object: [String: StrictJSON.Value], _ key: String) throws -> StrictJSON.Value {
@@ -359,6 +471,34 @@ enum SettingsDecoding {
         do { try validate(result, stringBudget: &stringBudget) }
         catch { throw Failure.malformed }
         return result
+    }
+
+    private static func inertImports(_ value: StrictJSON.Value) throws -> [InertPortableSetting] {
+        let rows = try value.array()
+        guard rows.count <= 1_000 else { throw Failure.malformed }
+        for row in rows {
+            let object = try row.object()
+            guard Set(object.keys) == ["scope", "profileID", "id", "value", "valueKind",
+                                       "valueDigest", "redacted"] else { throw Failure.malformed }
+            switch try required(object, "value") {
+            case .null: break
+            case .object(let value):
+                guard value.count == 1, let tag = value.keys.first,
+                      ["bool", "integer", "null"].contains(tag) else {
+                    throw Failure.malformed
+                }
+            default: throw Failure.malformed
+            }
+            if case .string(let text) = try required(object, "profileID") {
+                guard let id = UUID(uuidString: text), text == id.uuidString else {
+                    throw Failure.malformed
+                }
+            }
+        }
+        do {
+            return try JSONDecoder().decode([InertPortableSetting].self,
+                from: StrictJSON.canonicalData(.array(rows)))
+        } catch { throw Failure.malformed }
     }
 
     private static func policyValues(_ value: StrictJSON.Value) throws -> PolicyValues {

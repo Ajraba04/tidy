@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Owns settings revisions and bytes at an explicit URL. No execution-policy authority.
@@ -8,7 +9,9 @@ public actor SettingsStore {
     private var loadedImage: SettingsDiskImage?
     private var recoveryReason: SettingsRecoveryReason?
     private var publicationFailure: SettingsPublicationFailure?
-    private var issuedPreview: RollbackBinding?
+    private var issuedRollbackPreview: RollbackBinding?
+    private var issuedImportAnalysis: ImportAnalysisBinding?
+    private var issuedImportPreview: ImportPreviewBinding?
 
     private struct RollbackBinding {
         let token: UUID
@@ -16,6 +19,21 @@ public actor SettingsStore {
         let backup: SettingsFileImage
         let config: TidyConfig
         let preferences: PolicyPreferences?
+        let activeProfileID: UUID?
+        let inertImports: [InertPortableSetting]
+    }
+
+    private struct ImportAnalysisBinding {
+        let analysis: SettingsImportAnalysis
+        let revision: UInt64
+        let image: SettingsDiskImage
+        let sourceDigest: String
+    }
+
+    private struct ImportPreviewBinding {
+        let preview: SettingsImportPreview
+        let revision: UInt64
+        let image: SettingsDiskImage
     }
 
     public init(url: URL) { self.url = url; self.io = DarwinJournalIO() }
@@ -23,11 +41,12 @@ public actor SettingsStore {
     internal func lastPublicationFailure() -> SettingsPublicationFailure? { publicationFailure }
 
     public func load() -> SettingsLoadResult {
+        issuedImportAnalysis = nil; issuedImportPreview = nil
         if let recoveryReason { return recovery(recoveryReason) }
         do {
             let image = try SettingsFiles.load(url)
             let result = try image.loaded()
-            if loadedImage != image { issuedPreview = nil }
+            if loadedImage != image { issuedRollbackPreview = nil }
             loadedImage = image; loadedEnvelope = result.envelope
             return result
         } catch {
@@ -90,6 +109,14 @@ public actor SettingsStore {
             preferences = replacement
             config = LegacyCompatibilityProjection.reverseProject(config,
                 replacing: prior, with: replacement.global)
+        case .preferencesDocument(let delta):
+            let applied = try applying(delta, to: current)
+            preferences = applied.preferences
+            config = LegacyCompatibilityProjection.reverseProject(config,
+                replacing: current.preferences?.global, with: applied.preferences.global)
+            return try save(current: current, config: config, preferences: preferences,
+                            activeProfileID: applied.activeProfileID,
+                            replaceActiveProfile: true, inertImports: applied.inertImports)
         }
         return try save(current: current, config: config, preferences: preferences)
     }
@@ -113,22 +140,28 @@ public actor SettingsStore {
             frozen = decoded
         } catch { throw SettingsStoreError.unavailable }
         let token = UUID()
-        issuedPreview = RollbackBinding(token: token, revision: current.revision, backup: backup,
-                                        config: frozen.config, preferences: frozen.preferences)
+        issuedRollbackPreview = RollbackBinding(token: token, revision: current.revision,
+            backup: backup, config: frozen.config, preferences: frozen.preferences,
+            activeProfileID: frozen.activeProfileID, inertImports: frozen.inertImports)
         return SettingsRollbackPreview(config: frozen.config, preferences: frozen.preferences,
-                                       identity: token)
+            activeProfileID: frozen.activeProfileID, inertImports: frozen.inertImports,
+            identity: token)
     }
 
     public func rollback(expectedRevision: UInt64, preview: SettingsRollbackPreview) throws -> SettingsEnvelope {
         let current = try writable(expectedRevision: expectedRevision)
-        guard let issued = issuedPreview, issued.token == preview.identity,
+        guard let issued = issuedRollbackPreview, issued.token == preview.identity,
               issued.revision == current.revision, issued.config == preview.config,
-              issued.preferences == preview.preferences else {
+              issued.preferences == preview.preferences,
+              issued.activeProfileID == preview.activeProfileID,
+              issued.inertImports == preview.inertImports else {
             throw SettingsStoreError.invalidChange
         }
         guard loadedImage?.backup == issued.backup else { throw SettingsStoreError.changedExternally }
         // save rechecks this captured backup identity and exact bytes under the stable lock.
-        return try save(current: current, config: issued.config, preferences: issued.preferences)
+        return try save(current: current, config: issued.config, preferences: issued.preferences,
+                        activeProfileID: issued.activeProfileID, replaceActiveProfile: true,
+                        inertImports: issued.inertImports)
     }
 
     private func writable(expectedRevision: UInt64) throws -> SettingsEnvelope {
@@ -139,18 +172,23 @@ public actor SettingsStore {
     }
 
     private func save(current: SettingsEnvelope, config: TidyConfig,
-                      preferences: PolicyPreferences?) throws -> SettingsEnvelope {
+                      preferences: PolicyPreferences?, activeProfileID: UUID? = nil,
+                      replaceActiveProfile: Bool = false,
+                      inertImports: [InertPortableSetting]? = nil) throws -> SettingsEnvelope {
         let (revision, overflow) = current.revision.addingReportingOverflow(1)
         guard !overflow else { throw SettingsStoreError.revisionOverflow }
         let candidate = SettingsEnvelope(schemaVersion: 2, revision: revision, config: config,
-                                         preferences: preferences)
+                                         preferences: preferences,
+                                         activeProfileID: replaceActiveProfile ? activeProfileID : current.activeProfileID,
+                                         inertImports: inertImports ?? current.inertImports)
         // Complete value/bounds/encoding checks precede even directory or lock creation.
         let bytes = try SettingsDecoding.encode(candidate)
         guard let expected = loadedImage else { throw SettingsStoreError.unavailable }
         let publication = SettingsPublication(url: url, io: io)
         do {
             let image = try publication.publish(expected: expected, envelope: candidate, bytes: bytes)
-            loadedImage = image; loadedEnvelope = candidate; issuedPreview = nil
+            loadedImage = image; loadedEnvelope = candidate; issuedRollbackPreview = nil
+            issuedImportAnalysis = nil; issuedImportPreview = nil
             publicationFailure = nil
             return candidate
         } catch {
@@ -163,7 +201,8 @@ public actor SettingsStore {
     }
 
     private func latch(_ reason: SettingsRecoveryReason) {
-        recoveryReason = reason; loadedEnvelope = nil; loadedImage = nil; issuedPreview = nil
+        recoveryReason = reason; loadedEnvelope = nil; loadedImage = nil; issuedRollbackPreview = nil
+        issuedImportAnalysis = nil; issuedImportPreview = nil
     }
 
     private func recovery(_ reason: SettingsRecoveryReason) -> SettingsLoadResult {
@@ -215,6 +254,201 @@ public actor SettingsStore {
             result.presets = $0
         }
         return result
+    }
+
+    private struct InertKey: Hashable {
+        let scope: InertScope
+        let profileID: UUID?
+        let id: String
+        init(_ item: InertPortableSetting) {
+            scope = item.scope; profileID = item.profileID; id = item.id
+        }
+    }
+
+    private func applying(_ delta: PreferencesDocumentDelta,
+                          to current: SettingsEnvelope) throws
+        -> (preferences: PolicyPreferences, activeProfileID: UUID?, inertImports: [InertPortableSetting]) {
+        guard delta.baseRevision <= current.revision else { throw SettingsStoreError.staleRevision }
+        var preferences = current.preferences ?? PolicyPreferences()
+        var globalIDs = Set<SettingID>()
+        for edit in delta.global {
+            guard globalIDs.insert(edit.id).inserted else { throw SettingsStoreError.invalidChange }
+            guard preferences.global.fields[edit.id] == edit.baseValue else {
+                throw SettingsStoreError.staleRevision
+            }
+            if let value = edit.editedValue {
+                guard (try? PortableSettingPolicy.classify(id: edit.id, value: value,
+                                                           layer: .global)) == .portable else {
+                    throw SettingsStoreError.invalidChange
+                }
+            } else if PolicyValidator.definition(for: edit.id) == nil {
+                throw SettingsStoreError.invalidChange
+            }
+            preferences.global.fields[edit.id] = edit.editedValue
+        }
+
+        var touchedProfiles = Set<UUID>()
+        var deletedProfiles = Set<UUID>()
+        for edit in delta.profiles {
+            let id: UUID
+            switch edit {
+            case .insert(let profile): id = profile.id
+            case .update(let profileID, _, _): id = profileID
+            case .delete(let profileID, _): id = profileID
+            }
+            guard touchedProfiles.insert(id).inserted else { throw SettingsStoreError.invalidChange }
+            switch edit {
+            case .insert(let profile):
+                guard !preferences.profiles.contains(where: { $0.id == profile.id }) else {
+                    throw SettingsStoreError.staleRevision
+                }
+                preferences.profiles.append(profile)
+            case .update(let id, let base, let edited):
+                guard edited.id == id else { throw SettingsStoreError.invalidChange }
+                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
+                      preferences.profiles[index] == base else { throw SettingsStoreError.staleRevision }
+                preferences.profiles[index] = edited
+            case .delete(let id, let base):
+                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
+                      preferences.profiles[index] == base else { throw SettingsStoreError.staleRevision }
+                preferences.profiles.remove(at: index); deletedProfiles.insert(id)
+            }
+        }
+        guard Set(preferences.profiles.map(\.id)).count == preferences.profiles.count else {
+            throw SettingsStoreError.invalidChange
+        }
+
+        var active = current.activeProfileID
+        if delta.touchesActiveProfile {
+            guard current.activeProfileID == delta.activeProfileBase else {
+                throw SettingsStoreError.staleRevision
+            }
+            active = delta.activeProfileEdit
+        }
+        if let selected = current.activeProfileID, deletedProfiles.contains(selected) {
+            guard delta.touchesActiveProfile, delta.activeProfileBase == selected,
+                  delta.activeProfileEdit == nil else { throw SettingsStoreError.invalidChange }
+        }
+        if let active, !preferences.profiles.contains(where: { $0.id == active }) {
+            throw SettingsStoreError.invalidChange
+        }
+
+        var inert = Dictionary(uniqueKeysWithValues: current.inertImports.map { (InertKey($0), $0) })
+        var touchedInert = Set<InertKey>()
+        for edit in delta.inert {
+            let key = InertKey(edit.item)
+            guard touchedInert.insert(key).inserted else { throw SettingsStoreError.invalidChange }
+            if edit.presentInBase {
+                guard inert[key] == edit.item else { throw SettingsStoreError.staleRevision }
+            } else if inert[key] != nil { throw SettingsStoreError.staleRevision }
+            if edit.presentAfterEdit { inert[key] = edit.item } else { inert.removeValue(forKey: key) }
+        }
+        let inertImports = inert.values.sorted {
+            [$0.scope.rawValue, $0.profileID?.uuidString ?? "", $0.id]
+                .lexicographicallyPrecedes([$1.scope.rawValue, $1.profileID?.uuidString ?? "", $1.id])
+        }
+        do {
+            try SettingsTransfer.validatePersistedState(.init(preferences: preferences,
+                                                              inertImports: inertImports))
+        } catch { throw SettingsStoreError.invalidChange }
+        return (preferences, active, inertImports)
+    }
+
+    public func analyzeImport(bytes: Data) throws -> SettingsImportAnalysis {
+        issuedImportAnalysis = nil; issuedImportPreview = nil
+        guard recoveryReason == nil else { throw SettingsStoreError.readOnlyRecovery }
+        guard let current = loadedEnvelope, let image = loadedImage else {
+            throw SettingsStoreError.unavailable
+        }
+        try requireCurrentDisk(image)
+        let parsed = try SettingsTransfer.analyze(bytes: bytes,
+            current: .init(preferences: current.preferences ?? .init(),
+                           inertImports: current.inertImports))
+        let identity = UUID()
+        let issued = SettingsTransfer.issuedAnalysis(parsed, identity: identity)
+        issuedImportAnalysis = .init(analysis: issued, revision: current.revision,
+                                     image: image, sourceDigest: SettingsFiles.digest(bytes))
+        return issued
+    }
+
+    public func issueImportPreview(analysisID: SettingsImportAnalysisID,
+                                   choices: [UUID: ProfileCollisionChoice]) throws
+        -> SettingsImportPreview {
+        guard let binding = issuedImportAnalysis,
+              binding.analysis.analysisID == analysisID else {
+            throw SettingsStoreError.invalidChange
+        }
+        issuedImportAnalysis = nil; issuedImportPreview = nil
+        guard recoveryReason == nil, let current = loadedEnvelope,
+              current.revision == binding.revision, loadedImage == binding.image else {
+            throw SettingsStoreError.invalidChange
+        }
+        try requireCurrentDisk(binding.image)
+        let frozenChoices = choices
+        let resolved: ResolvedSettingsImport
+        do { resolved = try SettingsTransfer.resolve(binding.analysis, choices: frozenChoices) }
+        catch { throw SettingsStoreError.invalidChange }
+        do { try SettingsTransfer.validatePersistedState(resolved.candidate) }
+        catch { throw SettingsStoreError.invalidChange }
+        let envelope = try importEnvelope(current: current, candidate: resolved.candidate)
+        let candidateDigest = SettingsFiles.digest(try SettingsDecoding.encode(envelope))
+        let preview = SettingsImportPreview(id: UUID(), analysisID: analysisID,
+            rows: resolved.rows, collisions: binding.analysis.collisions,
+            choices: frozenChoices, candidate: resolved.candidate,
+            sourceDigest: binding.sourceDigest, candidateDigest: candidateDigest)
+        issuedImportPreview = .init(preview: preview, revision: current.revision,
+                                    image: binding.image)
+        return preview
+    }
+
+    public func commitImport(expectedRevision: UInt64,
+                             previewID: SettingsImportPreviewID) throws -> SettingsEnvelope {
+        let binding = issuedImportPreview
+        issuedImportPreview = nil; issuedImportAnalysis = nil
+        guard let binding, binding.preview.id == previewID else {
+            throw SettingsStoreError.invalidChange
+        }
+        let current = try writable(expectedRevision: expectedRevision)
+        guard binding.revision == current.revision, loadedImage == binding.image else {
+            throw SettingsStoreError.changedExternally
+        }
+        try requireCurrentDisk(binding.image)
+        let expected = try importEnvelope(current: current, candidate: binding.preview.candidate)
+        guard SettingsFiles.digest(try SettingsDecoding.encode(expected)) ==
+              binding.preview.candidateDigest else { throw SettingsStoreError.invalidChange }
+        return try save(current: current, config: expected.config,
+                        preferences: binding.preview.candidate.preferences,
+                        activeProfileID: current.activeProfileID, replaceActiveProfile: true,
+                        inertImports: binding.preview.candidate.inertImports)
+    }
+
+    public func cancelImport(analysisID: SettingsImportAnalysisID) {
+        if issuedImportAnalysis?.analysis.analysisID == analysisID { issuedImportAnalysis = nil }
+    }
+
+    public func cancelImport(previewID: SettingsImportPreviewID) {
+        if issuedImportPreview?.preview.id == previewID { issuedImportPreview = nil }
+    }
+
+    private func importEnvelope(current: SettingsEnvelope,
+                                candidate: PortableSettingsState) throws -> SettingsEnvelope {
+        let (revision, overflow) = current.revision.addingReportingOverflow(1)
+        guard !overflow else { throw SettingsStoreError.revisionOverflow }
+        let config = LegacyCompatibilityProjection.reverseProject(current.config,
+            replacing: current.preferences?.global, with: candidate.preferences.global)
+        return SettingsEnvelope(schemaVersion: 2, revision: revision, config: config,
+            preferences: candidate.preferences, activeProfileID: current.activeProfileID,
+            inertImports: candidate.inertImports)
+    }
+
+    private func requireCurrentDisk(_ expected: SettingsDiskImage) throws {
+        let disk: SettingsDiskImage
+        do { disk = try SettingsFiles.load(url); _ = try disk.loaded() }
+        catch {
+            if case SettingsFiles.Failure.busy = error { throw SettingsStoreError.unavailable }
+            latch(.unavailable); throw SettingsStoreError.readOnlyRecovery
+        }
+        guard disk == expected else { throw SettingsStoreError.changedExternally }
     }
 
     internal func isRecoveryRequired() -> Bool { recoveryReason != nil }

@@ -134,7 +134,8 @@ private actor A2PBuild {
         Model/Tier.swift Model/ToolchainID.swift
         Policy/FeatureSettings.swift Policy/ScanSettings.swift Policy/CleanupSettings.swift
         Policy/ExperienceSettings.swift Policy/PolicyDefaults.swift Policy/PolicyValidator.swift
-        Policy/StrictJSON.swift Policy/SettingsEnvelope.swift Policy/SettingsPublication.swift Policy/SettingsStore.swift
+        Policy/SessionProfile.swift Policy/StrictJSON.swift Policy/SettingsEnvelope.swift
+        Policy/SettingsPublication.swift Policy/SettingsStore.swift Policy/SettingsTransfer.swift
         Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
         """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var sources = names.map { package.appendingPathComponent("Sources/TidyCore/\($0)") }
@@ -142,6 +143,11 @@ private actor A2PBuild {
         var manifest: [String: String] = [:]
         for source in sources {
             manifest[source.path] = a2pHash(try a2pFile(source).data)
+        }
+        for required in ["Policy/SessionProfile.swift", "Policy/SettingsTransfer.swift"] {
+            guard manifest[package.appendingPathComponent("Sources/TidyCore/\(required)").path] != nil else {
+                throw A2PError.incomplete
+            }
         }
         try a2pWrite(try JSONEncoder().encode(manifest), root.appendingPathComponent("source-sha256.json"))
         let output = root.appendingPathComponent("settings-process-driver")
