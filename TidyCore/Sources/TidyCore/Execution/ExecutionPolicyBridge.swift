@@ -19,6 +19,43 @@ public enum SettingsSubmissionAdmission: Sendable {
     case accepted(SettingsIntentID, Task<SettingsIntentOutcome, Never>)
 }
 
+internal enum ExecutionPolicyBridgeTestPoint: Hashable, Sendable {
+    case acceptedAfterBarrierBeforePrepareAndSave(SettingsIntentID)
+    case acceptedAfterPresentationPrepareBeforeSave(SettingsIntentID)
+}
+
+internal protocol ExecutionPolicyBridgeTestHook: Sendable {
+    func receive(_ event: ExecutionPolicyBridgeTestPoint) async
+}
+
+/// Bounded explicit-work access vended only by an execution-policy bridge.
+public struct BridgeExplicitSessions: Sendable {
+    fileprivate let bridge: ExecutionPolicyBridge
+
+    fileprivate init(bridge: ExecutionPolicyBridge) { self.bridge = bridge }
+
+    public func beginSession(requirements: SchedulerRequirements) async throws -> WorkSession {
+        try await bridge.beginExplicitSession(requirements: requirements)
+    }
+
+    public func withPermit<T: Sendable>(session: WorkSession,
+        operation: @Sendable (SchedulerCancellationProbe) async throws -> T) async throws -> T {
+        try await bridge.withExplicitPermit(session: session, operation: operation)
+    }
+
+    public func cancel(session: WorkSession) async { await bridge.cancelExplicitSession(session) }
+
+    public func finish(session: WorkSession) async { await bridge.finishExplicitSession(session) }
+
+    public func state(of session: WorkSession) async -> WorkSessionState? {
+        await bridge.explicitSessionState(session)
+    }
+
+    public func snapshot() async -> WorkSchedulerSnapshot {
+        await bridge.explicitSessionSnapshot()
+    }
+}
+
 @Observable @MainActor
 public final class ExecutionPolicyBridge {
     public private(set) var updateGeneration = UUID()
@@ -35,6 +72,10 @@ public final class ExecutionPolicyBridge {
     private let settings: SettingsStore
     private let homeDirectory: String
     private let detectedTools: Set<ToolchainID>
+    private let schedulerController: SchedulerPolicyController
+    private let scheduler: WorkScheduler
+    private let schedulerCapability: SchedulerPolicyControllerCapability
+    private let testHook: (any ExecutionPolicyBridgeTestHook)?
     private var generation = UUID()
     private var lastSuccessfullyPersistedRevision: UInt64?
     private var pendingTail: Task<SettingsIntentOutcome, Never>?
@@ -51,6 +92,17 @@ public final class ExecutionPolicyBridge {
     private let pendingByteLimit: Int
     private var issuedImportBinding: IssuedImportBinding?
     private var importLifecycleGeneration: UInt64 = 0
+    private var initialSchedulerInstall: Task<Void, Never>?
+    private var schedulerAdmissionPendingCount = 0
+    private var pendingSchedulerInvalidations: Set<SettingsIntentID> = []
+    private var pendingSchedulerTickets: [SettingsIntentID: SchedulerAdmissionTicket] = [:]
+
+    private enum SchedulerPreparation {
+        case invalidating(PreparedSchedulerPolicy)
+        case presentation(PreparedSchedulerPresentation)
+    }
+
+    private enum SchedulerHandoffError: Error { case invalid }
 
     private struct IssuedImportBinding: Sendable {
         let preview: SettingsImportPreview
@@ -103,16 +155,35 @@ public final class ExecutionPolicyBridge {
                             detectedTools: Set<ToolchainID>) {
         self.init(coordinator: coordinator, settings: settings, loaded: loaded,
                   homeDirectory: homeDirectory, detectedTools: detectedTools,
-                  pendingByteLimit: Self.maximumPendingBytes)
+                  pendingByteLimit: Self.maximumPendingBytes, schedulerTestHook: nil,
+                  testHook: nil)
     }
 
     internal init(coordinator: ExecutionCoordinator, settings: SettingsStore,
                   loaded: SettingsLoadResult, homeDirectory: String,
-                  detectedTools: Set<ToolchainID>, pendingByteLimit: Int) {
+                  detectedTools: Set<ToolchainID>, pendingByteLimit: Int,
+                  schedulerTestHook: (any SchedulerTestHook)? = nil,
+                  testHook: (any ExecutionPolicyBridgeTestHook)? = nil) {
         self.coordinator = coordinator
         self.settings = settings
         self.homeDirectory = homeDirectory
         self.detectedTools = detectedTools
+        self.testHook = testHook
+        let logicalCPUCount = min(max(1, ProcessInfo.processInfo.activeProcessorCount), 1_024)
+        let inputs = try! SchedulerResolutionInputs(logicalCPUCount: logicalCPUCount)
+        if let schedulerTestHook {
+            let made = try! SchedulerPolicyController.makeForTesting(inputs: inputs,
+                limits: try! .init(), initialGeneration: 0, initialObservationEpoch: 0,
+                initialWaiterID: 0, hook: schedulerTestHook)
+            self.schedulerController = made.controller
+            self.scheduler = made.scheduler
+            self.schedulerCapability = made.capability
+        } else {
+            let made = try! SchedulerPolicyController.make(inputs: inputs)
+            self.schedulerController = made.controller
+            self.scheduler = made.scheduler
+            self.schedulerCapability = made.capability
+        }
         self.pendingByteLimit = min(max(0, pendingByteLimit), Self.maximumPendingBytes)
         let envelope = loaded.envelope
         let revision = envelope?.revision
@@ -127,6 +198,12 @@ public final class ExecutionPolicyBridge {
             self.persistenceError = "Settings are read-only. Cleanup remains disabled."
             do { recoveryTicket = try coordinator.beginPolicyUpdate() }
             catch { self.persistenceError = "Settings could not be applied. Cleanup remains disabled." }
+        }
+
+        if let envelope, envelope.revision > 0, loaded.disposition != .recoveryReadOnly {
+            initialSchedulerInstall = Task { @MainActor [weak self] in
+                await self?.installInitialScheduler(envelope)
+            }
         }
     }
 
@@ -181,7 +258,7 @@ public final class ExecutionPolicyBridge {
                                          message: "The settings change is invalid.")
         }
         return admit(id: id, sequence: sequence, payload: .global(delta),
-                     effect: definition.effect)
+                     effect: definition.effect, presentation: isPresentationDelta(delta))
     }
 
     public func submit(document delta: PreferencesDocumentDelta) -> SettingsSubmissionAdmission {
@@ -202,7 +279,8 @@ public final class ExecutionPolicyBridge {
             return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
                                          message: "The settings change is invalid.")
         }
-        return admit(id: id, sequence: sequence, payload: .document(delta), effect: applied.effect)
+        return admit(id: id, sequence: sequence, payload: .document(delta), effect: applied.effect,
+                     presentation: false)
     }
 
     public func submit(importPreview preview: SettingsImportPreview) -> SettingsSubmissionAdmission {
@@ -235,7 +313,8 @@ public final class ExecutionPolicyBridge {
                                          message: "The settings import is invalid.")
         }
         let admission = admit(id: id, sequence: sequence,
-            payload: .importPreview(expectedRevision: binding.revision, preview: preview), effect: effect)
+            payload: .importPreview(expectedRevision: binding.revision, preview: preview), effect: effect,
+            presentation: false)
         if case .accepted = admission {
             issuedImportBinding = nil
             _ = advanceImportLifecycle()
@@ -302,7 +381,8 @@ public final class ExecutionPolicyBridge {
             return rejectBeforeRetention(id: id, sequence: sequence, reason: .invalid,
                                          message: "The settings change is invalid.")
         }
-        return admit(id: id, sequence: sequence, payload: .legacy(delta), effect: .invalidate)
+        return admit(id: id, sequence: sequence, payload: .legacy(delta), effect: .invalidate,
+                     presentation: false)
     }
 
     /// Source-compatible whole-value entry point. New app code uses the
@@ -321,7 +401,7 @@ public final class ExecutionPolicyBridge {
     }
 
     private func admit(id: SettingsIntentID, sequence: UInt64, payload: Payload,
-                       effect: AuthorityEffect) -> SettingsSubmissionAdmission {
+                       effect: AuthorityEffect, presentation: Bool) -> SettingsSubmissionAdmission {
         let bytes: Int
         do { bytes = try retainedBytes(id: id, payload: payload) }
         catch {
@@ -341,6 +421,24 @@ public final class ExecutionPolicyBridge {
                                          message: Self.overflowFailure)
         }
 
+        let schedulerTicket: SchedulerAdmissionTicket?
+        if presentation {
+            schedulerTicket = nil
+        } else if schedulerAdmissionPendingCount == 0 {
+            do {
+                schedulerTicket = try schedulerController.beginAdmissionTransition(
+                    using: schedulerCapability)
+            } catch {
+                persistenceError = "Settings could not be applied. Cleanup remains disabled."
+                errorSequence = sequence
+                return .rejected(id, .unavailable)
+            }
+        } else {
+            // An earlier accepted handoff has already synchronously closed the core
+            // barrier. The façade remains closed until this queued handoff completes.
+            schedulerTicket = nil
+        }
+
         let ticket: PolicyUpdateTicket?
         if effect == .invalidate {
             do { ticket = try coordinator.beginPolicyUpdate() }
@@ -357,6 +455,11 @@ public final class ExecutionPolicyBridge {
         pendingSnapshotBytes = retainedTotal
         pendingPayloadOrder.append(id)
         pendingPayloads[id] = payload
+        if !presentation {
+            schedulerAdmissionPendingCount += 1
+            pendingSchedulerInvalidations.insert(id)
+            if let schedulerTicket { pendingSchedulerTickets[id] = schedulerTicket }
+        }
         rebuildPredictedSubmission()
         storageUpdatePending = true
         let intentGeneration: UUID?
@@ -383,6 +486,10 @@ public final class ExecutionPolicyBridge {
                                         sequence: sequence)
             pendingPayloadOrder.removeAll { $0 == id }
             pendingPayloads[id] = nil
+            if pendingSchedulerInvalidations.remove(id) != nil {
+                schedulerAdmissionPendingCount -= 1
+            }
+            pendingSchedulerTickets[id] = nil
             rebuildPredictedSubmission()
             pendingSnapshotCount -= 1
             pendingSnapshotBytes -= bytes
@@ -410,31 +517,46 @@ public final class ExecutionPolicyBridge {
             guard let payload = pendingPayloads[id] else {
                 throw SettingsStoreError.invalidChange
             }
-            let change: SettingsChange
-            switch payload {
-            case .legacy(let delta):
-                // A stored whole-value delta remains bound to the exact config
-                // prediction it was accepted against. If an earlier dependency
-                // failed, do not replay only its changed fields over another base.
-                guard delta.base == acknowledgedEnvelope?.config else {
-                    throw SettingsStoreError.staleRevision
-                }
-                change = .legacyPreferenceDelta(delta)
-            case .global(let delta): change = .globalPreferenceDelta(delta)
-            case .document(let delta): change = .preferencesDocument(delta)
-            case .importPreview(let expectedRevision, let preview):
-                guard expectedRevision == lastSuccessfullyPersistedRevision else {
-                    throw SettingsStoreError.staleRevision
-                }
-                let saved = try await settings.commitImport(expectedRevision: expectedRevision,
+            let candidate = try schedulerCandidate(for: payload, expectedRevision: expectedRevision)
+            let preparation = try await prepareScheduler(id: id, candidate: candidate)
+            do {
+                try Task.checkCancellation()
+                let saved: SettingsEnvelope
+                switch payload {
+                case .legacy(let delta):
+                    saved = try await settings.update(expectedRevision: expectedRevision,
+                                                      change: .legacyPreferenceDelta(delta))
+                case .global(let delta):
+                    saved = try await settings.update(expectedRevision: expectedRevision,
+                                                      change: .globalPreferenceDelta(delta))
+                case .document(let delta):
+                    saved = try await settings.update(expectedRevision: expectedRevision,
+                                                      change: .preferencesDocument(delta))
+                case .importPreview(let expectedRevision, let preview):
+                    guard expectedRevision == lastSuccessfullyPersistedRevision else {
+                        throw SettingsStoreError.staleRevision
+                    }
+                    saved = try await settings.commitImport(expectedRevision: expectedRevision,
                                                             previewID: preview.id)
+                }
+                try Task.checkCancellation()
                 return try await acceptSaved(saved, id: id, ticket: ticket,
-                                             intentGeneration: intentGeneration,
-                                             sequence: sequence)
+                                             intentGeneration: intentGeneration, sequence: sequence,
+                                             preparation: preparation)
+            } catch {
+                await discardSchedulerPreparation(preparation)
+                throw error
             }
-            let saved = try await settings.update(expectedRevision: expectedRevision, change: change)
-            return try await acceptSaved(saved, id: id, ticket: ticket,
-                                         intentGeneration: intentGeneration, sequence: sequence)
+        } catch is SchedulerHandoffError {
+            if ticket != nil {
+                isExecutionEnabled = false
+                policyFailureActive = true
+            }
+            if !policyFailureActive || ticket != nil {
+                persistenceError = "The settings change is invalid."
+                errorSequence = sequence
+            }
+            return .invalid(id)
         } catch let error as SettingsStoreError
             where error == .staleRevision || error == .changedExternally {
             if ticket != nil {
@@ -478,12 +600,41 @@ public final class ExecutionPolicyBridge {
 
     private func acceptSaved(_ saved: SettingsEnvelope, id: SettingsIntentID,
                              ticket: PolicyUpdateTicket?, intentGeneration: UUID?,
-                             sequence: UInt64) async throws -> SettingsIntentOutcome {
+                             sequence: UInt64,
+                             preparation: SchedulerPreparation) async throws -> SettingsIntentOutcome {
+        let schedulerCommitted: Bool
+        switch preparation {
+        case .invalidating(let prepared):
+            if case .committed = await schedulerController.commit(prepared,
+                acknowledgedEnvelope: saved, using: schedulerCapability) {
+                schedulerCommitted = true
+            } else {
+                schedulerCommitted = false
+            }
+        case .presentation(let prepared):
+            if case .committed = await schedulerController.commitPresentation(prepared,
+                acknowledgedEnvelope: saved, using: schedulerCapability) {
+                schedulerCommitted = true
+            } else {
+                schedulerCommitted = false
+            }
+        }
         lastSuccessfullyPersistedRevision = saved.revision
         durableSettingsRevision = saved.revision
         acknowledgedEnvelope = saved
         issuedImportBinding = nil
         _ = advanceImportLifecycle()
+        guard schedulerCommitted else {
+            if ticket != nil {
+                isExecutionEnabled = false
+                policyFailureActive = true
+            }
+            if !policyFailureActive || ticket != nil {
+                persistenceError = "Settings were saved but could not be applied. Cleanup remains disabled."
+                errorSequence = sequence
+            }
+            return .saved(id, saved)
+        }
         if let ticket {
             let environment = saved.config.makePolicyEnvironment(
                 homeDirectory: homeDirectory, detectedTools: detectedTools)
@@ -503,6 +654,75 @@ public final class ExecutionPolicyBridge {
             persistenceError = nil
         }
         return .saved(id, saved)
+    }
+
+    private func schedulerCandidate(for payload: Payload,
+                                    expectedRevision: UInt64) throws -> SettingsEnvelope {
+        guard let acknowledgedEnvelope, acknowledgedEnvelope.revision == expectedRevision else {
+            throw SettingsStoreError.staleRevision
+        }
+        let candidate: SettingsEnvelope
+        switch payload {
+        case .legacy(let delta):
+            // A stored whole-value delta remains bound to the exact config
+            // acknowledgement it was accepted against; it is never rebased.
+            guard delta.base == acknowledgedEnvelope.config else {
+                throw SettingsStoreError.staleRevision
+            }
+            candidate = applyingPrediction(delta, to: acknowledgedEnvelope)
+        case .global(let delta):
+            candidate = applyingGlobalPrediction(delta, to: acknowledgedEnvelope)
+        case .document(let delta):
+            candidate = try PreferencesDocumentProjection.apply(delta, to: acknowledgedEnvelope).envelope
+        case .importPreview(let expectedRevision, let preview):
+            guard expectedRevision == lastSuccessfullyPersistedRevision else {
+                throw SettingsStoreError.staleRevision
+            }
+            candidate = try importPrediction(preview.candidate, from: acknowledgedEnvelope)
+        }
+        let (revision, overflow) = expectedRevision.addingReportingOverflow(1)
+        guard !overflow else { throw SettingsStoreError.invalidChange }
+        return SettingsEnvelope(schemaVersion: candidate.schemaVersion, revision: revision,
+            config: candidate.config, preferences: candidate.preferences,
+            activeProfileID: candidate.activeProfileID, inertImports: candidate.inertImports)
+    }
+
+    private func prepareScheduler(id: SettingsIntentID,
+                                  candidate: SettingsEnvelope) async throws -> SchedulerPreparation {
+        if pendingSchedulerInvalidations.contains(id) {
+            let admission: SchedulerAdmissionTicket
+            if let ticket = pendingSchedulerTickets[id] {
+                admission = ticket
+            } else {
+                do {
+                    admission = try schedulerController.beginAdmissionTransition(using: schedulerCapability)
+                } catch {
+                    throw SchedulerHandoffError.invalid
+                }
+                pendingSchedulerTickets[id] = admission
+            }
+            await testHook?.receive(.acceptedAfterBarrierBeforePrepareAndSave(id))
+            try Task.checkCancellation()
+            let result = await schedulerController.prepare(admission, candidate: candidate,
+                observation: .unknown, using: schedulerCapability)
+            guard case .prepared(let prepared, _) = result else { throw SchedulerHandoffError.invalid }
+            return .invalidating(prepared)
+        }
+
+        let result = await schedulerController.preparePresentation(candidate: candidate,
+            observation: .unknown, using: schedulerCapability)
+        guard case .prepared(let prepared, _) = result else { throw SchedulerHandoffError.invalid }
+        await testHook?.receive(.acceptedAfterPresentationPrepareBeforeSave(id))
+        return .presentation(prepared)
+    }
+
+    private func discardSchedulerPreparation(_ preparation: SchedulerPreparation) async {
+        switch preparation {
+        case .invalidating(let prepared):
+            _ = await schedulerController.fail(prepared, using: schedulerCapability)
+        case .presentation(let prepared):
+            _ = await schedulerController.discardPresentation(prepared, using: schedulerCapability)
+        }
     }
 
     private func reserveSequence() -> UInt64? {
@@ -679,7 +899,64 @@ public final class ExecutionPolicyBridge {
         return predicted
     }
 
+    private func isPresentationDelta(_ delta: GlobalPreferenceDelta) -> Bool {
+        guard delta.id == SettingID(rawValue: "scan.uiBatchesPerSecond"),
+              case .integer = delta.baseValue,
+              case .integer = delta.editedValue else { return false }
+        return true
+    }
+
+    private func installInitialScheduler(_ envelope: SettingsEnvelope) async {
+        // A positive loaded revision is a durable acknowledgement, but it still
+        // enters the scheduler through the same first-install invalidating path.
+        // A competing accepted bridge handoff wins; its barrier remains closed.
+        guard schedulerAdmissionPendingCount == 0 else { return }
+        let admission: SchedulerAdmissionTicket
+        do { admission = try schedulerController.beginAdmissionTransition(using: schedulerCapability) }
+        catch { return }
+        let preparation = await schedulerController.prepare(admission, candidate: envelope,
+            observation: .unknown, using: schedulerCapability)
+        guard case .prepared(let prepared, _) = preparation else { return }
+        _ = await schedulerController.commit(prepared, acknowledgedEnvelope: envelope,
+            using: schedulerCapability)
+    }
+
+    fileprivate func beginExplicitSession(requirements: SchedulerRequirements) async throws -> WorkSession {
+        guard schedulerAdmissionPendingCount == 0 else { throw WorkSchedulerError.admissionUpdating }
+        let capability = try await schedulerController.issueExplicitCapability(requirements: requirements,
+            using: schedulerCapability)
+        guard schedulerAdmissionPendingCount == 0 else { throw WorkSchedulerError.admissionUpdating }
+        return try await scheduler.beginSession(requirements: requirements, capability: capability)
+    }
+
+    fileprivate func withExplicitPermit<T: Sendable>(session: WorkSession,
+        operation: @Sendable (SchedulerCancellationProbe) async throws -> T) async throws -> T {
+        guard schedulerAdmissionPendingCount == 0 else { throw WorkSchedulerError.admissionUpdating }
+        return try await scheduler.withPermit(session: session, operation: operation)
+    }
+
+    fileprivate func cancelExplicitSession(_ session: WorkSession) async {
+        await scheduler.cancel(session: session)
+    }
+
+    fileprivate func finishExplicitSession(_ session: WorkSession) async {
+        await scheduler.finish(session: session)
+    }
+
+    fileprivate func explicitSessionState(_ session: WorkSession) async -> WorkSessionState? {
+        await scheduler.state(of: session)
+    }
+
+    fileprivate func explicitSessionSnapshot() async -> WorkSchedulerSnapshot {
+        await scheduler.snapshot()
+    }
+
     public func drain() async {
+        if let initialSchedulerInstall { await initialSchedulerInstall.value }
         while let tail = pendingTail { _ = await tail.value }
     }
+}
+
+public extension ExecutionPolicyBridge {
+    var explicitSessions: BridgeExplicitSessions { BridgeExplicitSessions(bridge: self) }
 }

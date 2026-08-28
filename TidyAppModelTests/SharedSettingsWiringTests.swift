@@ -1425,6 +1425,416 @@ extension SharedSettingsWiringTests {
     }
 }
 
+private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
+    enum Point: Hashable {
+        case invalidatingAdmission
+        case presentationPrepared
+        case presentationAdmission
+    }
+
+    private var blocked: Set<Point> = []
+    private var entered: Set<Point> = []
+    private var continuations: [Point: CheckedContinuation<Void, Never>] = [:]
+    private var waiters: [Point: CheckedContinuation<Void, Never>] = [:]
+
+    func block(_ point: Point) { blocked.insert(point) }
+
+    func wait(for point: Point) async {
+        if entered.contains(point) { return }
+        await withCheckedContinuation { continuation in
+            waiters[point] = continuation
+        }
+    }
+
+    func release(_ point: Point) {
+        blocked.remove(point)
+        continuations.removeValue(forKey: point)?.resume()
+    }
+
+    func releaseAll() {
+        for continuation in continuations.values { continuation.resume() }
+        continuations.removeAll(); blocked.removeAll()
+    }
+
+    private func hit(_ point: Point) async {
+        entered.insert(point)
+        waiters.removeValue(forKey: point)?.resume()
+        guard blocked.contains(point) else { return }
+        await withCheckedContinuation { continuation in
+            continuations[point] = continuation
+        }
+    }
+
+    func receive(_ event: ExecutionPolicyBridgeTestPoint) async {
+        switch event {
+        case .acceptedAfterBarrierBeforePrepareAndSave:
+            await hit(.invalidatingAdmission)
+        case .acceptedAfterPresentationPrepareBeforeSave:
+            await hit(.presentationAdmission)
+        }
+    }
+
+    func receive(_ event: SchedulerTestEvent) async {
+        if case .presentationPrepared = event { await hit(.presentationPrepared) }
+    }
+}
+
+private actor T081PermitGate {
+    private var entered: Set<Int> = []
+    private var continuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    func hold(_ value: Int, _ probe: SchedulerCancellationProbe) async throws {
+        try await probe.checkCancellation()
+        entered.insert(value)
+        waiters.removeValue(forKey: value)?.resume()
+        await withCheckedContinuation { continuation in
+            continuations[value] = continuation
+        }
+    }
+
+    func wait(for value: Int) async {
+        if entered.contains(value) { return }
+        await withCheckedContinuation { continuation in
+            waiters[value] = continuation
+        }
+    }
+
+    func hasEntered(_ value: Int) -> Bool { entered.contains(value) }
+
+    func release(_ value: Int) { continuations.removeValue(forKey: value)?.resume() }
+}
+
+extension SharedSettingsWiringTests {
+    private func t081Envelope(revision: UInt64 = 1) -> Data {
+        let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+        return try! SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: revision,
+            config: .init(), preferences: .init(global: .init(fields: [rate: .integer(4)]))))
+    }
+
+    private func t081Bridge(_ scratch: A3Scratch, _ services: AppExecutionServices,
+                            hook: T081BridgeGate) -> ExecutionPolicyBridge {
+        ExecutionPolicyBridge(coordinator: services.coordinator, settings: services.settings,
+            loaded: services.settingsLoad, homeDirectory: scratch.home.path, detectedTools: [],
+            pendingByteLimit: 32 * 1_048_576, schedulerTestHook: hook, testHook: hook)
+    }
+
+    private func t081HeadroomRequirements() throws -> SchedulerRequirements {
+        try SchedulerRequirements(features: [.headroom])
+    }
+
+    func testT081bInvalidatingAdmissionClosesFacadeBeforePrepareAndExactSave() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let requirements = try self.t081HeadroomRequirements()
+            let active = try await sessions.beginSession(requirements: requirements)
+            let queued = try await sessions.beginSession(requirements: requirements)
+            let permits = T081PermitGate()
+            let activeTask = Task { try await sessions.withPermit(session: active) {
+                try await permits.hold(1, $0)
+            } }
+            await permits.wait(for: 1)
+            let queuedTask = Task { try await sessions.withPermit(session: queued) {
+                try await permits.hold(2, $0)
+            } }
+            await Task.yield()
+
+            let before = try Data(contentsOf: scratch.paths.settings)
+            await hook.block(.invalidatingAdmission)
+            let id = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: id, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("valid invalidating edit was not admitted")
+            }
+            await hook.wait(for: .invalidatingAdmission)
+
+            do {
+                _ = try await sessions.beginSession(requirements: requirements)
+                XCTFail("a session crossed the synchronous scheduler barrier")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUpdating)
+            }
+            do {
+                _ = try await sessions.withPermit(session: active) { _ in
+                    XCTFail("a permit crossed the synchronous scheduler barrier")
+                }
+                XCTFail("new permit unexpectedly crossed the scheduler barrier")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUpdating)
+            }
+            let queuedHasRun = await permits.hasEntered(2)
+            XCTAssertFalse(queuedHasRun)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), before)
+            let unchanged = await services.settings.load()
+            XCTAssertEqual(unchanged.envelope?.revision, 1)
+
+            await hook.release(.invalidatingAdmission)
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("the exact durable acknowledgement did not save")
+            }
+            XCTAssertEqual(saved.revision, 2)
+            await permits.release(1)
+            _ = try await activeTask.value
+            await permits.wait(for: 2)
+            await permits.release(2)
+            _ = try await queuedTask.value
+            let afterSave = await sessions.snapshot()
+            XCTAssertEqual(afterSave.settingsRevision, 2)
+        }
+    }
+
+    func testT081bConflictAndWriteFailureLeaveTheFacadeUnavailable() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let external = SettingsStore(url: scratch.paths.settings)
+            _ = await external.load()
+            _ = try await external.update(expectedRevision: 1, change: .transcriptAgeDays(120))
+            let id = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: id, baseValue: nil, editedValue: .integer(12))),
+                  case .conflict = await completion.value else {
+                return XCTFail("real external advance did not produce a conflict")
+            }
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("conflict reopened scheduler admission")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+
+        try await run(seed: t081Envelope(), fault: .configReplace) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let id = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: id, baseValue: nil, editedValue: .integer(12))),
+                  case .failed = await completion.value else {
+                return XCTFail("actual publication failure did not reach the bridge")
+            }
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("write failure reopened scheduler admission")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+    }
+
+    func testT081bCancellationNeverCommitsAPreparedSchedulerHandoff() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let before = try Data(contentsOf: scratch.paths.settings)
+            await hook.block(.invalidatingAdmission)
+            let batch = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: batch, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("invalidating cancellation setup was not admitted")
+            }
+            await hook.wait(for: .invalidatingAdmission)
+            completion.cancel()
+            await hook.release(.invalidatingAdmission)
+            guard case .failed(_, recoveryRequired: false) = await completion.value else {
+                return XCTFail("cancelled invalidating handoff committed")
+            }
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), before)
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("cancelled invalidating handoff reopened scheduler admission")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let before = try Data(contentsOf: scratch.paths.settings)
+            let generation = await bridge.explicitSessions.snapshot().generation
+            await hook.block(.presentationAdmission)
+            let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: rate, baseValue: .integer(4), editedValue: .integer(1))) else {
+                return XCTFail("presentation cancellation setup was not admitted")
+            }
+            await hook.wait(for: .presentationAdmission)
+            completion.cancel()
+            await hook.release(.presentationAdmission)
+            guard case .failed(_, recoveryRequired: false) = await completion.value else {
+                return XCTFail("cancelled presentation handoff committed")
+            }
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), before)
+            let after = await bridge.explicitSessions.snapshot()
+            XCTAssertEqual(after.generation, generation)
+            _ = try await bridge.explicitSessions.beginSession(
+                requirements: self.t081HeadroomRequirements())
+        }
+    }
+
+    func testT081bDocumentRatePlusAnotherTouchUsesTheClosingPath() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+            let batch = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            await hook.block(.invalidatingAdmission)
+            guard case .accepted(_, let completion) = bridge.submit(document: .init(baseRevision: 1,
+                global: [.init(id: rate, baseValue: .integer(4), editedValue: .integer(1)),
+                         .init(id: batch, baseValue: nil, editedValue: .integer(12))])) else {
+                return XCTFail("multi-touch rate document was not admitted")
+            }
+            await hook.wait(for: .invalidatingAdmission)
+            do {
+                _ = try await sessions.beginSession(requirements: self.t081HeadroomRequirements())
+                XCTFail("a document rate-plus-another-touch used presentation admission")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUpdating)
+            }
+            await hook.release(.invalidatingAdmission)
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("multi-touch document did not save through invalidation")
+            }
+            XCTAssertEqual(saved.revision, 2)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings),
+                           try SettingsDecoding.encode(saved))
+        }
+    }
+
+    func testT081bInitialZeroRevisionAndRecoveryKeepFacadeUnavailable() async throws {
+        try await run { scratch, services, _ in
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("revision-zero defaults installed a scheduler policy")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+
+        try await run(seed: Data("{broken".utf8)) { scratch, services, _ in
+            XCTAssertEqual(services.settingsLoad.disposition, .recoveryReadOnly)
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("recovery mode installed a scheduler policy")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+    }
+
+    func testT081bPresentationConflictAndWriteFailureDiscardWithoutClosing() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            let external = SettingsStore(url: scratch.paths.settings)
+            _ = await external.load()
+            _ = try await external.update(expectedRevision: 1, change: .transcriptAgeDays(120))
+            let before = try Data(contentsOf: scratch.paths.settings)
+            let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: rate, baseValue: .integer(4), editedValue: .integer(1))),
+                  case .conflict = await completion.value else {
+                return XCTFail("presentation conflict was not delivered")
+            }
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), before)
+            _ = try await bridge.explicitSessions.beginSession(
+                requirements: self.t081HeadroomRequirements())
+        }
+
+        try await run(seed: t081Envelope(), fault: .configReplace) { scratch, services, _ in
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            let before = try Data(contentsOf: scratch.paths.settings)
+            let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: rate, baseValue: .integer(4), editedValue: .integer(1))),
+                  case .failed(_, recoveryRequired: true) = await completion.value else {
+                return XCTFail("presentation write failure was not delivered")
+            }
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), before)
+            _ = try await bridge.explicitSessions.beginSession(
+                requirements: self.t081HeadroomRequirements())
+        }
+    }
+
+    func testT081bOnlyRateDeltaUsesNonClosingPresentationPreparation() async throws {
+        try await run(seed: t081Envelope()) { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bridge = self.t081Bridge(scratch, services, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let requirements = try self.t081HeadroomRequirements()
+            let before = await sessions.snapshot()
+            let active = try await sessions.beginSession(requirements: requirements)
+            let queued = try await sessions.beginSession(requirements: requirements)
+            let permits = T081PermitGate()
+            let activeTask = Task { try await sessions.withPermit(session: active) {
+                try await permits.hold(1, $0)
+            } }
+            await permits.wait(for: 1)
+            let queuedTask = Task { try await sessions.withPermit(session: queued) {
+                try await permits.hold(2, $0)
+            } }
+            await Task.yield()
+
+            await hook.block(.presentationPrepared)
+            await hook.block(.presentationAdmission)
+            let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 1,
+                id: rate, baseValue: .integer(4), editedValue: .integer(1))) else {
+                return XCTFail("valid presentation delta was not admitted")
+            }
+            await hook.wait(for: .presentationPrepared)
+            _ = try await sessions.beginSession(requirements: requirements)
+            await permits.release(1)
+            _ = try await activeTask.value
+            await permits.wait(for: 2)
+            let pendingLoad = await services.settings.load()
+            let pendingSnapshot = await sessions.snapshot()
+            XCTAssertEqual(pendingLoad.envelope?.revision, 1)
+            XCTAssertEqual(pendingSnapshot.generation, before.generation)
+
+            await hook.release(.presentationPrepared)
+            await hook.wait(for: .presentationAdmission)
+            await hook.release(.presentationAdmission)
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("presentation save did not receive exact acknowledgement")
+            }
+            XCTAssertEqual(saved.revision, 2)
+            let after = await sessions.snapshot()
+            XCTAssertEqual(after.generation, before.generation)
+            XCTAssertEqual(after.settingsRevision, 2)
+            await permits.release(2)
+            _ = try await queuedTask.value
+
+            let malformed = bridge.submit(global: .init(baseRevision: 2, id: rate,
+                baseValue: .integer(1), editedValue: .bool(true)))
+            guard case .rejected(_, .invalid) = malformed else {
+                return XCTFail("wrong-tag rate candidate was not rejected before save")
+            }
+        }
+    }
+}
+
 // Observation/pause only. The finite watchdog releases this fixture's wait;
 // it never closes an FD, signals a process, invents success or cancels storage.
 private final class A3Probe: @unchecked Sendable {
