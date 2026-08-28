@@ -165,7 +165,8 @@ public actor ScanSessionRegistry {
         var terminalEvent: ScanSessionEvent?
         var lastProgressEmission: UInt64?
         var subscribers: [UUID: Subscriber] = [:]
-        var task: Task<Void, Never>?
+        var task: Task<ScanSessionCompletion, Never>?
+        var cancellationRequested = false
     }
 
     private let limits: ScanSessionLimits
@@ -298,27 +299,38 @@ public actor ScanSessionRegistry {
         guard record.task == nil else { throw ScanSessionRegistryError.workAlreadyStarted }
         let reporter = ScanSessionReporter(sessionID: sessionID, registry: self)
         let registry = self
-        record.task = Task {
-            let completion = await operation(reporter)
-            do {
-                try await registry.complete(sessionID: sessionID,
-                    terminal: completion.terminal, coverage: completion.coverage,
-                    snapshot: completion.snapshot)
-            } catch {
-                await registry.failOwnedWorkIfNeeded(sessionID: sessionID)
-            }
+        let task = Task {
+            await operation(reporter)
         }
+        record.task = task
         records[sessionID] = record
+        Task {
+            let completion = await task.value
+            await registry.ownedWorkEnded(sessionID: sessionID, completion: completion)
+        }
     }
 
     public func cancel(sessionID: UUID, snapshot: ScanSessionSnapshot? = nil) throws {
-        guard let record = records[sessionID] else {
+        guard var record = records[sessionID] else {
             throw ScanSessionRegistryError.unknownSession
         }
-        record.task?.cancel()
-        try complete(sessionID: sessionID, terminal: .cancelled,
-            coverage: TraversalCoverage(isComplete: false, reasons: [.cancelled]),
-            snapshot: snapshot ?? record.snapshot)
+        guard record.terminal == nil else { throw ScanSessionRegistryError.terminalSession }
+        if let snapshot {
+            try validate(snapshot, after: record.snapshot)
+            record.snapshot = snapshot
+        }
+        record.cancellationRequested = true
+        let task = record.task
+        records[sessionID] = record
+
+        // Signal owned work first. Its retained task remains the source of truth for active work;
+        // the terminal event is emitted only by the completion observer after task.value returns.
+        task?.cancel()
+        if task == nil {
+            try complete(sessionID: sessionID, terminal: .cancelled,
+                coverage: TraversalCoverage(isComplete: false, reasons: [.cancelled]),
+                snapshot: record.snapshot)
+        }
     }
 
     public func state(sessionID: UUID) throws -> ScanSessionState {
@@ -436,5 +448,41 @@ public actor ScanSessionRegistry {
         try? complete(sessionID: sessionID, terminal: .failed,
             coverage: TraversalCoverage(isComplete: false, reasons: [.unreadable]),
             snapshot: record.snapshot)
+    }
+
+    private func ownedWorkEnded(sessionID: UUID, completion: ScanSessionCompletion) {
+        guard let record = records[sessionID], record.terminal == nil else { return }
+        if record.cancellationRequested {
+            var finalSnapshot = record.snapshot
+            do {
+                try validate(completion.snapshot, after: record.snapshot)
+                finalSnapshot = completion.snapshot
+            } catch {
+                // A cancelled worker cannot regress the last accepted cumulative snapshot.
+            }
+            var reasons = record.coverage.reasons
+            do {
+                try validateTerminal(completion.terminal, coverage: completion.coverage)
+                reasons.formUnion(completion.coverage.reasons)
+            } catch {
+                // Cancellation remains truthful even if a winding-down worker returns a malformed
+                // completion that would not be admissible on its own.
+            }
+            reasons.insert(.cancelled)
+            do {
+                try complete(sessionID: sessionID, terminal: .cancelled,
+                    coverage: TraversalCoverage(isComplete: false, reasons: reasons),
+                    snapshot: finalSnapshot)
+            } catch {
+                failOwnedWorkIfNeeded(sessionID: sessionID)
+            }
+            return
+        }
+        do {
+            try complete(sessionID: sessionID, terminal: completion.terminal,
+                coverage: completion.coverage, snapshot: completion.snapshot)
+        } catch {
+            failOwnedWorkIfNeeded(sessionID: sessionID)
+        }
     }
 }

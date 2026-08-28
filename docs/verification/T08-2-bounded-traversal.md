@@ -49,6 +49,19 @@ RED:
   suites. A per-source descriptor tracker replaced that global observation;
   twenty Continue and twenty cancellation cycles now prove traversal-owned
   descriptors and scheduler leases return to their own baselines.
+- The consolidated hardening pass recorded behavioral REDs for cursor replay
+  (all eight concurrent calls resumed), post-permit expiry and revision drift
+  (queued work still read `f0`), directory replacement and directory-content
+  churn (both reported complete), selection-string overflow (the source was
+  read), per-descendant expiry (both children were enqueued after the injected
+  deadline), and slow owned-work cancellation (the registry terminalized while
+  the task was still suspended). Metadata-failure injection first compiled RED
+  because the source had no fallible allocation-metadata seam.
+- The former one-node, pre-labelled million-breadth fixture was replaced by an
+  on-demand virtual source that actually processes 4,113 entries. It reaches
+  the configured 4,096-path queue, 512 hard-link identities, 64 page records,
+  and eight top-N records while retaining only one generated directory page at
+  a time.
 
 No regression uses `Task.yield()` for ordering. Injected clocks, explicit batch
 hooks, descriptor snapshots, and scheduler snapshots provide deterministic
@@ -58,7 +71,9 @@ control.
 
 - Blocking reads run on the dedicated utility `OperationQueue` only after the
   explicit bridge permit is accepted. Cancellation is checked between finite
-  batches and before each descendant enqueue.
+  batches and before each descendant enqueue. The injected clock is also
+  checked there; an expired slice stores only the bounded untouched suffix and
+  unprocessed batch remainder for Continue.
 - Queue, batch, depth, open-descriptor, hard-link identity, child-aggregate,
   result-record, top-N, breadth, path-string, protected-root, cursor, tombstone,
   and scan-slice retention are explicitly bounded. Byte and count arithmetic is
@@ -68,18 +83,28 @@ control.
   deterministic-order behavior, including hard-link de-duplication.
 - Coverage reports missing, unreadable, protected, cross-volume, churn,
   overflow, breadth/depth, expiration, cursor, and cancellation reasons. A
-  partial or contradictory terminal state cannot claim completeness.
+  partial or contradictory terminal state cannot claim completeness. Failed
+  allocation metadata reports unreadable instead of zero allocated bytes.
+- Real directory enumeration binds the checked identity to an
+  `O_NOFOLLOW` descriptor, compares `lstat` with `fstat`, enumerates through
+  `fdopendir`, and identifies children with descriptor-relative `fstatat`.
+  Bounded directory mutation watermarks are validated before Continue and
+  before complete coverage is returned.
 - Cursors are opaque store tokens, finite and single-use, and are bound to the
   work/logical session, root resource identity, scheduler/traversal generation,
   policy revision, expiry, and bounded pending-state digest. Replay, wrong
   session, expiry, generation/policy change, root replacement, churn, and
-  unrepresentable remainder fail truthfully.
+  unrepresentable remainder fail truthfully. Continue reserves the token before
+  its first suspension and revalidates expiry plus scheduler generation and
+  policy revision after permit acquisition.
 - The session registry owns its work independently of observers. Subscribers
   have unique bounded streams; progress may coalesce/drop without changing the
   cumulative shared snapshot. One subscription can terminate without
   cancelling another or the work. Terminal state is retained before live
   streams finish and is available to a late subscriber. Zero subscribers retain
-  no event backlog.
+  no event backlog. Session cancellation signals the registry-owned task first,
+  keeps work active while cancellation is slow, and emits its single retained
+  cancelled terminal only after that task has ended.
 
 ## Focused commands
 
@@ -89,8 +114,9 @@ swift test --disable-sandbox --jobs 2 \
   --filter 'BoundedTraversalTests|ScanSessionTests|HomeSurveyTests|SizeScannerTests|LargestItemsScannerTests|StaleNodeModulesScannerTests|UnclaimedSpaceScannerTests'
 ```
 
-Final result: 53 tests in 7 suites passed. This includes synthetic
-million-entry breadth, a real filesystem fixture, complete-sort top-N parity,
+Final remediation result: 61 tests in 7 suites passed. This includes the
+4,113-entry on-demand virtual traversal, a real filesystem fixture,
+descriptor-bound replacement and metadata-failure cases, complete-sort top-N parity,
 cursor rejection/continuation cases, exact 1/2/3/4 batch-rate and
 30/300/1800-second injected-clock cases, twenty Continue cycles, twenty
 cancellation cycles, all four changed adapters, and the unchanged
@@ -105,8 +131,9 @@ Final result: 34 tests in 1 suite passed. The scheduler façade and admission
 contract remained green.
 
 Direct sandboxed SwiftPM runs could not write the host compiler module cache at
-`/Users/abdulrahman/.cache/clang/ModuleCache`; the recorded commands therefore
-used SwiftPM's package sandbox override with the existing host cache access.
+`/Users/abdulrahman/.cache/clang/ModuleCache`; the recorded remediation commands
+therefore set `CLANG_MODULE_CACHE_PATH=/private/tmp/tidy-headroom-clang-cache`
+and used SwiftPM's package sandbox override.
 
 ## Full-core observation
 
@@ -115,13 +142,23 @@ cd TidyCore
 swift test --disable-sandbox --jobs 2
 ```
 
-The aggregate host run executed 526 tests in 57 suites and exited 1 with nine
-process/host-dependent issues: eight `SettingsProcessAcceptanceTests` child
-observations reported `.incomplete`, and
-`BoundedProcessRunnerTests.existingPublicRunnerUsesAggregateReplacementGate`
-reported its aggregate-runner observation. Every T08.2 traversal, session, and
-changed-adapter test passed in that aggregate run. These process-suite results
-are reported separately and are not represented as a full-core GREEN.
+The remediation aggregate run executed 534 tests in 57 suites and exited 1
+with 18 host/process-dependent issues, reported separately from T08.2:
+
+- eight `SettingsProcessAcceptanceTests` child observations reported
+  `.incomplete`;
+- `ProcessSurvey` could not observe any top memory consumers in this host;
+- `BoundedProcessRunnerTests` recorded nine issues across
+  `descendantOutlivesCLIAndPipeDeadline`,
+  `mutatingTimeoutLeavesActualChildRunning`,
+  `realSurvivingChildKeepsReopenedCoordinatorBlocked`,
+  `reusedPIDShapeCannotMatchActualIdentity`, and
+  `inheritedPipeDeadlineIsNotCommandTimeout`, principally unavailable child
+  identity/exit observations plus one host I/O error.
+
+Every T08.2 traversal/session test, every adapter suite, and every
+`WorkSchedulerTests` case passed within that aggregate run. Full-core GREEN is
+not claimed.
 
 Physical 50k-entry first-result, total-time, RSS, FD, and cancellation metrics
 remain the separate gate assigned by the T08 design; CI timing here is not
@@ -130,6 +167,7 @@ claimed as that physical measurement.
 ## Source and whitespace gate
 
 The final staged allowlist and `git diff --cached --check` were inspected before
-commit. No review agent was dispatched during implementation; the single
-independent phase review remains with the controller after this phase, as
-directed.
+the remediation commit. The remediation changed only both scanning primitives,
+their two focused test files, and this verification file. No reviewer was
+dispatched during the consolidated remediation; the controller performs direct
+verification, and no subsequent reviewer loop is claimed.
