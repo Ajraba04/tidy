@@ -9,10 +9,9 @@ public struct ContainerSpaceInfo: Sendable, Equatable {
     public let freeBytes: Int64
 
     public static func current(volumePath: String = "/") async -> ContainerSpaceInfo? {
-        guard let diskutilPath = ToolLocator.locate("diskutil") else { return nil }
-        guard let output = try? await ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: diskutilPath),
-            arguments: ["info", "-plist", volumePath]
+        guard let diskutilPath = await ToolLocator.locateAsync("diskutil") else { return nil }
+        guard let output = try? await ProcessRunner.runContainerSpace(
+            diskutilURL: URL(fileURLWithPath: diskutilPath), volumePath: volumePath
         ), output.succeeded, let data = output.standardOutput.data(using: .utf8) else {
             return nil
         }
