@@ -22,18 +22,36 @@ final class AppConfigStore {
     var preferences: PolicyPreferences {
         PolicyPreferences.project(legacy: displayed.config, saved: displayed.preferences)
     }
+    var activeProfileID: UUID? { displayed.activeProfileID }
+    var inertImports: [InertPortableSetting] { displayed.inertImports }
+    var effectivePolicy: EffectivePolicy? {
+        var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
+        if let activeProfileID {
+            guard preferences.profiles.filter({ $0.id == activeProfileID }).count == 1,
+                  let profile = preferences.profiles.first(where: { $0.id == activeProfileID })
+            else { return nil }
+            layers[.profile] = profile.values
+        }
+        let inputs = PolicyInputs(layers: layers, selectedVolumeID: nil,
+            approvedVolumeIDs: [], capacityBytes: nil,
+            logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
+            lowPower: false, seriousThermal: false, critical: false,
+            mandatoryExclusions: [])
+        return try? PolicyResolver.resolve(inputs)
+    }
 
     private let bridge: ExecutionPolicyBridge
     private var acknowledged: SettingsEnvelope
     private var displayed: SettingsEnvelope
     private var pendingOrder: [SettingsIntentID] = []
     private var pending: [SettingsIntentID: PendingTransform] = [:]
-    private var bufferedOutcomes: [SettingsIntentID: SettingsIntentOutcome] = [:]
     private var observerToken: UUID?
 
     private enum PendingTransform {
         case legacy(LegacyPreferenceDelta)
         case global(GlobalPreferenceDelta)
+        case document(PreferencesDocumentDelta)
+        case importPreview(SettingsImportPreview)
     }
 
     init(loaded: SettingsEnvelope, bridge: ExecutionPolicyBridge) {
@@ -64,25 +82,54 @@ final class AppConfigStore {
         return admission
     }
 
+    @discardableResult
+    func submit(document delta: PreferencesDocumentDelta) -> SettingsSubmissionAdmission {
+        let admission = bridge.submit(document: delta)
+        if case .accepted(let intentID, _) = admission {
+            pendingOrder.append(intentID); pending[intentID] = .document(delta)
+            replayVisibleState()
+        }
+        return admission
+    }
+
+    func analyzeImport(bytes: Data) async throws -> SettingsImportAnalysis {
+        try await bridge.analyzeImport(bytes: bytes)
+    }
+
+    func issueImportPreview(analysisID: SettingsImportAnalysisID,
+                            choices: [UUID: ProfileCollisionChoice]) async throws
+        -> SettingsImportPreview {
+        try await bridge.issueImportPreview(analysisID: analysisID, choices: choices)
+    }
+
+    @discardableResult
+    func commitImport(_ preview: SettingsImportPreview) -> SettingsSubmissionAdmission {
+        let admission = bridge.submit(importPreview: preview)
+        if case .accepted(let intentID, _) = admission {
+            pendingOrder.append(intentID); pending[intentID] = .importPreview(preview)
+            replayVisibleState()
+        }
+        return admission
+    }
+
+    func cancelImport(analysisID: SettingsImportAnalysisID) async {
+        await bridge.cancelImport(analysisID: analysisID)
+    }
+
+    func cancelImport(previewID: SettingsImportPreviewID) async {
+        await bridge.cancelImport(previewID: previewID)
+    }
+
     private func receive(_ outcome: SettingsIntentOutcome) {
         let id: SettingsIntentID
         switch outcome {
         case .saved(let value, _), .conflict(let value), .invalid(let value),
              .failed(let value, _): id = value
         }
-        // The bridge keeps a source-compatible direct submission API for core
-        // callers. Only outcomes for intents accepted through this store own a
-        // displayed transform; unrelated outcomes must not accumulate here.
-        guard pending[id] != nil else { return }
-        bufferedOutcomes[id] = outcome
-        drainBufferedHead()
-    }
-
-    private func drainBufferedHead() {
-        while let id = pendingOrder.first, let outcome = bufferedOutcomes.removeValue(forKey: id) {
-            pendingOrder.removeFirst()
+        if case .saved(_, let exact) = outcome { acknowledged = exact }
+        if pending[id] != nil {
             pending[id] = nil
-            if case .saved(_, let exact) = outcome { acknowledged = exact }
+            pendingOrder.removeAll { $0 == id }
         }
         replayVisibleState()
     }
@@ -90,7 +137,8 @@ final class AppConfigStore {
     private func replayVisibleState() {
         var envelope = SettingsEnvelope(schemaVersion: acknowledged.schemaVersion,
             revision: acknowledged.revision, config: acknowledged.config,
-            preferences: acknowledged.preferences)
+            preferences: acknowledged.preferences, activeProfileID: acknowledged.activeProfileID,
+            inertImports: acknowledged.inertImports)
         for id in pendingOrder {
             guard let transform = pending[id] else { continue }
             switch transform {
@@ -103,7 +151,15 @@ final class AppConfigStore {
                 let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
                     replacing: prior, with: values.global)
                 envelope = SettingsEnvelope(schemaVersion: envelope.schemaVersion,
-                    revision: envelope.revision, config: config, preferences: values)
+                    revision: envelope.revision, config: config, preferences: values,
+                    activeProfileID: envelope.activeProfileID,
+                    inertImports: envelope.inertImports)
+            case .document(let delta):
+                if let applied = try? PreferencesDocumentProjection.apply(delta, to: envelope) {
+                    envelope = applied.envelope
+                }
+            case .importPreview(let preview):
+                envelope = applying(preview, to: envelope)
             }
         }
         displayed = envelope
@@ -126,6 +182,19 @@ final class AppConfigStore {
         let preferences = LegacyCompatibilityProjection.applyingLegacyEdit(
             from: base, to: config, saved: envelope.preferences)
         return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
-            revision: envelope.revision, config: config, preferences: preferences)
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: envelope.activeProfileID, inertImports: envelope.inertImports)
+    }
+
+    private func applying(_ preview: SettingsImportPreview,
+                          to envelope: SettingsEnvelope) -> SettingsEnvelope {
+        var preferences = preview.candidate.preferences
+        preferences.projects = envelope.preferences?.projects ?? [:]
+        let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
+            replacing: envelope.preferences?.global, with: preferences.global)
+        return SettingsEnvelope(schemaVersion: envelope.schemaVersion,
+            revision: envelope.revision, config: config, preferences: preferences,
+            activeProfileID: envelope.activeProfileID,
+            inertImports: preview.candidate.inertImports)
     }
 }

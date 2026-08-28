@@ -110,13 +110,16 @@ public actor SettingsStore {
             config = LegacyCompatibilityProjection.reverseProject(config,
                 replacing: prior, with: replacement.global)
         case .preferencesDocument(let delta):
-            let applied = try applying(delta, to: current)
-            preferences = applied.preferences
-            config = LegacyCompatibilityProjection.reverseProject(config,
-                replacing: current.preferences?.global, with: applied.preferences.global)
-            return try save(current: current, config: config, preferences: preferences,
-                            activeProfileID: applied.activeProfileID,
-                            replaceActiveProfile: true, inertImports: applied.inertImports)
+            let applied: AppliedPreferencesDocument
+            do { applied = try PreferencesDocumentProjection.apply(delta, to: current) }
+            catch PreferencesDocumentProjectionError.stale {
+                throw SettingsStoreError.staleRevision
+            } catch { throw SettingsStoreError.invalidChange }
+            return try save(current: current, config: applied.envelope.config,
+                            preferences: applied.envelope.preferences,
+                            activeProfileID: applied.envelope.activeProfileID,
+                            replaceActiveProfile: true,
+                            inertImports: applied.envelope.inertImports)
         }
         return try save(current: current, config: config, preferences: preferences)
     }
@@ -256,107 +259,10 @@ public actor SettingsStore {
         return result
     }
 
-    private struct InertKey: Hashable {
-        let scope: InertScope
-        let profileID: UUID?
-        let id: String
-        init(_ item: InertPortableSetting) {
-            scope = item.scope; profileID = item.profileID; id = item.id
-        }
-    }
-
-    private func applying(_ delta: PreferencesDocumentDelta,
-                          to current: SettingsEnvelope) throws
-        -> (preferences: PolicyPreferences, activeProfileID: UUID?, inertImports: [InertPortableSetting]) {
-        guard delta.baseRevision <= current.revision else { throw SettingsStoreError.staleRevision }
-        var preferences = current.preferences ?? PolicyPreferences()
-        var globalIDs = Set<SettingID>()
-        for edit in delta.global {
-            guard globalIDs.insert(edit.id).inserted else { throw SettingsStoreError.invalidChange }
-            guard preferences.global.fields[edit.id] == edit.baseValue else {
-                throw SettingsStoreError.staleRevision
-            }
-            if let value = edit.editedValue {
-                guard (try? PortableSettingPolicy.classify(id: edit.id, value: value,
-                                                           layer: .global)) == .portable else {
-                    throw SettingsStoreError.invalidChange
-                }
-            } else if PolicyValidator.definition(for: edit.id) == nil {
-                throw SettingsStoreError.invalidChange
-            }
-            preferences.global.fields[edit.id] = edit.editedValue
-        }
-
-        var touchedProfiles = Set<UUID>()
-        var deletedProfiles = Set<UUID>()
-        for edit in delta.profiles {
-            let id: UUID
-            switch edit {
-            case .insert(let profile): id = profile.id
-            case .update(let profileID, _, _): id = profileID
-            case .delete(let profileID, _): id = profileID
-            }
-            guard touchedProfiles.insert(id).inserted else { throw SettingsStoreError.invalidChange }
-            switch edit {
-            case .insert(let profile):
-                guard !preferences.profiles.contains(where: { $0.id == profile.id }) else {
-                    throw SettingsStoreError.staleRevision
-                }
-                preferences.profiles.append(profile)
-            case .update(let id, let base, let edited):
-                guard edited.id == id else { throw SettingsStoreError.invalidChange }
-                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
-                      preferences.profiles[index] == base else { throw SettingsStoreError.staleRevision }
-                preferences.profiles[index] = edited
-            case .delete(let id, let base):
-                guard let index = preferences.profiles.firstIndex(where: { $0.id == id }),
-                      preferences.profiles[index] == base else { throw SettingsStoreError.staleRevision }
-                preferences.profiles.remove(at: index); deletedProfiles.insert(id)
-            }
-        }
-        guard Set(preferences.profiles.map(\.id)).count == preferences.profiles.count else {
-            throw SettingsStoreError.invalidChange
-        }
-
-        var active = current.activeProfileID
-        if delta.touchesActiveProfile {
-            guard current.activeProfileID == delta.activeProfileBase else {
-                throw SettingsStoreError.staleRevision
-            }
-            active = delta.activeProfileEdit
-        }
-        if let selected = current.activeProfileID, deletedProfiles.contains(selected) {
-            guard delta.touchesActiveProfile, delta.activeProfileBase == selected,
-                  delta.activeProfileEdit == nil else { throw SettingsStoreError.invalidChange }
-        }
-        if let active, !preferences.profiles.contains(where: { $0.id == active }) {
-            throw SettingsStoreError.invalidChange
-        }
-
-        var inert = Dictionary(uniqueKeysWithValues: current.inertImports.map { (InertKey($0), $0) })
-        var touchedInert = Set<InertKey>()
-        for edit in delta.inert {
-            let key = InertKey(edit.item)
-            guard touchedInert.insert(key).inserted else { throw SettingsStoreError.invalidChange }
-            if edit.presentInBase {
-                guard inert[key] == edit.item else { throw SettingsStoreError.staleRevision }
-            } else if inert[key] != nil { throw SettingsStoreError.staleRevision }
-            if edit.presentAfterEdit { inert[key] = edit.item } else { inert.removeValue(forKey: key) }
-        }
-        let inertImports = inert.values.sorted {
-            [$0.scope.rawValue, $0.profileID?.uuidString ?? "", $0.id]
-                .lexicographicallyPrecedes([$1.scope.rawValue, $1.profileID?.uuidString ?? "", $1.id])
-        }
-        do {
-            try SettingsTransfer.validatePersistedState(.init(preferences: preferences,
-                                                              inertImports: inertImports))
-        } catch { throw SettingsStoreError.invalidChange }
-        return (preferences, active, inertImports)
-    }
-
     public func analyzeImport(bytes: Data) throws -> SettingsImportAnalysis {
         issuedImportAnalysis = nil; issuedImportPreview = nil
         guard recoveryReason == nil else { throw SettingsStoreError.readOnlyRecovery }
+        try refreshEmptyParentIdentityIfNeeded()
         guard let current = loadedEnvelope, let image = loadedImage else {
             throw SettingsStoreError.unavailable
         }
@@ -369,6 +275,28 @@ public actor SettingsStore {
         issuedImportAnalysis = .init(analysis: issued, revision: current.revision,
                                      image: image, sourceDigest: SettingsFiles.digest(bytes))
         return issued
+    }
+
+    /// App bootstrap loads new defaults before the execution journal creates its
+    /// sibling support directory. Accept only that content-free parent creation;
+    /// every file/content/identity change remains subject to the exact image check.
+    private func refreshEmptyParentIdentityIfNeeded() throws {
+        guard let prior = loadedImage, prior.directory == nil,
+              prior.config == nil, prior.backup == nil,
+              prior.lock == nil, prior.metadata == nil else { return }
+        let disk: SettingsDiskImage
+        do {
+            disk = try SettingsFiles.load(url)
+            _ = try disk.loaded()
+        } catch {
+            if case SettingsFiles.Failure.busy = error { throw SettingsStoreError.unavailable }
+            throw SettingsStoreError.changedExternally
+        }
+        guard disk.config == nil, disk.backup == nil,
+              disk.lock == nil, disk.metadata == nil else {
+            throw SettingsStoreError.changedExternally
+        }
+        loadedImage = disk
     }
 
     public func issueImportPreview(analysisID: SettingsImportAnalysisID,
