@@ -1,0 +1,5337 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "settings.feature.headroom.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Headroom"
+          }
+        }
+      }
+    },
+    "settings.feature.headroom.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature headroom with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.headroom.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.headroom.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.buildPrep.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Build Prep"
+          }
+        }
+      }
+    },
+    "settings.feature.buildPrep.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature build prep with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.buildPrep.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.buildPrep.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.projects.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Projects"
+          }
+        }
+      }
+    },
+    "settings.feature.projects.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature projects with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.projects.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.projects.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.rescue.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Rescue"
+          }
+        }
+      }
+    },
+    "settings.feature.rescue.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature rescue with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.rescue.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.rescue.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.ecosystems.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Ecosystems"
+          }
+        }
+      }
+    },
+    "settings.feature.ecosystems.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature ecosystems with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.ecosystems.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.ecosystems.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.budgets.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Budgets"
+          }
+        }
+      }
+    },
+    "settings.feature.budgets.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature budgets with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.budgets.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.budgets.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.history.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature History"
+          }
+        }
+      }
+    },
+    "settings.feature.history.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature history with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.history.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.history.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.feature.maintenance.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feature Maintenance"
+          }
+        }
+      }
+    },
+    "settings.feature.maintenance.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure feature maintenance with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.feature.maintenance.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.feature.maintenance.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Apple Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem apple inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Apple Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem apple manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.apple.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Android Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem android inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Android Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem android manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.android.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Node Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem node inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Node Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem node manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.node.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Languages Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem languages inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Languages Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem languages manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.languages.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Homebrew Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem homebrew inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Homebrew Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem homebrew manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.homebrew.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Docker Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem docker inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Docker Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem docker manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.docker.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Ides Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem ides inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Ides Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem ides manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.ides.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Models Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem models inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Models Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem models manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.models.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Git Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem git inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Git Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem git manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.git.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.inventory.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Data Inventory"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.inventory.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem data inventory with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.inventory.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.inventory.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.manualActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ecosystem Data Manual Actions"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.manualActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ecosystem data manual actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.manualActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ecosystem.data.manualActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scope.projectRoots.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope Project Roots"
+          }
+        }
+      }
+    },
+    "settings.scope.projectRoots.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scope project roots with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scope.projectRoots.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scope.projectRoots.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scope.externalVolumes.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope External Volumes"
+          }
+        }
+      }
+    },
+    "settings.scope.externalVolumes.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scope external volumes with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scope.externalVolumes.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scope.externalVolumes.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scope.currentProject.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope Current Project"
+          }
+        }
+      }
+    },
+    "settings.scope.currentProject.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scope current project with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scope.currentProject.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scope.currentProject.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.preset.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Preset"
+          }
+        }
+      }
+    },
+    "settings.scan.preset.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan preset with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.preset.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.preset.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.requestedWorkers.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Requested Workers"
+          }
+        }
+      }
+    },
+    "settings.scan.requestedWorkers.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan requested workers with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.requestedWorkers.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.requestedWorkers.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.readOnlyProcesses.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Read Only Processes"
+          }
+        }
+      }
+    },
+    "settings.scan.readOnlyProcesses.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan read only processes with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.readOnlyProcesses.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.readOnlyProcesses.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.defaultScope.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Default Scope"
+          }
+        }
+      }
+    },
+    "settings.scan.defaultScope.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan default scope with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.defaultScope.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.defaultScope.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.sliceSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Slice Seconds"
+          }
+        }
+      }
+    },
+    "settings.scan.sliceSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan slice seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.sliceSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.sliceSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.uiBatchesPerSecond.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Ui Batches Per Second"
+          }
+        }
+      }
+    },
+    "settings.scan.uiBatchesPerSecond.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan ui batches per second with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.uiBatchesPerSecond.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.uiBatchesPerSecond.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.onLowPower.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan On Low Power"
+          }
+        }
+      }
+    },
+    "settings.scan.onLowPower.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan on low power with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.onLowPower.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.onLowPower.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.onSeriousThermal.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan On Serious Thermal"
+          }
+        }
+      }
+    },
+    "settings.scan.onSeriousThermal.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan on serious thermal with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.onSeriousThermal.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.onSeriousThermal.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.resumeAfterCriticalSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Resume After Critical Seconds"
+          }
+        }
+      }
+    },
+    "settings.scan.resumeAfterCriticalSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan resume after critical seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.resumeAfterCriticalSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.resumeAfterCriticalSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheEnabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Cache Enabled"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheEnabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan cache enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheEnabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheEnabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheMiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Cache Mi B"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheMiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan cache mi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheMiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheMiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheExpiryHours.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Cache Expiry Hours"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheExpiryHours.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scan cache expiry hours with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scan.cacheExpiryHours.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scan.cacheExpiryHours.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.backgroundEnabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Background Enabled"
+          }
+        }
+      }
+    },
+    "settings.monitor.backgroundEnabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor background enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.backgroundEnabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.backgroundEnabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.visibleIntervalSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Visible Interval Seconds"
+          }
+        }
+      }
+    },
+    "settings.monitor.visibleIntervalSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor visible interval seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.visibleIntervalSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.visibleIntervalSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.hiddenIntervalSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Hidden Interval Seconds"
+          }
+        }
+      }
+    },
+    "settings.monitor.hiddenIntervalSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor hidden interval seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.hiddenIntervalSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.hiddenIntervalSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryEnabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Raw History Enabled"
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryEnabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor raw history enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryEnabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryEnabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryHours.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Raw History Hours"
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryHours.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor raw history hours with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryHours.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.rawHistoryHours.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.monitor.suppressHiddenSampling.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitor Suppress Hidden Sampling"
+          }
+        }
+      }
+    },
+    "settings.monitor.suppressHiddenSampling.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure monitor suppress hidden sampling with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.monitor.suppressHiddenSampling.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.monitor.suppressHiddenSampling.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.browsers.keepCookieDomains.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browsers Keep Cookie Domains"
+          }
+        }
+      }
+    },
+    "settings.browsers.keepCookieDomains.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure browsers keep cookie domains with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.browsers.keepCookieDomains.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.browsers.keepCookieDomains.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scope.excludedRoots.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope Excluded Roots"
+          }
+        }
+      }
+    },
+    "settings.scope.excludedRoots.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scope excluded roots with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scope.excludedRoots.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scope.excludedRoots.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.scope.pinnedProjects.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope Pinned Projects"
+          }
+        }
+      }
+    },
+    "settings.scope.pinnedProjects.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure scope pinned projects with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.scope.pinnedProjects.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.scope.pinnedProjects.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.inactiveDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Inactive Days"
+          }
+        }
+      }
+    },
+    "settings.cleanup.inactiveDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup inactive days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.inactiveDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.inactiveDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.transcriptDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Transcript Days"
+          }
+        }
+      }
+    },
+    "settings.cleanup.transcriptDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup transcript days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.transcriptDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.transcriptDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.recentProtectionDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Recent Protection Days"
+          }
+        }
+      }
+    },
+    "settings.cleanup.recentProtectionDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup recent protection days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.recentProtectionDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.recentProtectionDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.warmProjectCount.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Warm Project Count"
+          }
+        }
+      }
+    },
+    "settings.cleanup.warmProjectCount.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup warm project count with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.warmProjectCount.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.warmProjectCount.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumCandidateMiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Minimum Candidate Mi B"
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumCandidateMiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup minimum candidate mi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumCandidateMiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumCandidateMiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumItemMiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Minimum Item Mi B"
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumItemMiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup minimum item mi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumItemMiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.minimumItemMiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.retainRecentArtifacts.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Retain Recent Artifacts"
+          }
+        }
+      }
+    },
+    "settings.cleanup.retainRecentArtifacts.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup retain recent artifacts with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.retainRecentArtifacts.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.retainRecentArtifacts.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.costCeiling.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Cost Ceiling"
+          }
+        }
+      }
+    },
+    "settings.cleanup.costCeiling.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup cost ceiling with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.costCeiling.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.costCeiling.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Requested Batch Gi B"
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup requested batch gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchItems.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Requested Batch Items"
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchItems.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup requested batch items with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchItems.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.requestedBatchItems.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Hard Batch Gi B"
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup hard batch gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchItems.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Hard Batch Items"
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchItems.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup hard batch items with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchItems.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.hardBatchItems.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.cleanup.manualInactiveAcknowledgementMinutes.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup Manual Inactive Acknowledgement Minutes"
+          }
+        }
+      }
+    },
+    "settings.cleanup.manualInactiveAcknowledgementMinutes.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure cleanup manual inactive acknowledgement minutes with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.cleanup.manualInactiveAcknowledgementMinutes.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.cleanup.manualInactiveAcknowledgementMinutes.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.headroom.targetGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Headroom Target Gi B"
+          }
+        }
+      }
+    },
+    "settings.headroom.targetGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure headroom target gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.headroom.targetGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.headroom.targetGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.headroom.warningGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Headroom Warning Gi B"
+          }
+        }
+      }
+    },
+    "settings.headroom.warningGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure headroom warning gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.headroom.warningGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.headroom.warningGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.headroom.clearGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Headroom Clear Gi B"
+          }
+        }
+      }
+    },
+    "settings.headroom.clearGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure headroom clear gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.headroom.clearGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.headroom.clearGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.simulators.approvedDeletionUDIDs.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Simulators Approved Deletion UDIDs"
+          }
+        }
+      }
+    },
+    "settings.simulators.approvedDeletionUDIDs.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure simulators approved deletion udids with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.simulators.approvedDeletionUDIDs.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.simulators.approvedDeletionUDIDs.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.tools.approvedExecutables.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tools Approved Executables"
+          }
+        }
+      }
+    },
+    "settings.tools.approvedExecutables.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure tools approved executables with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.tools.approvedExecutables.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.tools.approvedExecutables.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.docker.approvedEndpoints.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Docker Approved Endpoints"
+          }
+        }
+      }
+    },
+    "settings.docker.approvedEndpoints.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure docker approved endpoints with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.docker.approvedEndpoints.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.docker.approvedEndpoints.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.rescue.approvedApplications.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rescue Approved Applications"
+          }
+        }
+      }
+    },
+    "settings.rescue.approvedApplications.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure rescue approved applications with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.rescue.approvedApplications.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.rescue.approvedApplications.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.rescue.showAdvancedMemoryActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rescue Show Advanced Memory Actions"
+          }
+        }
+      }
+    },
+    "settings.rescue.showAdvancedMemoryActions.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure rescue show advanced memory actions with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.rescue.showAdvancedMemoryActions.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.rescue.showAdvancedMemoryActions.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.rescue.quitTimeoutSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rescue Quit Timeout Seconds"
+          }
+        }
+      }
+    },
+    "settings.rescue.quitTimeoutSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure rescue quit timeout seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.rescue.quitTimeoutSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.rescue.quitTimeoutSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Derived Data Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple derived data enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Derived Data High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple derived data high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Derived Data Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple derived data low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-derived-data.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Simulators Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple simulators enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Simulators High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple simulators high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Apple Simulators Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget apple simulators low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.apple-simulators.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.android.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Android Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.android.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget android enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.android.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.android.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.android.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Android High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.android.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget android high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.android.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.android.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.android.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Android Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.android.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget android low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.android.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.android.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Docker Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget docker enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Docker High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget docker high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Docker Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget docker low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.docker.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.docker.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Package Caches Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget package caches enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Package Caches High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget package caches high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Package Caches Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget package caches low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.package-caches.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.models.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Models Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.models.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget models enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.models.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.models.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.models.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Models High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.models.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget models high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.models.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.models.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.models.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Models Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.models.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget models low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.models.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.models.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Ides Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget ides enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Ides High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget ides high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Ides Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget ides low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.ides.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.ides.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.git.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Git Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.git.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget git enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.git.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.git.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.git.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Git High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.git.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget git high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.git.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.git.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.git.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Git Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.git.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget git low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.git.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.git.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.data.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Data Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.data.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget data enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.data.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.data.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.data.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Data High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.data.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget data high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.data.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.data.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.data.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Data Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.data.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget data low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.data.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.data.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.other.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Other Enabled"
+          }
+        }
+      }
+    },
+    "settings.budget.other.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget other enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.other.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.other.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.other.highGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Other High Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.other.highGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget other high gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.other.highGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.other.highGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.budget.other.lowGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget Other Low Gi B"
+          }
+        }
+      }
+    },
+    "settings.budget.other.lowGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure budget other low gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.budget.other.lowGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.budget.other.lowGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Enabled"
+          }
+        }
+      }
+    },
+    "settings.notifications.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.pressureSustainSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Pressure Sustain Seconds"
+          }
+        }
+      }
+    },
+    "settings.notifications.pressureSustainSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications pressure sustain seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.pressureSustainSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.pressureSustainSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.recoverySeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Recovery Seconds"
+          }
+        }
+      }
+    },
+    "settings.notifications.recoverySeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications recovery seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.recoverySeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.recoverySeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.cooldownMinutes.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Cooldown Minutes"
+          }
+        }
+      }
+    },
+    "settings.notifications.cooldownMinutes.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications cooldown minutes with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.cooldownMinutes.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.cooldownMinutes.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietHoursEnabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Quiet Hours Enabled"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietHoursEnabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications quiet hours enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietHoursEnabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietHoursEnabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietStart.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Quiet Start"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietStart.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications quiet start with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietStart.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietStart.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietEnd.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications Quiet End"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietEnd.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure notifications quiet end with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.notifications.quietEnd.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.notifications.quietEnd.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.mode.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Mode"
+          }
+        }
+      }
+    },
+    "settings.maintenance.mode.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance mode with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.mode.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.mode.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxGiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Max Gi B"
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxGiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance max gi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxGiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxGiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxItems.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Max Items"
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxItems.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance max items with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxItems.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.maxItems.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.deadlineSeconds.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Deadline Seconds"
+          }
+        }
+      }
+    },
+    "settings.maintenance.deadlineSeconds.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance deadline seconds with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.deadlineSeconds.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.deadlineSeconds.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumAgeDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Minimum Age Days"
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumAgeDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance minimum age days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumAgeDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumAgeDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumIntervalHours.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance Minimum Interval Hours"
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumIntervalHours.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure maintenance minimum interval hours with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumIntervalHours.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.maintenance.minimumIntervalHours.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.app.launchAtLogin.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Launch At Login"
+          }
+        }
+      }
+    },
+    "settings.app.launchAtLogin.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure app launch at login with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.app.launchAtLogin.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.app.launchAtLogin.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.history.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History Enabled"
+          }
+        }
+      }
+    },
+    "settings.history.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure history enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.history.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.history.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.history.retentionDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History Retention Days"
+          }
+        }
+      }
+    },
+    "settings.history.retentionDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure history retention days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.history.retentionDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.history.retentionDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.history.maxMiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History Max Mi B"
+          }
+        }
+      }
+    },
+    "settings.history.maxMiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure history max mi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.history.maxMiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.history.maxMiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.density.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Density"
+          }
+        }
+      }
+    },
+    "settings.ui.density.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui density with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.density.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.density.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.units.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Units"
+          }
+        }
+      }
+    },
+    "settings.ui.units.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui units with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.units.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.units.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.cards.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Cards"
+          }
+        }
+      }
+    },
+    "settings.ui.cards.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui cards with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.cards.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.cards.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.ecosystemOrder.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Ecosystem Order"
+          }
+        }
+      }
+    },
+    "settings.ui.ecosystemOrder.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui ecosystem order with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.ecosystemOrder.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.ecosystemOrder.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.showBadges.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Show Badges"
+          }
+        }
+      }
+    },
+    "settings.ui.showBadges.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui show badges with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.showBadges.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.showBadges.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.ui.advancedSettings.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ui Advanced Settings"
+          }
+        }
+      }
+    },
+    "settings.ui.advancedSettings.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure ui advanced settings with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.ui.advancedSettings.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.ui.advancedSettings.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.export.redactDiagnostics.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Redact Diagnostics"
+          }
+        }
+      }
+    },
+    "settings.export.redactDiagnostics.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure export redact diagnostics with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.export.redactDiagnostics.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to future policy planning and never start cleanup by themselves. Effect: %@"
+          }
+        }
+      }
+    },
+    "settings.export.redactDiagnostics.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.item.enabled.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Item Enabled"
+          }
+        }
+      }
+    },
+    "settings.item.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Configure item enabled with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.item.enabled.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — Changes apply to future policy planning and never start cleanup by themselves. Effect: %2$@"
+          }
+        }
+      }
+    },
+    "settings.item.enabled.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.item.inactiveDays.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Item Inactive Days"
+          }
+        }
+      }
+    },
+    "settings.item.inactiveDays.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Configure item inactive days with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.item.inactiveDays.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — Changes apply to future policy planning and never start cleanup by themselves. Effect: %2$@"
+          }
+        }
+      }
+    },
+    "settings.item.inactiveDays.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.item.minimumItemMiB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Item Minimum Item Mi B"
+          }
+        }
+      }
+    },
+    "settings.item.minimumItemMiB.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Configure item minimum item mi b with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.item.minimumItemMiB.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — Changes apply to future policy planning and never start cleanup by themselves. Effect: %2$@"
+          }
+        }
+      }
+    },
+    "settings.item.minimumItemMiB.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.item.retainRecentArtifacts.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Item Retain Recent Artifacts"
+          }
+        }
+      }
+    },
+    "settings.item.retainRecentArtifacts.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Configure item retain recent artifacts with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.item.retainRecentArtifacts.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — Changes apply to future policy planning and never start cleanup by themselves. Effect: %2$@"
+          }
+        }
+      }
+    },
+    "settings.item.retainRecentArtifacts.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.headroom.volumeOverride.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Headroom Volume Override"
+          }
+        }
+      }
+    },
+    "settings.headroom.volumeOverride.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Configure headroom volume override with Tidy's safe default."
+          }
+        }
+      }
+    },
+    "settings.headroom.volumeOverride.consequence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — Changes apply to future policy planning and never start cleanup by themselves. Effect: %2$@"
+          }
+        }
+      }
+    },
+    "settings.headroom.volumeOverride.applicability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — Available according to the policy layer and editor shown here."
+          }
+        }
+      }
+    },
+    "settings.copy.missing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description unavailable."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
+

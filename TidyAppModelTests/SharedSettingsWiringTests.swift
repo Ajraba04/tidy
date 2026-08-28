@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import SwiftUI
 import XCTest
 @testable import TidyCore
 
@@ -1763,5 +1764,456 @@ extension SharedSettingsWiringTests {
             XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
             XCTAssertEqual(io.configAttempts, 0)
         }
+    }
+}
+
+extension SharedSettingsWiringTests {
+    private func expectedSettingsControl(_ definition: SettingDefinition)
+        -> SettingsControlKind {
+        switch (definition.kind, definition.rule) {
+        case (.bool, .boolean): return .toggle
+        case (.integer, .integer(_, _)): return .integer
+        case (.optionalInteger, .optionalInteger(_, _)),
+             (.optionalInteger, .headroomTarget),
+             (.optionalInteger, .headroomWarning),
+             (.optionalInteger, .headroomClear),
+             (.optionalInteger, .budgetHigh),
+             (.optionalInteger, .budgetLow): return .optionalInteger
+        case (.choice, .choices(_)): return .choice
+        default: return .readOnly
+        }
+    }
+
+    @MainActor
+    func testSettingsRowsAreReachableSearchAdvancedAndAuthorityIsDeferred() async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let model = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
+            let basic = model.rows(query: "", showsAdvanced: false)
+            let all = model.rows(query: "", showsAdvanced: true)
+            let universe = try SettingsPresentationRegistry.all(volumeIDs: [])
+            XCTAssertEqual(Set(all.map(\.id)), Set(universe.map(\.definition.id)))
+            XCTAssertEqual(Set(basic.map(\.id)), SettingsPresentationRegistry.basicIDs)
+            XCTAssertTrue(basic.allSatisfy { $0.setting.presentation.tier == .basic })
+            XCTAssertFalse(basic.contains { $0.setting.presentation.tier == .advanced })
+
+            let advanced = try XCTUnwrap(all.first { row in
+                row.setting.presentation.tier == .advanced
+            })
+            let searchFields = [advanced.id.rawValue, advanced.title, advanced.help,
+                advanced.consequence, advanced.defaultText, advanced.effectiveText,
+                advanced.sourceText, advanced.ruleText, advanced.availabilityText]
+            for field in searchFields where !field.isEmpty {
+                XCTAssertTrue(model.rows(query: field, showsAdvanced: false)
+                    .contains { $0.id == advanced.id }, "search missed \(field)")
+            }
+            XCTAssertEqual(SettingsSearch.normalize("  RÉSUMÉ  VALUE "), "resume value")
+
+            let beforePreferences = services.configStore.preferences
+            let beforeGeneration = services.policyBridge.updateGeneration
+            let beforeAdmission = services.coordinator.policyAdmission()
+            let beforeExecutionEnabled = services.policyBridge.isExecutionEnabled
+            let beforeRevision = services.policyBridge.durableSettingsRevision
+            let authorityRows = all.filter {
+                $0.setting.definition.resolution == .authority
+            }
+            XCTAssertFalse(authorityRows.isEmpty)
+            for row in authorityRows {
+                guard case .deferred = row.availability else {
+                    return XCTFail("authority row not deferred: \(row.id.rawValue)")
+                }
+                XCTAssertNil(model.submit(id: row.id,
+                    value: row.setting.definition.defaultValue))
+                XCTAssertEqual(services.configStore.preferences, beforePreferences)
+                XCTAssertEqual(services.policyBridge.updateGeneration, beforeGeneration)
+                XCTAssertEqual(services.coordinator.policyAdmission(), beforeAdmission)
+                XCTAssertEqual(services.policyBridge.isExecutionEnabled, beforeExecutionEnabled)
+                XCTAssertEqual(services.policyBridge.durableSettingsRevision, beforeRevision)
+                XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+                XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+                XCTAssertFalse(services.policyBridge.storageUpdatePending)
+                XCTAssertFalse(services.policyBridge.policyUpdatePending)
+            }
+
+            let readOnlyGlobalRows = all.filter { row in
+                let definition = row.setting.definition
+                return definition.resolution != .authority &&
+                    definition.layers.contains(.global) && row.controlKind == .readOnly
+            }
+            XCTAssertFalse(readOnlyGlobalRows.isEmpty)
+            for row in readOnlyGlobalRows {
+                guard case .unavailable = row.availability else {
+                    return XCTFail("read-only global P/R row not unavailable: \(row.id.rawValue)")
+                }
+                XCTAssertNil(model.submit(id: row.id,
+                    value: row.setting.definition.defaultValue))
+                XCTAssertEqual(services.configStore.preferences, beforePreferences)
+                XCTAssertEqual(services.policyBridge.updateGeneration, beforeGeneration)
+                XCTAssertEqual(services.coordinator.policyAdmission(), beforeAdmission)
+                XCTAssertEqual(services.policyBridge.isExecutionEnabled, beforeExecutionEnabled)
+                XCTAssertEqual(services.policyBridge.durableSettingsRevision, beforeRevision)
+                XCTAssertEqual(services.policyBridge.pendingSnapshotCount, 0)
+                XCTAssertEqual(services.policyBridge.pendingSnapshotBytes, 0)
+                XCTAssertFalse(services.policyBridge.storageUpdatePending)
+                XCTAssertFalse(services.policyBridge.policyUpdatePending)
+            }
+            XCTAssertTrue(basic.contains { $0.id.rawValue == "ui.cards" })
+            let volume = PolicyDefaults.volumeRow(id:
+                UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!)
+            XCTAssertNil(model.submit(id: volume.id, value: .volume(.init(
+                target: .automatic, warning: .automatic, clear: .automatic))))
+            XCTAssertEqual(services.configStore.preferences, beforePreferences)
+            XCTAssertEqual(services.policyBridge.updateGeneration, beforeGeneration)
+            XCTAssertEqual(services.coordinator.policyAdmission(), beforeAdmission)
+            XCTAssertEqual(services.policyBridge.isExecutionEnabled, beforeExecutionEnabled)
+            XCTAssertEqual(services.policyBridge.durableSettingsRevision, beforeRevision)
+
+            for row in all where row.setting.definition.resolution != .authority &&
+                row.setting.definition.layers.contains(.global) && row.controlKind != .readOnly {
+                XCTAssertEqual(row.controlKind,
+                               expectedSettingsControl(row.setting.definition))
+                guard case .editable = row.availability else {
+                    return XCTFail("supported global P/R row is not editable: \(row.id.rawValue)")
+                }
+            }
+            for row in all {
+                XCTAssertEqual(row.controlKind,
+                               expectedSettingsControl(row.setting.definition))
+            }
+
+            for row in all {
+                XCTAssertNotEqual(row.title, row.setting.presentation.keys.title)
+                XCTAssertNotEqual(row.help, row.setting.presentation.keys.help)
+                XCTAssertNotEqual(row.consequence, row.setting.presentation.keys.consequence)
+                XCTAssertNotEqual(row.availabilityText,
+                                  row.setting.presentation.keys.applicability)
+            }
+        }
+    }
+
+    @MainActor
+    func testSettingsRepresentativeGlobalControlsUseSharedStore() async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let first = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
+            let second = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
+            let edits: [(String, SettingValue)] = [
+                ("feature.headroom", .bool(false)),
+                ("cleanup.inactiveDays", .integer(61)),
+                ("cleanup.hardBatchGiB", .integer(20)),
+                ("ui.units", .choice("decimal"))
+            ]
+
+            for (raw, value) in edits {
+                let id = SettingID(rawValue: raw)
+                let row = try XCTUnwrap(first.rows(query: raw, showsAdvanced: false)
+                    .first { $0.id == id })
+                guard case .editable = row.availability else {
+                    return XCTFail("representative control unavailable: \(raw)")
+                }
+                let admission = try XCTUnwrap(first.submit(id: id, value: value))
+                let outcome: SettingsIntentOutcome
+                switch admission {
+                case .accepted(_, let task): outcome = await task.value
+                case .rejected(_, let reason):
+                    return XCTFail("unexpected rejection for \(raw): \(reason)")
+                }
+                guard case .saved = outcome else { return XCTFail("\(raw) was not saved") }
+                await services.policyBridge.drain()
+                XCTAssertEqual(services.configStore.preferences.global.fields[id], value)
+                XCTAssertEqual(second.rows(query: raw, showsAdvanced: false)
+                    .first { $0.id == id }?.storedValue, value)
+            }
+        }
+    }
+
+    @MainActor
+    func testSettingsAccessibilityFocusAndSemanticContrastContract() async throws {
+        try await run { _, services, _ in
+            let model = SettingsSurfaceModel(store: services.configStore,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+            let rows = model.rows(query: "", showsAdvanced: true)
+
+            XCTAssertEqual(rows.map(\.focusIndex), Array(rows.indices))
+            XCTAssertEqual(Set(rows.map(\.accessibilityIdentifier)).count, rows.count)
+            XCTAssertEqual(Set(rows.map(\.accessibilityLabel)).count, rows.count)
+            XCTAssertTrue(rows.allSatisfy {
+                $0.accessibilityLabel.contains($0.title) &&
+                $0.accessibilityLabel.contains($0.id.rawValue)
+            })
+            XCTAssertTrue(rows.allSatisfy { $0.accessibilityIdentifier ==
+                "settings.row." + $0.id.rawValue })
+            XCTAssertTrue(rows.allSatisfy { !$0.defaultText.isEmpty && !$0.effectiveText.isEmpty &&
+                !$0.sourceText.isEmpty && !$0.ruleText.isEmpty && !$0.consequence.isEmpty })
+            XCTAssertEqual(SettingsVisualContract.titleRole, .primary)
+            XCTAssertEqual(SettingsVisualContract.metadataRole, .secondary)
+            XCTAssertEqual(SettingsVisualContract.unavailableRole, .warning)
+            XCTAssertEqual(SettingsVisualContract.layoutMode(for: .large), .columns)
+            XCTAssertEqual(SettingsVisualContract.layoutMode(for: .accessibility1), .stacked)
+
+            for section in SettingsPresentationSection.allCases {
+                let sectionRows = model.rows(query: "", showsAdvanced: true,
+                                             section: section)
+                XCTAssertEqual(sectionRows.map(\.focusIndex), Array(sectionRows.indices))
+                XCTAssertTrue(sectionRows.allSatisfy {
+                    $0.setting.presentation.section == section
+                })
+            }
+            XCTAssertTrue(rows.allSatisfy { !$0.availabilityText.isEmpty })
+        }
+    }
+
+    @MainActor
+    func testSettingsFormatsPolicySemanticsWithoutDuplicatingPolicyTruth() async throws {
+        try await run { _, services, _ in
+            let rows = SettingsSurfaceModel(store: services.configStore,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+                .rows(query: "", showsAdvanced: true)
+            let none = try XCTUnwrap(rows.first { $0.setting.definition.effect == .none })
+            let invalidate = try XCTUnwrap(rows.first {
+                $0.setting.definition.effect == .invalidate
+            })
+            let consent = try XCTUnwrap(rows.first { $0.setting.definition.effect == .consent })
+            XCTAssertNotEqual(none.consequence, invalidate.consequence)
+            XCTAssertNotEqual(none.consequence, consent.consequence)
+            XCTAssertNotEqual(invalidate.consequence, consent.consequence)
+            XCTAssertTrue(none.consequence.localizedCaseInsensitiveContains("no plan invalidation"))
+            XCTAssertTrue(invalidate.consequence.localizedCaseInsensitiveContains("invalidates"))
+            XCTAssertTrue(consent.consequence.localizedCaseInsensitiveContains("separate consent"))
+            for row in rows {
+                XCTAssertTrue(row.availabilityText.contains(
+                    row.setting.definition.resolution.rawValue))
+                for layer in row.setting.definition.layers {
+                    XCTAssertTrue(row.availabilityText.contains(layer.rawValue))
+                }
+            }
+            XCTAssertEqual(SettingsRowAvailability.notApplicable("fixture"),
+                           .notApplicable("fixture"))
+            XCTAssertFalse(SettingsSearch.haystack(for: none).isEmpty)
+        }
+    }
+
+    @MainActor
+    func testSettingsCachesValidatedRegistryAndLocalizedPresentationAcrossSearch() async throws {
+        try await run { _, services, _ in
+            let model = SettingsSurfaceModel(store: services.configStore,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+            let beforeValidation = SettingsSurfaceModel.registryValidationCount
+            _ = model.rows(query: "", showsAdvanced: true, section: .features)
+            let afterFirstValidation = SettingsSurfaceModel.registryValidationCount
+            let afterFirstLocalization = SettingsSurfaceModel.localizationResolutionCount
+            _ = model.rows(query: "cache", showsAdvanced: false, section: .features)
+            _ = model.rows(query: "CACHE", showsAdvanced: true, section: .features)
+            XCTAssertLessThanOrEqual(afterFirstValidation - beforeValidation, 1)
+            XCTAssertEqual(SettingsSurfaceModel.registryValidationCount,
+                           afterFirstValidation)
+            XCTAssertEqual(SettingsSurfaceModel.localizationResolutionCount,
+                           afterFirstLocalization)
+        }
+    }
+
+    func testSettingsIntegerDraftCommitsOnceAndSynchronizesExternalValue() {
+        var draft = SettingsIntegerDraft(storedValue: .integer(10), allowsAutomatic: false)
+        var submissions: [SettingValue] = []
+        draft.replaceText("")
+        draft.replaceText("2")
+        draft.replaceText("20")
+        XCTAssertTrue(submissions.isEmpty)
+        if let value = draft.committedValue { submissions.append(value) }
+        XCTAssertEqual(submissions, [.integer(20)])
+        draft.synchronize(storedValue: .integer(35))
+        XCTAssertEqual(draft.text, "35")
+
+        var optional = SettingsIntegerDraft(storedValue: .integer(7), allowsAutomatic: true)
+        optional.replaceText("")
+        XCTAssertEqual(optional.committedValue, .null)
+        XCTAssertEqual(submissions.count, 1)
+    }
+
+    @MainActor
+    func testSettingsEmptyStatesSeparateNoMatchFromRegistryFailure() {
+        XCTAssertEqual(SettingsSurfaceEmptyState.resolve(rows: [], registryState: .valid),
+                       .noMatches)
+        XCTAssertEqual(SettingsSurfaceEmptyState.resolve(rows: [],
+            registryState: .invalid("fixture")), .registryFailure("fixture"))
+        XCTAssertEqual(SettingsSurfaceEmptyState.resolve(rows:
+            SettingsSurfaceModel.fixtureRows(bundle: Bundle(for: SharedSettingsWiringTests.self)),
+            registryState: .valid), .content)
+    }
+
+    @MainActor
+    func testSettingsLocalizedConsequenceConsumesEffectAndAccessibilityIsComplete()
+        async throws {
+        try await run { _, services, _ in
+            let bundle = Bundle(for: SharedSettingsWiringTests.self)
+            let presentation = try XCTUnwrap(SettingsPresentationRegistry.entries.first)
+            let none = SettingsCopy.resolve(presentation.keys.consequence,
+                arguments: [describe(AuthorityEffect.none)], bundle: bundle)
+            let invalidate = SettingsCopy.resolve(presentation.keys.consequence,
+                arguments: [describe(AuthorityEffect.invalidate)], bundle: bundle)
+            let consent = SettingsCopy.resolve(presentation.keys.consequence,
+                arguments: [describe(AuthorityEffect.consent)], bundle: bundle)
+            XCTAssertNotEqual(none, invalidate)
+            XCTAssertNotEqual(none, consent)
+            XCTAssertNotEqual(invalidate, consent)
+
+            let rows = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
+                .rows(query: "", showsAdvanced: true)
+            for row in rows {
+                let value = SettingsAccessibility.value(for: row)
+                let help = SettingsAccessibility.help(for: row)
+                XCTAssertTrue(value.contains(row.defaultText))
+                XCTAssertTrue(value.contains(row.effectiveText))
+                XCTAssertTrue(value.contains(row.sourceText))
+                XCTAssertTrue(value.contains(row.ruleText))
+                XCTAssertTrue(help.contains(row.consequence))
+                XCTAssertTrue(help.contains(row.availabilityText))
+            }
+            for row in rows where row.setting.definition.layers.isEmpty {
+                XCTAssertTrue(row.availabilityText.contains("none; local authority only"))
+                XCTAssertFalse(row.availabilityText.contains("Layers: ."))
+            }
+        }
+    }
+
+    @MainActor
+    func testSettingsAccessibilityTextLayoutRendersAtMinimumWidth() async throws {
+        try await run { _, services, _ in
+            let rows = SettingsSurfaceModel(store: services.configStore,
+                bundle: Bundle(for: SharedSettingsWiringTests.self))
+                .rows(query: "", showsAdvanced: false)
+            var submissions = 0
+            let view = RegistrySettingsSurface(rows: rows) { _, _ in submissions += 1 }
+                .environment(\.dynamicTypeSize, .accessibility3)
+                .frame(width: 480, height: 900)
+            let renderer = ImageRenderer(content: view)
+
+            XCTAssertNotNil(renderer.cgImage)
+            XCTAssertEqual(submissions, 0, "rendering/opening must not submit an edit")
+        }
+    }
+
+    func testSettingsLocalizationCatalogCoversEveryRegistryKey() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf:
+            repository.appendingPathComponent("Tidy/Resources/Localizable.xcstrings"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data)
+            as? [String: Any])
+        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        var required = Set(SettingsPresentationRegistry.entries.flatMap { entry in
+            [entry.keys.title, entry.keys.help, entry.keys.consequence,
+             entry.keys.applicability]
+        })
+        required.insert("settings.copy.missing")
+        XCTAssertTrue(required.isSubset(of: Set(strings.keys)))
+        for key in required {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any])
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any])
+            let english = try XCTUnwrap(localizations["en"] as? [String: Any])
+            let unit = try XCTUnwrap(english["stringUnit"] as? [String: Any])
+            let value = try XCTUnwrap(unit["value"] as? String)
+            XCTAssertFalse(value.isEmpty)
+            XCTAssertNotEqual(value, key)
+        }
+    }
+
+    func testSettingsDynamicLocalizationInterpolatesIdentityAndFallsBackSafely() throws {
+        let bundle = Bundle(for: SharedSettingsWiringTests.self)
+        func keys(_ presentation: SettingPresentation) -> [String] {
+            [presentation.keys.title, presentation.keys.help,
+             presentation.keys.consequence, presentation.keys.applicability]
+        }
+        func resolved(_ presentation: SettingPresentation,
+                      definition: SettingDefinition, identity: String) -> [String] {
+            keys(presentation).map { key in
+                let arguments: [CVarArg] = key == presentation.keys.consequence
+                    ? [identity, describe(definition.effect)] : [identity]
+                return SettingsCopy.resolve(key, arguments: arguments, bundle: bundle)
+            }
+        }
+
+        let items = Array(CleanCatalog.allItems.prefix(2))
+        XCTAssertEqual(items.count, 2)
+        let firstItem = try XCTUnwrap(items.first)
+        let secondItem = try XCTUnwrap(items.last)
+        XCTAssertNotEqual(firstItem.id, secondItem.id)
+        let firstDefinitions = PolicyDefaults.itemRows(catalogID: firstItem.id)
+        let secondDefinitions = PolicyDefaults.itemRows(catalogID: secondItem.id)
+        XCTAssertEqual(firstDefinitions.count, 4)
+        XCTAssertEqual(secondDefinitions.count, 4)
+        for (firstDefinition, secondDefinition) in zip(firstDefinitions, secondDefinitions) {
+            let firstPresentation = try SettingsPresentationRegistry.presentation(
+                for: firstDefinition)
+            let secondPresentation = try SettingsPresentationRegistry.presentation(
+                for: secondDefinition)
+            XCTAssertEqual(firstPresentation.pattern, secondPresentation.pattern,
+                           "paired catalog rows must use the same suffix presentation")
+            let firstCopy = resolved(firstPresentation, definition: firstDefinition,
+                                     identity: firstItem.id)
+            let secondCopy = resolved(secondPresentation, definition: secondDefinition,
+                                      identity: secondItem.id)
+            XCTAssertEqual(firstCopy.count, 4)
+            XCTAssertEqual(secondCopy.count, 4)
+            XCTAssertTrue(firstCopy.allSatisfy { $0.contains(firstItem.id) })
+            XCTAssertTrue(secondCopy.allSatisfy { $0.contains(secondItem.id) })
+            for (firstOutput, secondOutput) in zip(firstCopy, secondCopy) {
+                XCTAssertNotEqual(firstOutput, secondOutput,
+                                  "corresponding suffix/key output must include its identity")
+            }
+        }
+
+        let sentinel = SettingsPresentationRegistry.validationVolumeID
+        let other = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        let sentinelDefinition = PolicyDefaults.volumeRow(id: sentinel)
+        let otherDefinition = PolicyDefaults.volumeRow(id: other)
+        let sentinelCopy = resolved(try SettingsPresentationRegistry.presentation(
+            for: sentinelDefinition), definition: sentinelDefinition,
+            identity: sentinel.uuidString)
+        let otherCopy = resolved(try SettingsPresentationRegistry.presentation(
+            for: otherDefinition), definition: otherDefinition, identity: other.uuidString)
+        XCTAssertTrue(sentinelCopy.allSatisfy { $0.contains(sentinel.uuidString) })
+        XCTAssertTrue(otherCopy.allSatisfy { $0.contains(other.uuidString) })
+        XCTAssertNotEqual(sentinelCopy, otherCopy)
+
+        XCTAssertEqual(SettingsCopy.resolve("settings.copy.missing", bundle: bundle),
+                       "Description unavailable.")
+        let missing = SettingsCopy.resolve("settings.fixture.does-not-exist", bundle: bundle)
+        XCTAssertEqual(missing, "Description unavailable.")
+        XCTAssertFalse(missing.contains("settings.fixture.does-not-exist"))
+    }
+
+    func testSettingsSourceHasNoOnOpenWorkTrigger() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf:
+            repository.appendingPathComponent("Tidy/Settings/SettingsView.swift"),
+            encoding: .utf8)
+        let forbidden = [
+            ".task", "Task {", "Task.detached", ".onAppear", ".onReceive",
+            ".refreshable", "Timer", "Process(", "Process.", "ProcessSurvey",
+            "CookieDomainSuggester", "GitRootDiscovery", "SimctlClient", "CleanEngine",
+            "requestPlan", "loadPlan", "FileManager", "URLSession", "NSWorkspace",
+            "DispatchSource", "NotificationCenter"
+        ]
+        for token in forbidden {
+            XCTAssertFalse(source.contains(token), "Settings on-open source contains \(token)")
+        }
+        XCTAssertFalse(source.contains("ExecutionPolicyBridge"))
+        XCTAssertFalse(source.contains("SettingsStore"))
+        XCTAssertFalse(source.contains("Color(red:"))
+        XCTAssertFalse(source.contains(".opacity("))
+        XCTAssertTrue(source.contains("SettingsVisualContract.titleRole"))
+        XCTAssertTrue(source.contains("SettingsVisualContract.layoutMode"))
+        XCTAssertTrue(source.contains("store.setGlobalPreference"))
+        XCTAssertTrue(source.contains("String.LocalizationValue(key)"))
+        XCTAssertTrue(source.contains("String(localized:"))
+        XCTAssertFalse(source.contains("accessibilityElement(children: .combine)"))
+        XCTAssertTrue(source.contains("semanticText(row.availabilityText"))
+        XCTAssertFalse(source.contains("@State private var integerText"))
+        XCTAssertFalse(source.contains("@State private var optionalText"))
+        XCTAssertTrue(source.contains(".onSubmit"))
+        XCTAssertTrue(source.contains("No settings match"))
+        XCTAssertTrue(source.contains("settings.registry.failure"))
     }
 }

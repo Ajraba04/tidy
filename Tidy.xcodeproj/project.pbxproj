@@ -42,6 +42,12 @@
 		B6DD5FEB5ED3D6CAEC0AF947 /* AppConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6E9FC425BFFBF2A669FB16 /* AppConfigStore.swift */; };
 		B8906F271266DA6A848657E3 /* CustomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27CF98C2C4735642310A883 /* CustomViewModel.swift */; };
 		C81A5F14076D6BC7C2E59EA4 /* ScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1654876866CC41C183B3B01 /* ScanViewModel.swift */; };
+		C73A30000000000000000001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A92F89D44FA1B72DC2B8F0 /* SettingsView.swift */; };
+		C73A30000000000000000002 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A92F89D44FA1B72DC2B8F0 /* SettingsView.swift */; };
+		C73A30000000000000000003 /* AppConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6E9FC425BFFBF2A669FB16 /* AppConfigStore.swift */; };
+		C73A30000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C73A30000000000000000007 /* Localizable.xcstrings */; };
+		C73A30000000000000000005 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C73A30000000000000000007 /* Localizable.xcstrings */; };
+		C73A30000000000000000006 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C73A30000000000000000007 /* Localizable.xcstrings */; };
 		D65E88E0B18491210BE597A7 /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		D8AAF482525D2486EDF8250D /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		DF3350AB3C7E491F3C97B9B8 /* CustomPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C3DEEB7B3494A1C873B926 /* CustomPlanView.swift */; };
@@ -76,6 +82,7 @@
 		9E72E66F717B290C37C642E2 /* ModeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeButton.swift; sourceTree = "<group>"; };
 		A1830BC7E92D3BC8367D7CA3 /* ConfirmationLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationLifecycleTests.swift; sourceTree = "<group>"; };
 		B7A92F89D44FA1B72DC2B8F0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C73A30000000000000000007 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		B9519BCE2FEACF5EC9C7E8B7 /* TestHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHostApp.swift; sourceTree = "<group>"; };
 		BC33AE300F028BF525B091DD /* MenuBarContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
 		CBD22FC9B5E7BCC4352D4017 /* ScanSectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSectionViews.swift; sourceTree = "<group>"; };
@@ -227,6 +234,7 @@
 			isa = PBXGroup;
 			children = (
 				4CB5D28287440D580A3BB067 /* Assets.xcassets */,
+				C73A30000000000000000007 /* Localizable.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -268,6 +276,7 @@
 			buildConfigurationList = BDF1F54CED234139AE0E4A4A /* Build configuration list for PBXNativeTarget "TidyUITestHost" */;
 			buildPhases = (
 				CA847ACE26E62B9FBB1CC0BF /* Sources */,
+				C73A30000000000000000009 /* Resources */,
 				E6DAB69FCA7FC28AC4839B29 /* Frameworks */,
 			);
 			buildRules = (
@@ -287,6 +296,7 @@
 			buildConfigurationList = 6DB4DBAAFA39379E3B278E01 /* Build configuration list for PBXNativeTarget "TidyAppModelTests" */;
 			buildPhases = (
 				DEDCBBC642EFCB2ADEDF4FFD /* Sources */,
+				C73A30000000000000000008 /* Resources */,
 				0F6715BA2D68F75EE3284CE8 /* Frameworks */,
 			);
 			buildRules = (
@@ -362,6 +372,23 @@
 			buildActionMask = 2147483647;
 			files = (
 				A4A60D8F3BF28987988ABA4A /* Assets.xcassets in Resources */,
+				C73A30000000000000000004 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C73A30000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C73A30000000000000000005 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C73A30000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C73A30000000000000000006 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -403,6 +430,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C73A30000000000000000003 /* AppConfigStore.swift in Sources */,
+				C73A30000000000000000002 /* SettingsView.swift in Sources */,
 				AA55757274C2179E71248DA1 /* CleanPlanView.swift in Sources */,
 				DF3350AB3C7E491F3C97B9B8 /* CustomPlanView.swift in Sources */,
 				2C4550165EDDCA226A3CE80E /* PlanReviewRow.swift in Sources */,
@@ -415,6 +444,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C73A30000000000000000001 /* SettingsView.swift in Sources */,
 				FEABBB854E141578D6030251 /* AppConfigStore.swift in Sources */,
 				928631A7396E1EAC9A7D19B2 /* AppExecutionServices.swift in Sources */,
 				F9AC75F9C22800338BE6F3F6 /* CleanViewModel.swift in Sources */,
