@@ -122,7 +122,8 @@ private actor A2PBuild {
         Engine/SimulatorPruner.swift Engine/SnapshotDeleter.swift
         Exec/CleanupCommandRunner.swift Exec/ProcessRunner.swift Exec/ProcessSession.swift
         Exec/ProcessIdentity.swift Exec/ProcessJobGate.swift Exec/ToolLocator.swift
-        Execution/CapabilityRegistry.swift Execution/ConfirmedPlan.swift Execution/ExecutionCoordinator.swift
+        Execution/CapabilityRegistry.swift Execution/ConfirmedPlan.swift Execution/DerivedDataEffectAdapter.swift
+        Execution/ExecutionCoordinator.swift
         Execution/ExecutionPolicyBridge.swift Execution/GuardedFileDeleter.swift Execution/JournalPOSIXIO.swift
         Execution/JournalStorage.swift Execution/MutationAdmissionStore.swift Execution/PolicyInvalidationBarrier.swift
         Execution/ResourcePreflight.swift Execution/RunJournal.swift

@@ -13,6 +13,7 @@ public actor ExecutionCoordinator {
     private nonisolated let barrier: PolicyInvalidationBarrier
     private var environment: CleanEnvironment
     private let admissionStore: MutationAdmissionStore?
+    private let journalDirectory: URL
     private var state: State = .idle
     private var reviews: [UUID: Registration] = [:]
     private var tokens: [UUID: ReviewBinding] = [:]
@@ -24,6 +25,7 @@ public actor ExecutionCoordinator {
         self.id = id
         self.barrier = PolicyInvalidationBarrier(coordinatorID: id)
         self.environment = environment
+        self.journalDirectory = journalDirectory
         self.admissionStore = try? MutationAdmissionStore(directory: journalDirectory)
     }
 
@@ -117,17 +119,18 @@ public actor ExecutionCoordinator {
         if let rejection { return report(rejection.disposition) }
         guard let binding, let registered = reviews[binding.planID] else { return report(.invalidToken) }
         let tier = registered.review.plan.tier
+        let selected: [PlannedItem]
         do {
-            // This is the final synchronous no-op commit, not a permit for a later effect.
-            return try barrier.withCurrentPolicy(revision: binding.policyRevision) {
+            // Everything above and inside this closure is the final
+            // synchronous commit: revision/binding/capability checks only.
+            // Real effects never run while the synchronous policy barrier is
+            // held, so a slow or uninterruptible syscall below cannot block
+            // policy invalidation.
+            selected = try barrier.withCurrentPolicy(revision: binding.policyRevision) { () -> [PlannedItem] in
                 guard currentPolicyRevision == binding.policyRevision else { throw ConfirmationError.stalePolicy }
                 guard registered.review.binding == binding else { throw ConfirmationError.staleReview }
                 try validateSelection(registered)
-                guard registered.review.selection.selectedItems.isEmpty else {
-                    // T03/T04 must supply sealed, bounded adapters; raw engine execution is never called.
-                    throw ConfirmationError.unavailableSelection
-                }
-                return report(.noWork, tier: tier)
+                return registered.review.selection.selectedItems
             }
         } catch let error as ConfirmationError {
             switch error {
@@ -136,6 +139,90 @@ public actor ExecutionCoordinator {
             default: return report(.unavailableSelection, tier: tier)
             }
         } catch { return report(.unavailableSelection, tier: tier) }
+
+        guard !selected.isEmpty else { return report(.noWork, tier: tier) }
+        return await performAcceptedEffects(selected, tier: tier)
+    }
+
+    /// The only call site that dispatches a real mutation. Every item here
+    /// already passed `validateSelection`, i.e. `CapabilityRegistry`
+    /// accepted it, while the synchronous policy barrier was held. Each
+    /// item is independently re-checked against the one sealed adapter
+    /// before it is touched: this function grants no authority of its own.
+    private func performAcceptedEffects(_ items: [PlannedItem], tier: Tier) async -> RunReport {
+        let startedAt = Date()
+        guard let admissionStore else { return report(.storageUnavailable, tier: tier) }
+        let journal: RunJournal
+        do {
+            let storage = try DurableJournalStorage(directory: journalDirectory)
+            journal = try RunJournal(store: admissionStore, storage: storage)
+        } catch { return report(.storageUnavailable, tier: tier) }
+
+        let runID = UUID()
+        var sequence: UInt64 = 1
+        func appendEvent(_ phase: JournalPhase) -> Bool {
+            defer { sequence += 1 }
+            return (try? journal.append(JournalEvent(runID: runID, sequence: sequence, phase: phase,
+                operationID: nil, status: nil, reason: nil))) != nil
+        }
+        // `RunJournal.append(.started)` requires a matching `PendingEffectIntent`
+        // already durably persisted in the single mandatory admission ledger,
+        // and there is no accepted API anywhere in this package that later
+        // removes a persisted intent (RunRecoveryTests.diagnosticSucceededNeverSuppliesTerminalProof
+        // proves `.itemTerminal(.succeeded)` does not reconcile one either).
+        // Persisting one here would make every future mutation across the
+        // whole app permanently `.uncertainAndPossiblyRunning` after the
+        // very first real cleanup, which is a strictly worse outcome than a
+        // narrower journal record. Until a reviewed reconciliation primitive
+        // lands in `MutationAdmissionStore`, this coordinator only records
+        // the confirmed intent to run (`.planned`/`.confirmed`), never a
+        // per-operation `.started`/`.itemTerminal`/`.finished` sequence for a
+        // real effect. Journal failures below latch the mandatory admission
+        // store unavailable on their own (`RunJournal.observed`); this run
+        // simply stops making progress rather than report a success it
+        // cannot durably record.
+        guard appendEvent(.planned) else { return report(.storageUnavailable, tier: tier) }
+        guard appendEvent(.confirmed) else { return report(.storageUnavailable, tier: tier) }
+
+        let guardian = PathGuard(protectedRoots: environment.protectedRoots)
+        var results: [ItemResult] = []
+        var freeSpaceBeforeBytes: Int64 = 0
+        var freeSpaceAfterBytes: Int64 = 0
+        var capturedFirstMeasurement = false
+        var measurementsAvailable = true
+
+        for item in items {
+            guard CapabilityRegistry.denialReason(for: item.action, itemID: item.id) == nil,
+                  item.targets.count == 1, let target = item.targets.first,
+                  guardian.isSafe(target.path, mustBeUnder: item.declaredRoot, home: environment.homeDirectory) else {
+                results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
+                    message: CapabilityRegistry.quarantineReason, targetOutcomes: nil, effectStatus: .skipped))
+                continue
+            }
+            do {
+                let effect = try DerivedDataEffectAdapter.execute(itemID: item.id, action: item.action, target: target)
+                if !capturedFirstMeasurement, let before = effect.freeSpaceBeforeBytes {
+                    freeSpaceBeforeBytes = before
+                    capturedFirstMeasurement = true
+                }
+                if let after = effect.freeSpaceAfterBytes { freeSpaceAfterBytes = after }
+                else { measurementsAvailable = false }
+                let status = EffectAccounting.aggregateStatus(effect.outcomes)
+                let freed = EffectAccounting.checkedSum(effect.outcomes.map(\.removedAllocatedBytes))
+                results.append(ItemResult(id: item.id, title: item.title, freedBytes: freed.bytes ?? 0,
+                    succeeded: status == .succeeded, message: nil,
+                    targetOutcomes: effect.outcomes, effectStatus: status))
+            } catch {
+                measurementsAvailable = false
+                results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
+                    message: "\(error)", targetOutcomes: nil, effectStatus: .failed))
+            }
+        }
+
+        return RunReport(tier: tier, results: results, startedAt: startedAt, finishedAt: Date(),
+            freeSpaceBeforeBytes: freeSpaceBeforeBytes, freeSpaceAfterBytes: freeSpaceAfterBytes,
+            disposition: .completed,
+            coordinatorMeasurementsAvailable: measurementsAvailable && capturedFirstMeasurement)
     }
 
     public nonisolated func beginPolicyUpdate() throws -> PolicyUpdateTicket { try barrier.beginUpdate() }
