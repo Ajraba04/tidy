@@ -138,7 +138,8 @@ private actor A2PBuild {
         Policy/SessionProfile.swift Policy/StrictJSON.swift Policy/SettingsEnvelope.swift
         Policy/SettingsPublication.swift Policy/SettingsStore.swift Policy/SettingsTransfer.swift
         Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
-        Scanning/BoundedTraversal.swift Scanning/ScanSession.swift Scanning/WorkScheduler.swift
+        Scanning/BoundedTraversal.swift Scanning/ScanIndex.swift Scanning/ScanInvalidation.swift
+        Scanning/ScanSession.swift Scanning/WorkScheduler.swift
         """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var sources = names.map { package.appendingPathComponent("Sources/TidyCore/\($0)") }
         sources.append(package.appendingPathComponent("Tests/TidyCoreTests/Fixtures/T05SettingsProcessDriver.swift"))

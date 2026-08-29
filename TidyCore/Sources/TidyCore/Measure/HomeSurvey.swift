@@ -46,7 +46,8 @@ public enum HomeSurvey: Sendable {
         root rootPath: String,
         protectedRoots: [String],
         largeFileThreshold: Int64,
-        breakOutChildren: Bool
+        breakOutChildren: Bool,
+        visitCounter: (@Sendable () -> Void)? = nil
     ) -> Result {
         let fm = FileManager.default
         let canonicalRoot = PathGuard.canonicalize(rootPath)
@@ -102,6 +103,7 @@ public enum HomeSurvey: Sendable {
                 continue
             }
 
+            visitCounter?()
             guard let values = try? fileURL.resourceValues(forKeys: keySet) else { continue }
 
             if let childVolumeID = values.volumeIdentifier as AnyObject?,
@@ -180,6 +182,70 @@ public enum HomeSurvey: Sendable {
             )
         )
         return BoundedTraversalPage(traversal: traversal, result: result)
+    }
+
+    /// Where an indexed walk's total came from, exposed only for tests and diagnostics — never
+    /// something a caller branches deletion or planning behavior on.
+    public enum IndexSource: Equatable, Sendable {
+        /// The coordinator held a complete, still-current aggregate; the tree was not re-walked.
+        case cached
+        /// No usable cached aggregate existed, so a full walk ran and its result was committed.
+        case freshCommitted
+        /// A full walk ran, but the root's generation moved before the commit's barrier
+        /// finished, so the fresh result is truthful but the index itself was not updated.
+        case freshStaleAtCommit
+        /// A full walk ran but indexing is off, unavailable, or the identity could not be
+        /// resolved; nothing was cached either way.
+        case liveOnly
+    }
+
+    /// The T09 entry point: consults `coordinator` for a still-current aggregate before doing
+    /// any filesystem work at all, and only walks `root` when the cache cannot be trusted.
+    /// `visitCounter`, when supplied, is called once per metadata fetch a real walk performs —
+    /// the unchanged-tree case calls it at most once (a single existence check standing in for
+    /// the walk that was skipped), which is how the ≥80% metadata-visit reduction is verified.
+    ///
+    /// A `.stale` or `.unavailable` status is never treated as a shortcut: only a `.cached`
+    /// record whose coverage was already complete authorizes skipping the walk, matching the
+    /// contract that partial scans never replace complete records and a cache can never be
+    /// execution authority — here that means it can influence at most whether *this function*
+    /// does its own redundant work, never what gets reported or cleaned.
+    public static func walkIndexed(
+        root rootPath: String,
+        protectedRoots: [String],
+        largeFileThreshold: Int64,
+        breakOutChildren: Bool,
+        scannerVersion: Int,
+        policyFingerprint: String,
+        coordinator: ScanIndexCoordinator,
+        visitCounter: (@Sendable () -> Void)? = nil
+    ) async -> (result: Result, source: IndexSource) {
+        let canonicalRoot = PathGuard.canonicalize(rootPath)
+        guard let identity = ScanRootIdentity.resolve(path: canonicalRoot) else {
+            let result = walk(root: rootPath, protectedRoots: protectedRoots,
+                largeFileThreshold: largeFileThreshold, breakOutChildren: breakOutChildren,
+                visitCounter: visitCounter)
+            return (result, .liveOnly)
+        }
+        let key = ScanIndexKey(volumeUUID: identity.volumeUUID, rootIdentity: identity.fileIdentity,
+            scannerVersion: scannerVersion, policyFingerprint: policyFingerprint)
+        let capturedGeneration = await coordinator.beginScan(root: canonicalRoot)
+        if case .cached(let record) = await coordinator.status(for: key, root: canonicalRoot),
+           record.isComplete {
+            visitCounter?()
+            return (Result(totalBytes: record.totalBytes, largeFiles: [], childTotals: []), .cached)
+        }
+        let result = walk(root: rootPath, protectedRoots: protectedRoots,
+            largeFileThreshold: largeFileThreshold, breakOutChildren: breakOutChildren,
+            visitCounter: visitCounter)
+        let outcome = await coordinator.commitIfCurrent(key: key, root: canonicalRoot,
+            volumeUUID: identity.volumeUUID, capturedGeneration: capturedGeneration,
+            totalBytes: result.totalBytes, processedEntries: 0, isComplete: true, reasons: [])
+        switch outcome {
+        case .committed: return (result, .freshCommitted)
+        case .staleGeneration, .rejectedPartialOverComplete, .unavailable:
+            return (result, .freshStaleAtCommit)
+        }
     }
 
     private static func isProtected(_ path: String, protectedRoots: [String]) -> Bool {

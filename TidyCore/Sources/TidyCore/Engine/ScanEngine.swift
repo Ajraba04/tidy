@@ -4,6 +4,10 @@ import Foundation
 /// Nothing here writes to disk.
 public enum ScanEngine: Sendable {
     private static let largeFileThreshold: Int64 = 1_073_741_824
+    /// Part of every `ScanIndexKey`: bumping this forces every cached aggregate to be
+    /// re-measured the next time indexing is enabled, for whenever the home-survey algorithm
+    /// itself changes in a way that could change a previously-recorded total.
+    static let scannerVersion = 1
 
     /// Superseded by `ScanEngine.start(environment:registry:sessions:session:)`, which is the
     /// only route that launches discovery, measurement, traversal, or process work. This overload
@@ -25,7 +29,8 @@ public enum ScanEngine: Sendable {
             staleNodeModules: [],
             launchAgents: [],
             topMemoryConsumers: [],
-            restartOnlyReclaim: RestartReclaimSurvey(components: [], pagedOutBytes: 0),
+            restartOnlyReclaim: RestartReclaimSurvey(components: [], pagedOutBytes: nil,
+                pagedOutUnavailableReason: "This route performs no measurement."),
             unclaimedBySize: []
         )
     }
@@ -179,6 +184,19 @@ public struct CoreScanResult: Sendable {
     /// T08.4 cannot project T08.2's traversal-owned token through the accepted registry schema.
     /// A slice-expired result is therefore truthful partial state with unavailable continuation.
     public let continuationAvailable: Bool
+    /// T09 diagnostic-only aggregate/freshness read from the incremental index, when a caller
+    /// supplied a `ScanIndexCoordinator` to `ScanEngine.start`. Never a target list and never
+    /// consulted to decide what this scan measures — it is purely something the UI may display
+    /// alongside the always-authoritative `report`/`coverage` above.
+    public let indexStatus: ScanIndexStatus?
+
+    init(report: ScanReport, coverage: TraversalCoverage, continuationAvailable: Bool,
+         indexStatus: ScanIndexStatus? = nil) {
+        self.report = report
+        self.coverage = coverage
+        self.continuationAvailable = continuationAvailable
+        self.indexStatus = indexStatus
+    }
 }
 
 public struct CoreScanHandle: Sendable {
@@ -245,7 +263,8 @@ private struct CoreScanAccumulator: Sendable {
     var staleNodeModules: [TargetPath] = []
     var launchAgents: [String] = []
     var topMemoryConsumers: [ProcessUsage] = []
-    var restartOnlyReclaim = RestartReclaimSurvey(components: [], pagedOutBytes: 0)
+    var restartOnlyReclaim = RestartReclaimSurvey(components: [], pagedOutBytes: nil,
+        pagedOutUnavailableReason: "No measurement was recorded.")
     var unclaimedBySize: [RankedItem] = []
     var processedEntries = 0
     var totalBytes: Int64 = 0
@@ -407,9 +426,11 @@ private enum CoreLiveProcessProbe {
 public extension ScanEngine {
     static func start(environment: CleanEnvironment, registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
-                      traversalLimits: TraversalLimits? = nil) async throws -> CoreScanHandle {
+                      traversalLimits: TraversalLimits? = nil,
+                      indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
         try await start(environment: environment, registry: registry, sessions: sessions,
-            session: session, traversalLimits: traversalLimits, dependencies: .live)
+            session: session, traversalLimits: traversalLimits, dependencies: .live,
+            indexCoordinator: indexCoordinator)
     }
 }
 
@@ -417,7 +438,8 @@ internal extension ScanEngine {
     static func start(environment: CleanEnvironment, registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
-                      dependencies: CoreScanDependencies) async throws -> CoreScanHandle {
+                      dependencies: CoreScanDependencies,
+                      indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
         let provisional = try await CoreOrchestrationContext.make(sessions: sessions,
             session: session, sessionID: UUID(), traversalLimits: traversalLimits)
         let sessionID = try await registry.begin(policyRevision: provisional.policyRevision,
@@ -429,7 +451,8 @@ internal extension ScanEngine {
         do {
             try await registry.startWork(sessionID: sessionID) { reporter in
                 await runRegistered(environment: environment, context: context,
-                    reporter: reporter, store: store, dependencies: dependencies)
+                    reporter: reporter, store: store, dependencies: dependencies,
+                    indexCoordinator: indexCoordinator)
             }
         } catch {
             try? await registry.complete(sessionID: sessionID, terminal: .failed,
@@ -444,7 +467,8 @@ internal extension ScanEngine {
                                       context: CoreOrchestrationContext,
                                       reporter: ScanSessionReporter,
                                       store: CoreScanResultStore,
-                                      dependencies: CoreScanDependencies) async
+                                      dependencies: CoreScanDependencies,
+                                      indexCoordinator: ScanIndexCoordinator? = nil) async
       -> ScanSessionCompletion {
         var accumulator = CoreScanAccumulator(environment: environment)
         await dependencies.testHook?(.beforeFilesystem)
@@ -452,41 +476,80 @@ internal extension ScanEngine {
             return await cancelledCompletion(accumulator, store: store)
         }
 
-        let home = await HomeSurvey.walkBounded(sessions: context.sessions,
-            session: context.session, sessionID: context.sessionID,
-            generation: context.generation, root: environment.homeDirectory,
-            protectedRoots: environment.protectedRoots,
-            largeFileThreshold: largeFileThreshold, breakOutChildren: true,
-            limits: context.traversalLimits)
-        accumulator.absorb(home.result)
-        accumulator.topLevelHomeRanking = Array(home.result.childTotals
-            .filter { LargestItemsScanner.matchesHomeTopLevelPattern(
-                URL(fileURLWithPath: $0.path).lastPathComponent) }
-            .sorted(by: rankedBefore).prefix(8))
-        accumulator.filesOver1GB = Array(home.result.topItems
-            .sorted(by: rankedBefore).prefix(8))
-        if home.result.cursor != nil {
-            await home.traversal.invalidate(sessionID: context.sessionID)
-            _ = await publishProgress(accumulator: &accumulator, context: context,
-                reporter: reporter, store: store)
-            return await partialCompletion(accumulator, store: store)
+        // Captured before each root's baseline walk starts, per the T09 generation protocol: any
+        // event touching that root from here until its commit below invalidates the capture, and
+        // the commit is then rejected in favor of retaining whatever was already cached.
+        let homeRoot = PathGuard.canonicalize(environment.homeDirectory)
+        let homeIndexContext = await indexRootContext(root: homeRoot,
+            coordinator: indexCoordinator, context: context)
+        var homeCacheHit: ScanAggregateRecord?
+        if let homeIndexContext, let indexCoordinator,
+           case .cached(let record) = await indexCoordinator.status(for: homeIndexContext.key,
+               root: homeRoot), record.isComplete {
+            homeCacheHit = record
+        }
+
+        var homeIndexStatus: ScanIndexStatus?
+        if let record = homeCacheHit {
+            // The whole point of the index: nothing is walked for this root at all. Per-child
+            // ranking and individual large files are never persisted (T09 forbids caching
+            // anything resembling a path list), so both stay empty this round — a display-only
+            // degradation the contract explicitly allows ("aggregates and freshness only"); it
+            // never changes coverage, and `homeIndexStatus` below tells a caller exactly why.
+            homeIndexStatus = .cached(record)
+        } else {
+            let home = await HomeSurvey.walkBounded(sessions: context.sessions,
+                session: context.session, sessionID: context.sessionID,
+                generation: context.generation, root: environment.homeDirectory,
+                protectedRoots: environment.protectedRoots,
+                largeFileThreshold: largeFileThreshold, breakOutChildren: true,
+                limits: context.traversalLimits)
+            accumulator.absorb(home.result)
+            accumulator.topLevelHomeRanking = Array(home.result.childTotals
+                .filter { LargestItemsScanner.matchesHomeTopLevelPattern(
+                    URL(fileURLWithPath: $0.path).lastPathComponent) }
+                .sorted(by: rankedBefore).prefix(8))
+            accumulator.filesOver1GB = Array(home.result.topItems
+                .sorted(by: rankedBefore).prefix(8))
+            if home.result.cursor != nil {
+                await home.traversal.invalidate(sessionID: context.sessionID)
+                _ = await publishProgress(accumulator: &accumulator, context: context,
+                    reporter: reporter, store: store)
+                return await partialCompletion(accumulator, store: store)
+            }
+            homeIndexStatus = await commitRootResult(home.result, root: homeRoot,
+                indexContext: homeIndexContext, coordinator: indexCoordinator)
         }
         guard await publishProgress(accumulator: &accumulator, context: context,
                                     reporter: reporter, store: store) else {
             return await cancelledCompletion(accumulator, store: store)
         }
 
-        let library = await HomeSurvey.walkBounded(sessions: context.sessions,
-            session: context.session, sessionID: context.sessionID,
-            generation: context.generation, root: environment.homeDirectory + "/Library",
-            protectedRoots: environment.protectedRoots, largeFileThreshold: 0,
-            breakOutChildren: true, limits: context.traversalLimits)
-        accumulator.absorb(library.result, optionalMissing: true)
-        accumulator.libraryRanking = Array(library.result.childTotals
-            .sorted(by: rankedBefore).prefix(6))
-        if library.result.cursor != nil {
-            await library.traversal.invalidate(sessionID: context.sessionID)
-            return await partialCompletion(accumulator, store: store)
+        let libraryRoot = PathGuard.canonicalize(environment.homeDirectory + "/Library")
+        let libraryIndexContext = await indexRootContext(root: libraryRoot,
+            coordinator: indexCoordinator, context: context)
+        var libraryCacheHit: ScanAggregateRecord?
+        if let libraryIndexContext, let indexCoordinator,
+           case .cached(let record) = await indexCoordinator.status(for: libraryIndexContext.key,
+               root: libraryRoot), record.isComplete {
+            libraryCacheHit = record
+        }
+
+        if libraryCacheHit == nil {
+            let library = await HomeSurvey.walkBounded(sessions: context.sessions,
+                session: context.session, sessionID: context.sessionID,
+                generation: context.generation, root: environment.homeDirectory + "/Library",
+                protectedRoots: environment.protectedRoots, largeFileThreshold: 0,
+                breakOutChildren: true, limits: context.traversalLimits)
+            accumulator.absorb(library.result, optionalMissing: true)
+            accumulator.libraryRanking = Array(library.result.childTotals
+                .sorted(by: rankedBefore).prefix(6))
+            if library.result.cursor != nil {
+                await library.traversal.invalidate(sessionID: context.sessionID)
+                return await partialCompletion(accumulator, store: store)
+            }
+            _ = await commitRootResult(library.result, root: libraryRoot,
+                indexContext: libraryIndexContext, coordinator: indexCoordinator)
         }
 
         if environment.gitRoots.count > 64 {
@@ -544,9 +607,12 @@ internal extension ScanEngine {
                 return await partialCompletion(accumulator, store: store)
             }
         }
+        let swap = SwapStats.current()
         accumulator.restartOnlyReclaim = RestartReclaimSurvey(components: reclaimBuckets.map {
             .init(label: $0.key, bytes: $0.value.bytes, fileCount: $0.value.count)
-        }.sorted { $0.bytes > $1.bytes }, pagedOutBytes: SwapStats.current()?.usedBytes ?? 0)
+        }.sorted { $0.bytes > $1.bytes }, pagedOutBytes: swap?.usedBytes,
+            pagedOutUnavailableReason: swap == nil
+                ? "The swap usage reading was unavailable." : nil)
 
         if accumulator.topLevelHomeRanking.contains(where: {
             $0.bytes >= UnclaimedSpaceScanner.defaultThresholdBytes
@@ -590,10 +656,59 @@ internal extension ScanEngine {
 
         let coverage = TraversalCoverage(isComplete: accumulator.reasons.isEmpty,
             reasons: accumulator.reasons)
+        // `homeIndexStatus` was already resolved above — either a cache hit that made the home
+        // walk unnecessary, or the outcome of committing what the home walk actually measured.
+        // Nothing here re-derives it from `accumulator`'s scan-wide totals, which mix in
+        // library/stale-node_modules/launch-agents/restart-reclaim bytes that have nothing to do
+        // with the home root's own aggregate.
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false))
+            continuationAvailable: false, indexStatus: homeIndexStatus))
         return ScanSessionCompletion(terminal: coverage.isComplete ? .complete : .partial,
             coverage: coverage, snapshot: accumulator.sessionSnapshot())
+    }
+
+    private struct IndexRootContext: Sendable {
+        let key: ScanIndexKey
+        let volumeUUID: String
+        let generation: UInt64
+    }
+
+    /// Resolves the cache key and captures the generation a walk of `root` must recheck at
+    /// commit time. Returns nil whenever there is nothing to cache against — no coordinator was
+    /// supplied, or the root's volume/file identity can't be resolved right now — in which case
+    /// the caller always falls through to a real walk with no index involvement at all.
+    private static func indexRootContext(root: String, coordinator: ScanIndexCoordinator?,
+                                         context: CoreOrchestrationContext) async
+      -> IndexRootContext? {
+        guard let coordinator, let identity = ScanRootIdentity.resolve(path: root) else {
+            return nil
+        }
+        let key = ScanIndexKey(volumeUUID: identity.volumeUUID, rootIdentity: identity.fileIdentity,
+            scannerVersion: ScanEngine.scannerVersion,
+            policyFingerprint: String(context.policyRevision))
+        let generation = await coordinator.beginScan(root: root)
+        return IndexRootContext(key: key, volumeUUID: identity.volumeUUID, generation: generation)
+    }
+
+    /// Best-effort only: a failure here never changes `coverage`, `report`, or anything about the
+    /// walk that already happened — the returned status exists purely for display. Publishing to
+    /// the index can never gate, filter, or otherwise influence what a scan measures or reports.
+    private static func commitRootResult(_ result: TraversalResult, root: String,
+                                         indexContext: IndexRootContext?,
+                                         coordinator: ScanIndexCoordinator?) async
+      -> ScanIndexStatus? {
+        guard let coordinator, let indexContext else { return nil }
+        let reasons = Set(result.coverage.reasons.map(\.rawValue))
+        let outcome = await coordinator.commitIfCurrent(key: indexContext.key, root: root,
+            volumeUUID: indexContext.volumeUUID, capturedGeneration: indexContext.generation,
+            totalBytes: result.totalBytes, processedEntries: result.metrics.processedEntries,
+            isComplete: result.coverage.isComplete, reasons: reasons)
+        switch outcome {
+        case .committed(let record):
+            return .cached(record)
+        case .staleGeneration, .rejectedPartialOverComplete, .unavailable:
+            return await coordinator.status(for: indexContext.key, root: root)
+        }
     }
 
     private static func boundedDirectory(_ path: String, context: CoreOrchestrationContext,
