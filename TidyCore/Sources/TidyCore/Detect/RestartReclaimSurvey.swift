@@ -1,8 +1,8 @@
 import Foundation
 
-/// Measures the space macOS is holding in swap and VM files: the one
-/// category of disk usage that no cleaner can release, because the kernel
-/// only lets go of it at boot.
+/// Measures the space macOS is holding in swap and VM files: on every
+/// macOS version Tidy has observed, this is space the kernel only lets go
+/// of at boot, so no cleaner running while the Mac stays up can release it.
 ///
 /// This is reported, never acted on. There is deliberately no `CleanItem`,
 /// no `TargetPath`, and no path from here into a `CleanPlan`: these files
@@ -29,12 +29,29 @@ public struct RestartReclaimSurvey: Sendable, Equatable {
     public let components: [Component]
     /// `vm.swapusage.used`: how much is currently paged out. Context only,
     /// and deliberately not the reclaim figure -- this is the part that has
-    /// to come back into memory, not the part a restart hands back.
-    public let pagedOutBytes: Int64
+    /// to come back into memory, not the part a restart hands back. `nil`
+    /// when `vm.swapusage` was denied or unavailable -- reported as
+    /// unavailable (see `pagedOutUnavailableReason`), never silently shown
+    /// as a confirmed zero.
+    public let pagedOutBytes: Int64?
+    /// Set only when `pagedOutBytes` is `nil`; explains why, for display.
+    public let pagedOutUnavailableReason: String?
+    /// Cumulative pages swapped out since boot (`host_statistics64`), not a
+    /// rate: two surveys taken minutes apart can diff this to see whether
+    /// paging is currently active, the same pressure indicator
+    /// `SystemMonitor` derives a live rate from. `nil` when the counter
+    /// could not be read. Never treated as a byte count of SSD writes and
+    /// never treated as proof swap will, or must, be cleared -- a restart
+    /// usually returns most of this space, but "usually" is the honest
+    /// word: see `ScanSectionViews.RestartReclaimSection`.
+    public let pageOutsCumulative: UInt64?
 
-    public init(components: [Component], pagedOutBytes: Int64) {
+    public init(components: [Component], pagedOutBytes: Int64?,
+                pagedOutUnavailableReason: String? = nil, pageOutsCumulative: UInt64? = nil) {
         self.components = components
         self.pagedOutBytes = pagedOutBytes
+        self.pagedOutUnavailableReason = pagedOutUnavailableReason
+        self.pageOutsCumulative = pageOutsCumulative
     }
 
     public var totalBytes: Int64 {
@@ -69,9 +86,12 @@ public struct RestartReclaimSurvey: Sendable, Equatable {
             .map { Component(label: $0.key, bytes: $0.value.bytes, fileCount: $0.value.count) }
             .sorted { $0.bytes > $1.bytes }
 
+        let swap = SwapStats.current()
         return RestartReclaimSurvey(
             components: components,
-            pagedOutBytes: SwapStats.current()?.usedBytes ?? 0
+            pagedOutBytes: swap?.usedBytes,
+            pagedOutUnavailableReason: swap == nil ? "vm.swapusage denied or unavailable" : nil,
+            pageOutsCumulative: swap?.pageOutsCumulative
         )
     }
 

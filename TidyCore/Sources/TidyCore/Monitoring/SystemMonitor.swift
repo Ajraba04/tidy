@@ -1,0 +1,501 @@
+import Darwin
+import Dispatch
+import Foundation
+
+/// Everything `SystemMonitor` needs from the OS, isolated behind one
+/// protocol so every RED case (API denial, an unsupported signal, a
+/// changed boot identity, a nondefault page size) is a plain fixture value
+/// instead of a real kernel call. `LiveSystemProbe` is the only production
+/// conformance; nothing here ever spawns a process.
+public protocol SystemProbing: Sendable {
+    func bootIdentity() throws -> BootIdentity
+    func diskStats(volumeURL: URL) throws -> DiskStats
+    func memoryStats() throws -> MemoryStats
+    func swapStats() throws -> SwapStats
+    /// Cumulative pages swapped out since boot, and the page size they're
+    /// denominated in. Kept separate from `swapStats()` because a fake used
+    /// for one RED case (say, API denial on `vm.swapusage`) should not have
+    /// to also fake this counter, and vice versa.
+    func swapPageOutCounter() throws -> (count: UInt64, pageSizeBytes: UInt64)
+    /// `nil` means "unsupported on this host," not "nominal." Never
+    /// defaulted to a specific case when the platform call fails.
+    func thermalState() -> ProcessInfo.ThermalState?
+    func isLowPowerModeEnabled() -> Bool?
+}
+
+public struct LiveSystemProbe: SystemProbing {
+    public init() {}
+
+    public func bootIdentity() throws -> BootIdentity {
+        var boottime = timeval()
+        var size = MemoryLayout<timeval>.size
+        let result = sysctlbyname("kern.boottime", &boottime, &size, nil, 0)
+        guard result == 0 else {
+            throw SystemProbeError.denied("kern.boottime")
+        }
+        return BootIdentity(bootTime: TimeInterval(boottime.tv_sec) + TimeInterval(boottime.tv_usec) / 1_000_000)
+    }
+
+    public func diskStats(volumeURL: URL) throws -> DiskStats {
+        try DiskStats.current(volumeURL: volumeURL)
+    }
+
+    public func memoryStats() throws -> MemoryStats {
+        let stats = MemoryStats.current()
+        guard stats.usedBytes != nil else {
+            throw SystemProbeError.denied(stats.unavailableReason ?? "host_statistics64")
+        }
+        return stats
+    }
+
+    public func swapStats() throws -> SwapStats {
+        guard let stats = SwapStats.current() else {
+            throw SystemProbeError.denied("vm.swapusage")
+        }
+        return stats
+    }
+
+    public func swapPageOutCounter() throws -> (count: UInt64, pageSizeBytes: UInt64) {
+        guard let counters = VMCounterSnapshot.current() else {
+            throw SystemProbeError.denied("host_statistics64")
+        }
+        return (counters.swapOutsCumulative, counters.pageSizeBytes)
+    }
+
+    public func thermalState() -> ProcessInfo.ThermalState? {
+        ProcessInfo.processInfo.thermalState
+    }
+
+    public func isLowPowerModeEnabled() -> Bool? {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+}
+
+public enum SystemProbeError: Error, Equatable, Sendable {
+    case denied(String)
+    case unsupported(String)
+}
+
+/// A push subscription to memory-pressure events. `cancel()` must be safe
+/// to call more than once and safe to never call (e.g. if the monitor is
+/// deallocated while a subscription is live).
+public protocol MemoryPressureSubscription: Sendable {
+    func cancel()
+}
+
+public protocol MemoryPressureObserving: Sendable {
+    func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void) -> MemoryPressureSubscription
+}
+
+public struct LiveMemoryPressureObserving: MemoryPressureObserving {
+    public init() {}
+
+    public func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void) -> MemoryPressureSubscription {
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility))
+        source.setEventHandler { [weak source] in
+            guard let event = source?.data else { return }
+            if event.contains(.critical) { onChange(.critical) }
+            else if event.contains(.warning) { onChange(.warning) }
+            else { onChange(.normal) }
+        }
+        source.resume()
+        return LiveMemoryPressureSubscription(source: source)
+    }
+}
+
+private final class LiveMemoryPressureSubscription: MemoryPressureSubscription, @unchecked Sendable {
+    private let source: DispatchSourceMemoryPressure
+    private let lock = NSLock()
+    private var cancelled = false
+
+    init(source: DispatchSourceMemoryPressure) {
+        self.source = source
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return }
+        cancelled = true
+        source.cancel()
+    }
+}
+
+/// Test/observability seam over "did a repeating background activity start
+/// or stop," independent of actually waiting out a real interval. This is
+/// how `HeadroomSignalsTests` proves the hidden+monitoring-disabled case
+/// creates zero repeating timers/tasks, rather than trusting the
+/// implementation not to regress silently.
+public protocol MonitorInstrumentation: Sendable {
+    func timerScheduled()
+    func timerCancelled()
+}
+
+public struct NoOpMonitorInstrumentation: MonitorInstrumentation {
+    public init() {}
+    public func timerScheduled() {}
+    public func timerCancelled() {}
+}
+
+/// Injectable sleep, so a repeating loop can be driven deterministically in
+/// tests without a real wall-clock wait.
+public protocol MonitorScheduling: Sendable {
+    func sleep(seconds: Double) async throws
+}
+
+public struct SystemClockScheduling: MonitorScheduling {
+    public init() {}
+    public func sleep(seconds: Double) async throws {
+        try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+}
+
+/// The optional, timestamped, per-volume/system observation described by
+/// the T10 contract. `SystemMonitor` owns the ONE decision of whether a
+/// repeating background sample loop may exist at all; every other consumer
+/// (the menu bar popover, the Headroom window) asks for an explicit
+/// snapshot or observes the published stream, and never starts its own
+/// timer.
+public actor SystemMonitor {
+    public struct Configuration: Sendable, Equatable {
+        /// Mirrors `feature.headroom` from `EffectivePolicy`. When `false`,
+        /// no sampling of any kind happens, visible or hidden.
+        public var featureEnabled: Bool
+        /// Mirrors `monitor.backgroundEnabled` -- an authority setting that
+        /// defaults to `false` and requires explicit consent. Only relevant
+        /// while the window is hidden; a visible window always samples at
+        /// `visibleIntervalSeconds` when the feature is enabled.
+        public var backgroundEnabled: Bool
+        /// Mirrors `monitor.suppressHiddenSampling`, a restriction that
+        /// forces hidden sampling off even if `backgroundEnabled` is true
+        /// (e.g. a stricter profile or Battery preset).
+        public var suppressHiddenSampling: Bool
+        public var visibleIntervalSeconds: Double
+        public var hiddenIntervalSeconds: Double
+        /// Mirrors `monitor.rawHistoryEnabled`. Opt-in and off by default.
+        public var historyEnabled: Bool
+        /// Mirrors `monitor.rawHistoryHours`, bounded to 1...24 by policy.
+        public var historyHours: Int
+
+        public init(featureEnabled: Bool, backgroundEnabled: Bool, suppressHiddenSampling: Bool,
+                    visibleIntervalSeconds: Double, hiddenIntervalSeconds: Double,
+                    historyEnabled: Bool, historyHours: Int) {
+            self.featureEnabled = featureEnabled
+            self.backgroundEnabled = backgroundEnabled
+            self.suppressHiddenSampling = suppressHiddenSampling
+            self.visibleIntervalSeconds = max(1, visibleIntervalSeconds)
+            self.hiddenIntervalSeconds = max(1, hiddenIntervalSeconds)
+            self.historyEnabled = historyEnabled
+            self.historyHours = max(0, historyHours)
+        }
+
+        /// Monitoring off, no history, nothing scheduled: the safe starting
+        /// point before any policy has been read.
+        public static let disabled = Configuration(featureEnabled: false, backgroundEnabled: false,
+            suppressHiddenSampling: true, visibleIntervalSeconds: 5, hiddenIntervalSeconds: 60,
+            historyEnabled: false, historyHours: 0)
+
+        /// Reads exactly the T06 settings this contract consumes. A `nil`
+        /// policy (no acknowledged settings yet) resolves to `.disabled`,
+        /// never to a guessed default that starts sampling.
+        public static func resolve(_ policy: EffectivePolicy?) -> Configuration {
+            guard let policy else { return .disabled }
+            func boolField(_ id: String, default fallback: Bool) -> Bool {
+                guard case .stored(.bool(let value))? = policy.fields[SettingID(rawValue: id)]?.value else {
+                    return fallback
+                }
+                return value
+            }
+            func integerField(_ id: String, default fallback: Int64) -> Int64 {
+                guard case .stored(.integer(let value))? = policy.fields[SettingID(rawValue: id)]?.value else {
+                    return fallback
+                }
+                return value
+            }
+            return Configuration(
+                featureEnabled: policy.allowedFeatures.contains("headroom"),
+                backgroundEnabled: boolField("monitor.backgroundEnabled", default: false),
+                suppressHiddenSampling: boolField("monitor.suppressHiddenSampling", default: false),
+                visibleIntervalSeconds: Double(integerField("monitor.visibleIntervalSeconds", default: 5)),
+                hiddenIntervalSeconds: Double(integerField("monitor.hiddenIntervalSeconds", default: 60)),
+                historyEnabled: boolField("monitor.rawHistoryEnabled", default: false),
+                historyHours: Int(integerField("monitor.rawHistoryHours", default: 24)))
+        }
+    }
+
+    /// One `AsyncStream` per caller of `subscribe()`, keyed by a private id
+    /// so each consumer's teardown is independent: closing the Headroom
+    /// window must never drop updates for a still-open menu bar popover (or
+    /// vice versa), and a leaked subscriber must be individually
+    /// removable rather than tearing down every consumer's stream.
+    private var subscribers: [UUID: AsyncStream<SystemSnapshot>.Continuation] = [:]
+
+    private var configuration: Configuration
+    private var volumes: [URL]
+    private let probe: SystemProbing
+    private let pressureObserving: MemoryPressureObserving
+    private let scheduling: MonitorScheduling
+    private let instrumentation: MonitorInstrumentation
+    private let clock: @Sendable () -> Date
+
+    private var isWindowVisible = false
+    private var timerTask: Task<Void, Never>?
+    private var pressureSubscription: MemoryPressureSubscription?
+    private(set) var history: SignalHistory
+    private var lastPageOutCounter: (boot: BootIdentity, count: UInt64, pageSizeBytes: UInt64, at: Date)?
+    private var latestPressureLevel: MemoryPressureLevel?
+
+    public init(configuration: Configuration = .disabled,
+                volumes: [URL] = [URL(fileURLWithPath: "/")],
+                probe: SystemProbing = LiveSystemProbe(),
+                pressureObserving: MemoryPressureObserving = LiveMemoryPressureObserving(),
+                scheduling: MonitorScheduling = SystemClockScheduling(),
+                instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+                clock: @escaping @Sendable () -> Date = Date.init) {
+        self.configuration = configuration
+        self.volumes = volumes
+        self.probe = probe
+        self.pressureObserving = pressureObserving
+        self.scheduling = scheduling
+        self.instrumentation = instrumentation
+        self.clock = clock
+        self.history = SignalHistory(maxEntries: SystemMonitor.historyCapacity(forHours: configuration.historyHours),
+            maxAgeSeconds: Double(configuration.historyHours) * 3_600)
+        // Arms background sampling immediately when the supplied configuration
+        // already calls for it (`featureEnabled && backgroundEnabled &&
+        // !suppressHiddenSampling`), rather than leaving the monitor inert
+        // until some window happens to open first. `AppExecutionServices`
+        // constructs the app's one `SystemMonitor` with the resolved policy
+        // at bootstrap specifically so "background monitoring" means what it
+        // says: armed at launch, not merely armable. No-op (does not touch
+        // `wasRunning`/`timerCancelled`, since nothing was running yet) when
+        // the resolved configuration doesn't call for it. Hopped through a
+        // task because an initializer is not yet inside this actor's
+        // isolation, so it cannot call the isolated method directly.
+        Task { await self.reschedule() }
+    }
+
+    /// Applies a freshly-resolved `EffectivePolicy` (or `.disabled`). Safe
+    /// to call repeatedly, including every time settings change.
+    public func applyConfiguration(_ newConfiguration: Configuration) {
+        configuration = newConfiguration
+        if !newConfiguration.historyEnabled {
+            history = SignalHistory(maxEntries: 0, maxAgeSeconds: 0)
+        } else {
+            history = SignalHistory(maxEntries: SystemMonitor.historyCapacity(forHours: newConfiguration.historyHours),
+                maxAgeSeconds: Double(newConfiguration.historyHours) * 3_600)
+        }
+        reschedule()
+    }
+
+    public func setVolumes(_ volumes: [URL]) {
+        self.volumes = volumes
+    }
+
+    /// Call from the window's appear/disappear, never from a timer of the
+    /// caller's own -- this is the one signal that flips between the
+    /// visible and hidden sampling cadence.
+    public func setWindowVisible(_ visible: Bool) {
+        guard isWindowVisible != visible else { return }
+        isWindowVisible = visible
+        reschedule()
+    }
+
+    /// An explicit, one-shot measurement. Always allowed regardless of the
+    /// repeating-loop configuration: opening the Headroom window or pulling
+    /// to refresh is an explicit request, not the background sampling this
+    /// contract bounds. Broadcasts to every live subscriber.
+    @discardableResult
+    public func requestSnapshot() async -> SystemSnapshot {
+        let snapshot = await measure()
+        for continuation in subscribers.values {
+            continuation.yield(snapshot)
+        }
+        return snapshot
+    }
+
+    /// A dedicated stream for ONE consumer. Every caller -- the menu bar
+    /// popover, the Headroom window, a future second window -- must call
+    /// this separately rather than sharing one stream: a shared stream
+    /// with multiple concurrent iterators races over which one drains a
+    /// given value out of `.bufferingNewest(1)`, silently starving the
+    /// others. Cancelling the `Task` that iterates the returned stream (or
+    /// letting it, and everything holding it, go out of scope) is enough to
+    /// tear this subscription down -- `onTermination` removes it from
+    /// `subscribers` here, so a torn-down consumer can never leak a
+    /// permanently-registered continuation.
+    public func subscribe() -> AsyncStream<SystemSnapshot> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<SystemSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.removeSubscriber(id) }
+        }
+        return stream
+    }
+
+    private func removeSubscriber(_ id: UUID) {
+        subscribers.removeValue(forKey: id)
+    }
+
+    public func recordedHistory() -> [SystemSnapshot] {
+        history.entries
+    }
+
+    /// Test-only visibility into whether the repeating loop currently
+    /// exists, independent of the instrumentation counters. `public`
+    /// (rather than `internal`+`@testable`) so app-layer regression tests
+    /// -- e.g. `TidyAppModelTests`, which deliberately consumes only
+    /// `TidyCore`'s public surface -- can assert this directly against
+    /// real `HeadroomViewModel`/`StatsRefresher` instances.
+    public func isTimerRunningForTesting() -> Bool {
+        timerTask != nil
+    }
+
+    /// Test-only visibility into how many live subscriptions are currently
+    /// registered, so a leak (or a successful teardown) is directly
+    /// assertable rather than inferred from side effects. `public` for the
+    /// same cross-module-regression-test reason as
+    /// `isTimerRunningForTesting()`.
+    public func subscriberCountForTesting() -> Int {
+        subscribers.count
+    }
+
+    public func stop() {
+        timerTask?.cancel()
+        timerTask = nil
+        pressureSubscription?.cancel()
+        pressureSubscription = nil
+        for continuation in subscribers.values {
+            continuation.finish()
+        }
+        subscribers.removeAll()
+    }
+
+    private static func historyCapacity(forHours hours: Int) -> Int {
+        // One sample per minute is the densest cadence policy allows
+        // (`monitor.hiddenIntervalSeconds` floors at 60); this is a coarse
+        // upper bound, not a promise of that exact density.
+        max(0, hours) * 60
+    }
+
+    /// Starts, restarts, or tears down the repeating loop based on the
+    /// current `configuration`/`isWindowVisible`. Called after every
+    /// configuration or visibility change; safe to call when nothing needs
+    /// to change.
+    ///
+    /// `timerScheduled()`/`timerCancelled()` are NOT called 1:1 by design:
+    /// a config change while already running (e.g. the interval changing)
+    /// cancels the old `Task` and starts a new one without reporting a
+    /// cancel for the old one -- the loop never stopped from the caller's
+    /// point of view, only its cadence changed. `timerCancelled()` fires
+    /// only on the true off transition (`shouldRun` becoming `false`).
+    /// Tests should assert "scheduled at least once" / "cancelled at least
+    /// once", not that the two counters stay in lockstep.
+    private func reschedule() {
+        let shouldRun = configuration.featureEnabled &&
+            (isWindowVisible || (configuration.backgroundEnabled && !configuration.suppressHiddenSampling))
+
+        timerTask?.cancel()
+        let wasRunning = timerTask != nil
+        timerTask = nil
+
+        guard shouldRun else {
+            if wasRunning {
+                instrumentation.timerCancelled()
+            }
+            pressureSubscription?.cancel()
+            pressureSubscription = nil
+            return
+        }
+
+        if pressureSubscription == nil {
+            pressureSubscription = pressureObserving.start { [weak self] level in
+                guard let self else { return }
+                Task { await self.updatePressureLevel(level) }
+            }
+        }
+
+        let interval = isWindowVisible ? configuration.visibleIntervalSeconds : configuration.hiddenIntervalSeconds
+        instrumentation.timerScheduled()
+        // Sleeps BEFORE the first probe rather than after: `setWindowVisible`/
+        // `applyConfiguration` (called from onAppear) already pair with one
+        // explicit `requestSnapshot()` from the caller. Probing again here on
+        // the very first loop iteration would fire two probes for one
+        // window/popover open; sleeping first means the loop's first probe
+        // doesn't land until a full interval after the explicit one.
+        timerTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await self.scheduling.sleep(seconds: interval)
+                guard !Task.isCancelled else { break }
+                _ = await self.requestSnapshot()
+            }
+        }
+    }
+
+    private func updatePressureLevel(_ level: MemoryPressureLevel) {
+        latestPressureLevel = level
+    }
+
+    private func measure() async -> SystemSnapshot {
+        let observedAt = clock()
+        let boot = try? probe.bootIdentity()
+
+        var volumeObservations: [VolumeObservation] = []
+        for url in volumes {
+            do {
+                let disk = try probe.diskStats(volumeURL: url)
+                volumeObservations.append(VolumeObservation(
+                    volumeIdentity: disk.volumeIdentifier ?? url.path,
+                    displayPath: url.path, disk: disk))
+            } catch {
+                volumeObservations.append(VolumeObservation(
+                    volumeIdentity: url.path, displayPath: url.path, disk: nil,
+                    unavailableReason: String(describing: error)))
+            }
+        }
+
+        var memory: MemoryStats?
+        var memoryReason: String?
+        do { memory = try probe.memoryStats() } catch { memoryReason = String(describing: error) }
+
+        var swap: SwapStats?
+        var swapReason: String?
+        do { swap = try probe.swapStats() } catch { swapReason = String(describing: error) }
+
+        let pageOutRate = updatePageOutRate(boot: boot, observedAt: observedAt)
+
+        let snapshot = SystemSnapshot(observedAt: observedAt, bootIdentity: boot, volumes: volumeObservations,
+            memory: memory, memoryUnavailableReason: memoryReason, swap: swap, swapUnavailableReason: swapReason,
+            pageOutRatePerSecond: pageOutRate, memoryPressureLevel: latestPressureLevel,
+            thermalState: probe.thermalState(), isLowPowerModeEnabled: probe.isLowPowerModeEnabled())
+
+        if configuration.historyEnabled {
+            history.record(snapshot, now: observedAt)
+        }
+        return snapshot
+    }
+
+    /// The one place `counterRate` is applied to the live swap-out counter.
+    /// A changed boot identity between samples is treated exactly like a
+    /// reset: no rate this tick, and the new boot/count pair becomes the
+    /// baseline for the next one.
+    private func updatePageOutRate(boot: BootIdentity?, observedAt: Date) -> Double? {
+        guard let boot, let counter = try? probe.swapPageOutCounter() else {
+            lastPageOutCounter = nil
+            return nil
+        }
+        defer {
+            lastPageOutCounter = (boot: boot, count: counter.count, pageSizeBytes: counter.pageSizeBytes, at: observedAt)
+        }
+        guard let last = lastPageOutCounter, last.boot == boot else { return nil }
+        let elapsed = observedAt.timeIntervalSince(last.at)
+        guard let pagesPerSecond = counterRate(before: last.count, after: counter.count, seconds: elapsed) else {
+            return nil
+        }
+        return pagesPerSecond * Double(counter.pageSizeBytes)
+    }
+}

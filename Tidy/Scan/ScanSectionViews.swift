@@ -75,7 +75,7 @@ struct RestartReclaimSection: View {
     let survey: RestartReclaimSurvey
 
     var body: some View {
-        ReportSection(title: "Only a restart can reclaim this") {
+        ReportSection(title: "A restart usually reclaims this") {
             ForEach(survey.components) { component in
                 HStack {
                     Text(component.fileCount > 1
@@ -98,12 +98,33 @@ struct RestartReclaimSection: View {
 
             Text("""
                  macOS grows these on demand and does not release them while this Mac stays booted, \
-                 so Tidy will not touch them. Restarting usually returns most of this space. \
-                 \(ByteFormat.human(survey.pagedOutBytes)) of it is currently paged out, which is \
-                 memory that has to come back rather than space a restart hands you.
+                 so Tidy will not touch them. Restarting usually returns most of this space.
                  """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if let pagedOutBytes = survey.pagedOutBytes {
+                Text("""
+                     \(ByteFormat.human(pagedOutBytes)) of it is currently paged out, which is \
+                     memory that has to come back rather than space a restart hands you.
+                     """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("How much of this is currently paged out could not be measured (\(survey.pagedOutUnavailableReason ?? "unavailable")).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if survey.pageOutsCumulative != nil {
+                Text("""
+                     The Headroom window also tracks how fast pages are currently being swapped \
+                     out, as a pressure signal -- not a measurement of disk writes, and not proof \
+                     that swap is being cleared.
+                     """)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
             Text("Measured just now. Swap grows and shrinks constantly.")
                 .font(.caption)

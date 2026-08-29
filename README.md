@@ -52,11 +52,15 @@ Most "memory cleaners" on macOS are selling something that isn't real. Here
 is exactly what Tidy can do, and what it can't:
 
 - **Swap cannot be reclaimed while the Mac is booted.** macOS grows
-  swapfiles on demand and does not return them until boot. There is no API,
-  no supported command, and no privilege level that changes this. So the
-  only honest "free swap" action is a restart, and that is literally what
-  the restart item does. It ships disabled and has to be enabled in
-  Settings before it will even appear.
+  swapfiles on demand and, on every version Tidy has observed, does not
+  return them until boot. Tidy has found no API, supported command, or
+  privilege level that changes this. So the only honest "free swap" action
+  is a restart, and that is literally what the restart item does. It ships
+  disabled and has to be enabled in Settings before it will even appear.
+  Headroom's swap card also reports a live page-out rate as a pressure
+  indicator -- it tells you paging is active right now, not how many bytes
+  a restart will hand back, and a falling rate is never shown as proof
+  swap has been (or can be) cleared without restarting.
 - **Purging inactive memory is real, and usually not a win.** `purge(8)`
   evicts the file-backed page cache, moving pages from inactive to free.
   Those pages were caching data the machine was about to want again, so the
