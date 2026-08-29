@@ -15,7 +15,7 @@ struct TidyApp: App {
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
             withServices { services in
                 VStack(alignment: .leading, spacing: 0) {
-                    MenuBarContentView()
+                    MenuBarContentView(services: services)
                         .environment(services.configStore)
                     if services.activeScanSessionID != nil {
                         Divider()
@@ -34,6 +34,14 @@ struct TidyApp: App {
         Window("Scan Report", id: WindowID.scan) {
             withServices { services in
                 ScanView(services: services)
+            }
+        }
+        .windowResizability(.contentSize)
+
+        Window("Headroom", id: WindowID.headroom) {
+            withServices { services in
+                HeadroomView(services: services)
+                    .environment(services.configStore)
             }
         }
         .windowResizability(.contentSize)
@@ -150,6 +158,7 @@ struct TidyApp: App {
 
 enum WindowID {
     static let scan = "scan"
+    static let headroom = "headroom"
     static let clean = "clean"
     static let custom = "custom"
     static let settings = "settings"

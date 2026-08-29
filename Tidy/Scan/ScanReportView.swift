@@ -95,7 +95,12 @@ struct ScanReportView: View {
                 Text("Container free space: \(ByteFormat.human(container.freeBytes))")
                     .foregroundStyle(.secondary)
             }
-            Text("Memory used: \(ByteFormat.human(report.memoryStats.usedBytes)) of \(ByteFormat.human(report.memoryStats.totalBytes))")
+            if let used = report.memoryStats.usedBytes {
+                Text("Memory used: \(ByteFormat.human(used)) of \(ByteFormat.human(report.memoryStats.totalBytes))")
+            } else {
+                Text("Memory used: unavailable (\(report.memoryStats.unavailableReason ?? "denied"))")
+                    .foregroundStyle(.secondary)
+            }
             if let swap = report.swapStats, swap.totalBytes > 0 {
                 Text("Swap used: \(ByteFormat.human(swap.usedBytes)) of \(ByteFormat.human(swap.totalBytes))")
             }

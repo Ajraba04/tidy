@@ -36,6 +36,11 @@ final class AppExecutionServices {
     let configStore: AppConfigStore
     let engine: CleanEngine
     let runLogURL: URL
+    /// The app's one T10 headroom monitor, constructed once at bootstrap.
+    /// Every window that shows disk/memory/swap/thermal/power signals
+    /// (menu bar popover, Headroom window) observes this shared instance
+    /// rather than owning a probe or a timer of its own.
+    let systemMonitor: SystemMonitor
 
     /// The app's one T08.2 session registry, constructed once at bootstrap. It starts no work;
     /// `beginScan` is the only route that registers and launches a session against it.
@@ -60,6 +65,9 @@ final class AppExecutionServices {
         self.configStore = AppConfigStore(loaded: envelope, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
         self.runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
+        self.systemMonitor = SystemMonitor(
+            configuration: .resolve(self.configStore.effectivePolicy),
+            volumes: [paths.home])
     }
 
     /// The sole T08.1b bounded explicit-session façade this app consumes. No alternate

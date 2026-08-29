@@ -19,11 +19,20 @@ struct DiskStatsTests {
 @Suite("MemoryStats")
 struct MemoryStatsTests {
     @Test("reports sane figures for physical memory")
-    func reportsSaneFiguresForMemory() {
+    func reportsSaneFiguresForMemory() throws {
         let stats = MemoryStats.current()
         #expect(stats.totalBytes > 0)
-        #expect(stats.usedBytes >= 0)
-        #expect(stats.usedBytes <= stats.totalBytes)
+        let used = try #require(stats.usedBytes, "the real host_statistics64 call should not be denied here")
+        #expect(used >= 0)
+        #expect(used <= stats.totalBytes)
+        #expect(stats.unavailableReason == nil)
+    }
+
+    @Test("denial is reported explicitly, never silently shown as zero bytes used")
+    func deniedReadIsExplicitNotZero() {
+        let stats = MemoryStats(totalBytes: 1_000, usedBytes: nil, unavailableReason: "denied")
+        #expect(stats.usedBytes == nil)
+        #expect(stats.unavailableReason == "denied")
     }
 }
 

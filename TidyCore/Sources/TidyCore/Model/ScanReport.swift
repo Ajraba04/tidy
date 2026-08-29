@@ -44,7 +44,7 @@ public struct ScanReport: Sendable {
         staleNodeModules: [TargetPath],
         launchAgents: [String],
         topMemoryConsumers: [ProcessUsage],
-        restartOnlyReclaim: RestartReclaimSurvey = RestartReclaimSurvey(components: [], pagedOutBytes: 0),
+        restartOnlyReclaim: RestartReclaimSurvey = RestartReclaimSurvey(components: [], pagedOutBytes: nil),
         unclaimedBySize: [RankedItem] = []
     ) {
         self.generatedAt = generatedAt
