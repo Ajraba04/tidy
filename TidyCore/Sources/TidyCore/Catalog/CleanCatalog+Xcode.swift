@@ -1,4 +1,10 @@
+import Foundation
+
 extension CleanCatalog {
+    private struct T084DeviceResponse: Decodable {
+        let devices: [String: [SimulatorDevice]]
+    }
+
     /// Section 3 of the shell script (safe tier) plus `simctl delete
     /// unavailable` and the CodingAssistant index. Simulator device
     /// deletion against the user's keep-list, and Archives, are Deep tier.
@@ -138,16 +144,7 @@ extension CleanCatalog {
                 requires: .xcode,
                 dangerNote: "Permanently deletes the device and everything installed on it",
                 declaredRoot: { env in env.homeDirectory },
-                locate: { env in
-                    guard !env.simulatorsApprovedForDeletion.isEmpty else { return [] }
-                    let devices = SimctlClient.listDevicesSync()
-                    return SimulatorPruner.devicesEligibleForDeletion(
-                        allDevices: devices,
-                        approvedForDeletion: env.simulatorsApprovedForDeletion
-                    ).map { device in
-                        TargetPath(path: device.udid, label: "\(device.name) [\(device.runtimeIdentifier)]", isFilesystemPath: false)
-                    }
-                },
+                locate: { _ in [] },
                 action: .custom(.simulatorPrune)
             )
         ]
@@ -157,5 +154,57 @@ extension CleanCatalog {
             title: "Xcode & Simulators",
             items: derivedDataItems + simulatorCacheItems + deepItems
         )
+    }
+
+    static func discoverApprovedSimulators(environment: CleanEnvironment,
+                                           orchestration: CoreOrchestrationContext) async
+      -> ActionDiscovery {
+        guard !environment.simulatorsApprovedForDeletion.isEmpty else {
+            return ActionDiscovery(status: .noWork,
+                reason: "No simulator is approved for removal.", targets: [])
+        }
+        guard environment.simulatorsApprovedForDeletion.count <= 256 else {
+            return ActionDiscovery(status: .unavailable,
+                reason: "The approved simulator inventory exceeds its bounded limit.", targets: [])
+        }
+        do {
+            let devices = try await orchestration.withCommand {
+                guard let path = await ToolLocator.locateAsync("xcrun") else {
+                    throw CoreOrchestrationError.schedulerUnavailable
+                }
+                let output = try await ProcessRunner.runSimctlDevices(
+                    xcrunURL: URL(fileURLWithPath: path))
+                guard output.succeeded,
+                      let data = output.standardOutput.data(using: .utf8) else {
+                    throw CoreOrchestrationError.schedulerUnavailable
+                }
+                let response = try JSONDecoder().decode(T084DeviceResponse.self, from: data)
+                guard response.devices.values.reduce(0, { $0 + $1.count }) <= 256 else {
+                    throw CoreOrchestrationError.invalidPolicySnapshot
+                }
+                var flattened: [SimulatorDevice] = []
+                for (runtime, members) in response.devices {
+                    for var device in members {
+                        device.runtimeIdentifier = runtime
+                        flattened.append(device)
+                    }
+                }
+                return flattened
+            }
+            let targets = SimulatorPruner.devicesEligibleForDeletion(allDevices: devices,
+                approvedForDeletion: environment.simulatorsApprovedForDeletion).map {
+                TargetPath(path: $0.udid, label: "\($0.name) [\($0.runtimeIdentifier)]",
+                    isFilesystemPath: false)
+            }
+            return targets.isEmpty
+                ? ActionDiscovery(status: .noWork,
+                    reason: "No approved simulator is currently eligible.", targets: [])
+                : ActionDiscovery(status: .available,
+                    reason: "The bounded simulator inventory matched approved devices.",
+                    targets: targets)
+        } catch {
+            return ActionDiscovery(status: .unavailable,
+                reason: "The bounded simulator inventory was unavailable or invalid.", targets: [])
+        }
     }
 }

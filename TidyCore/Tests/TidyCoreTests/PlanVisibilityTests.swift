@@ -69,7 +69,10 @@ struct PlanVisibilityTests {
         try FileManager.default.createDirectory(at: protected, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let item = CleanItem(id: "untrusted.path", title: "Protected", tier: .safe,
-            declaredRoot: { _ in root.path }, locate: { _ in [TargetPath(path: protected.path)] }, action: .deletePath)
+            declaredRoot: { _ in root.path }, locate: { _ in [] }, action: .deletePath,
+            discover: { _ in ActionDiscovery(status: .available,
+                reason: "Path found; execution requires an accepted contract.",
+                targets: [TargetPath(path: protected.path)]) })
         let env = CleanEnvironment(homeDirectory: root.path, protectedRoots: [protected.path])
         let plan = await CleanEngine(sizeScanner: SizeScanner()).makePlan(items: [item], tier: .safe, environment: env)
         #expect(plan.reviewItems.count == 1)

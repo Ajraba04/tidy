@@ -101,11 +101,33 @@ public struct WorkSchedulerSnapshot: Equatable, Sendable {
     public let observationEpoch: UInt64
     public let effectiveWorkers: Int
     public let effectiveReadOnlyProcesses: Int
+    public let effectiveSliceSeconds: Int?
+    public let effectiveUIBatchesPerSecond: Int?
     public let admission: ScanAdmission
     public let active: Int
     public let queued: Int
     public let liveSessions: Int
     public let tombstones: Int
+
+    init(availability: WorkSchedulerAvailability, settingsRevision: UInt64?,
+         generation: UInt64, observationEpoch: UInt64, effectiveWorkers: Int,
+         effectiveReadOnlyProcesses: Int, effectiveSliceSeconds: Int? = nil,
+         effectiveUIBatchesPerSecond: Int? = nil, admission: ScanAdmission,
+         active: Int, queued: Int, liveSessions: Int, tombstones: Int) {
+        self.availability = availability
+        self.settingsRevision = settingsRevision
+        self.generation = generation
+        self.observationEpoch = observationEpoch
+        self.effectiveWorkers = effectiveWorkers
+        self.effectiveReadOnlyProcesses = effectiveReadOnlyProcesses
+        self.effectiveSliceSeconds = effectiveSliceSeconds
+        self.effectiveUIBatchesPerSecond = effectiveUIBatchesPerSecond
+        self.admission = admission
+        self.active = active
+        self.queued = queued
+        self.liveSessions = liveSessions
+        self.tombstones = tombstones
+    }
 }
 
 public struct WorkSession: Hashable, Sendable {
@@ -296,6 +318,8 @@ public actor WorkScheduler {
     private var epoch: UInt64
     private var workers = 0
     private var processes = 0
+    private var sliceSeconds: Int?
+    private var uiBatchesPerSecond: Int?
     private var admission: ScanAdmission = .paused
     private var features: Set<SchedulerFeature> = []
     private var sessions: [UUID: SessionRecord] = [:]
@@ -494,7 +518,8 @@ public actor WorkScheduler {
     public func snapshot() -> WorkSchedulerSnapshot {
         WorkSchedulerSnapshot(availability: availability, settingsRevision: revision,
             generation: generation, observationEpoch: epoch, effectiveWorkers: workers,
-            effectiveReadOnlyProcesses: processes, admission: admission,
+            effectiveReadOnlyProcesses: processes, effectiveSliceSeconds: sliceSeconds,
+            effectiveUIBatchesPerSecond: uiBatchesPerSecond, admission: admission,
             active: activeCount, queued: queue.count, liveSessions: sessions.count,
             tombstones: tombstones.count)
     }
@@ -503,6 +528,7 @@ public actor WorkScheduler {
                              generation: UInt64, epoch: UInt64) async {
         self.revision = revision; self.generation = generation; self.epoch = epoch
         workers = resolution.workers; processes = resolution.processes
+        sliceSeconds = resolution.slice; uiBatchesPerSecond = resolution.rate
         admission = resolution.admission; features = resolution.features
         availability = .available
         await drain()
