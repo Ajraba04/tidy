@@ -13,6 +13,12 @@ enum AppBootstrapStage: String, Sendable {
     case beforeCoordinatorConstruction, afterCoordinatorConstruction
 }
 
+/// Thrown by `AppExecutionServices.beginScan` when the T08.1b scheduler façade is genuinely not
+/// installed yet (a fresh install that has never saved settings) rather than merely busy/paused.
+enum ScanAvailabilityError: Error, Equatable {
+    case policyNotInstalled
+}
+
 private struct AppBootstrapWorkerResult: Sendable {
     let load: SettingsLoadResult
     let coordinator: ExecutionCoordinator
@@ -31,6 +37,14 @@ final class AppExecutionServices {
     let engine: CleanEngine
     let runLogURL: URL
 
+    /// The app's one T08.2 session registry, constructed once at bootstrap. It starts no work;
+    /// `beginScan` is the only route that registers and launches a session against it.
+    let scanRegistry = ScanSessionRegistry()
+    /// The active scan's session ID, if any, kept here (not on a per-window view model) so the
+    /// menu-bar/global Cancel affordance survives that window closing.
+    private(set) var activeScanSessionID: UUID?
+    private var activeScanHandle: CoreScanHandle?
+
     private init(paths: AppStoragePaths, settings: SettingsStore,
                  worker: AppBootstrapWorkerResult) {
         self.paths = paths
@@ -46,6 +60,71 @@ final class AppExecutionServices {
         self.configStore = AppConfigStore(loaded: envelope, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
         self.runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
+    }
+
+    /// The sole T08.1b bounded explicit-session façade this app consumes. No alternate
+    /// scheduler/session authority is created anywhere in the app layer.
+    var explicitSessions: BridgeExplicitSessions { policyBridge.explicitSessions }
+
+    /// Begins (or attaches nothing — always a fresh session/generation) one explicit T08.4 scan
+    /// against the shared registry and this app's one explicit-session façade. The session this
+    /// call opens is released automatically once the registered work reaches a terminal state,
+    /// independent of any window's subscription lifetime, so a closed Scan window never strands
+    /// (or prematurely finishes) the running scan.
+    ///
+    /// A revision-zero/fresh-install envelope deliberately leaves the scheduler façade
+    /// `.unavailable` until a real settings save completes (T08.1b) — this call awaits any
+    /// pending initial install first, and if the façade is still unavailable afterward, throws
+    /// `ScanAvailabilityError.policyNotInstalled` rather than silently starting nothing. Unlike
+    /// Clean review, Scan has no honest legacy shape to fall back to (the legacy path only
+    /// returns empty rows), so a visible "not available yet" state is the only truthful option.
+    func beginScan(environment: CleanEnvironment) async throws -> CoreScanHandle {
+        await explicitSessions.awaitInitialInstall()
+        guard await explicitSessions.snapshot().availability == .available else {
+            throw ScanAvailabilityError.policyNotInstalled
+        }
+        let session = try await explicitSessions.beginSession(
+            requirements: try SchedulerRequirements(features: [.headroom]))
+        do {
+            let handle = try await ScanEngine.start(environment: environment, registry: scanRegistry,
+                sessions: explicitSessions, session: session)
+            activeScanSessionID = handle.sessionID
+            activeScanHandle = handle
+            trackScanSessionLifetime(sessionID: handle.sessionID, session: session)
+            return handle
+        } catch {
+            await explicitSessions.finish(session: session)
+            throw error
+        }
+    }
+
+    /// The latest cumulative result for `sessionID`, if it is still the app's current scan.
+    func latestScanResult(sessionID: UUID) async -> CoreScanResult? {
+        guard let activeScanHandle, activeScanHandle.sessionID == sessionID else { return nil }
+        return await activeScanHandle.latestResult()
+    }
+
+    /// Cancels the active scan by session ID only — this never signals, cancels, or releases a
+    /// T04 mutator, and remains reachable from the global/menu owner after every window closes.
+    func cancelActiveScan() async {
+        guard let sessionID = activeScanSessionID else { return }
+        try? await scanRegistry.cancel(sessionID: sessionID)
+    }
+
+    /// Releases the scheduler-level session exactly once the registered work reaches a terminal
+    /// state, independent of any UI subscriber. This is a dedicated internal subscription, not
+    /// the one any `ScanViewModel` observes.
+    private func trackScanSessionLifetime(sessionID: UUID, session: WorkSession) {
+        let registry = scanRegistry
+        let sessions = explicitSessions
+        Task { [weak self] in
+            if let subscription = try? await registry.subscribe(sessionID: sessionID) {
+                for await event in subscription.stream where event.terminal != nil { break }
+            }
+            await sessions.finish(session: session)
+            guard let self, self.activeScanSessionID == sessionID else { return }
+            self.activeScanSessionID = nil
+        }
     }
 
     static func bootstrap(paths: AppStoragePaths) async -> AppExecutionServices {
@@ -163,7 +242,7 @@ final class AppReviewSession {
             }
             do {
                 let review = try await services.coordinator.prepareReview(engine: services.engine,
-                    tier: tier, selectDefaults: selectDefaults)
+                    tier: tier, selectDefaults: selectDefaults, sessions: services.explicitSessions)
                 guard lifetime.isCurrent(request) else {
                     await services.coordinator.discardReview(planID: review.binding.planID)
                     return

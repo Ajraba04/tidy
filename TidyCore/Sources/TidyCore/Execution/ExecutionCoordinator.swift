@@ -59,6 +59,60 @@ public actor ExecutionCoordinator {
         }
     }
 
+    /// Explicit T08.5 review path. Discovery and measurement run through the caller's bridge
+    /// façade on a session this call owns for exactly the duration of planning: a fresh
+    /// `CoreOrchestrationContext` is built from it and released again before returning, whether
+    /// planning succeeds or fails. No scheduler, session, or process authority is created here
+    /// beyond that one bounded, finished-before-return session.
+    ///
+    /// A revision-zero/fresh-install envelope deliberately leaves the scheduler façade
+    /// `.unavailable` until a real settings save completes (T08.1b). That is not treated as a
+    /// review failure: every catalog row must still be visible with an honest status, so this
+    /// falls back to the pre-orchestration planning shape in that case — the exact same
+    /// "unavailable, here is why" rows the legacy path has always produced. This is a truthful
+    /// degrade, not a silent one: no row is ever claimed discovered or measured that wasn't.
+    public func prepareReview(engine: CleanEngine, tier: Tier, selectDefaults: Bool,
+                              sessions: BridgeExplicitSessions) async throws -> RegisteredReview {
+        try requireAdmission()
+        guard case .ready(let revision) = barrier.snapshot() else { throw ConfirmationError.stalePolicy }
+        let snapshot = try barrier.withCurrentPolicy(revision: revision) { environment }
+        await sessions.awaitInitialInstall()
+        var orchestrated: CleanPlan?
+        if await sessions.snapshot().availability == .available {
+            orchestrated = await Self.planWithOrchestration(engine: engine, tier: tier,
+                environment: snapshot, sessions: sessions)
+        }
+        let plan: CleanPlan
+        if let orchestrated {
+            plan = orchestrated
+        } else {
+            plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier, environment: snapshot)
+        }
+        guard Set(plan.reviewItems.map(\.id)).count == plan.reviewItems.count else {
+            throw ConfirmationError.unavailableSelection
+        }
+        var identities: [String: [ResourceIdentity]] = [:]
+        var unavailable: Set<String> = []
+        for row in plan.reviewItems {
+            var captured: [ResourceIdentity] = []
+            for target in row.targets {
+                if target.isFilesystemPath, let identity = try? ResourcePreflight.captureFile(at: target.path) {
+                    captured.append(.filesystem(identity))
+                } else { unavailable.insert(row.id) }
+            }
+            identities[row.id] = captured
+        }
+        try requireAdmission()
+        return try barrier.withCurrentPolicy(revision: revision) {
+            let selection = PlanSelection(plan: plan, selectDefaults: selectDefaults)
+            guard unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
+            let binding = ReviewBinding(planID: UUID(), planRevision: 1, policyRevision: revision, selectedIDs: selection.selectedIDs)
+            let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
+            reviews[binding.planID] = Registration(review: review, identities: identities, unavailableIdentityIDs: unavailable)
+            return review
+        }
+    }
+
     public func setSelection(planID: UUID, selectedIDs: Set<String>) throws -> RegisteredReview {
         guard let registration = reviews[planID] else { throw ConfirmationError.unknownPlan }
         let old = registration.review
@@ -283,6 +337,31 @@ public actor ExecutionCoordinator {
         // Diagnostic reasons are bounded and never survive review disposal or process exit.
         while rejectionOrder.count > 256 {
             rejections.removeValue(forKey: rejectionOrder.removeFirst())
+        }
+    }
+
+    /// Owns one bounded session for exactly the duration of orchestration-based planning and
+    /// always releases it before returning. `nil` means the caller must fall back to the
+    /// legacy shape — never a thrown error that would otherwise abort a review that could still
+    /// be shown truthfully.
+    private static func planWithOrchestration(engine: CleanEngine, tier: Tier,
+                                              environment: CleanEnvironment,
+                                              sessions: BridgeExplicitSessions) async -> CleanPlan? {
+        let session: WorkSession
+        do {
+            session = try await sessions.beginSession(
+                requirements: SchedulerRequirements(features: [.headroom]))
+        } catch { return nil }
+        do {
+            let orchestration = try await CoreOrchestrationContext.make(sessions: sessions,
+                session: session, sessionID: UUID())
+            let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier,
+                environment: environment, orchestration: orchestration)
+            await sessions.finish(session: session)
+            return plan
+        } catch {
+            await sessions.finish(session: session)
+            return nil
         }
     }
 

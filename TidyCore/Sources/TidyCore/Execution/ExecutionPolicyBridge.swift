@@ -56,6 +56,13 @@ public struct BridgeExplicitSessions: Sendable {
     public func snapshot() async -> WorkSchedulerSnapshot {
         await bridge.explicitSessionSnapshot()
     }
+
+    /// Awaits the bridge's own pending initial-install/settle work (see `ExecutionPolicyBridge
+    /// .drain()`) without granting any additional authority. A caller that needs to know whether
+    /// the scheduler is genuinely installed should call this first, then read `snapshot()
+    /// .availability` — a revision-zero/fresh-install envelope deliberately leaves availability
+    /// `.unavailable` until a real settings save completes, so this never fabricates readiness.
+    public func awaitInitialInstall() async { await bridge.drain() }
 }
 
 @Observable @MainActor

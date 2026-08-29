@@ -14,8 +14,19 @@ struct TidyApp: App {
     var body: some Scene {
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
             withServices { services in
-                MenuBarContentView()
-                    .environment(services.configStore)
+                VStack(alignment: .leading, spacing: 0) {
+                    MenuBarContentView()
+                        .environment(services.configStore)
+                    if services.activeScanSessionID != nil {
+                        Divider()
+                        Button("Cancel Scan") {
+                            Task { await services.cancelActiveScan() }
+                        }
+                        .accessibilityIdentifier("menuBar.cancelScan")
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+                }
             }
         }
         .menuBarExtraStyle(.window)
