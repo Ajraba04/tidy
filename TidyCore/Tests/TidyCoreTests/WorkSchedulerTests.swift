@@ -486,6 +486,55 @@ struct WorkSchedulerTests {
             acknowledgedEnvelope: envelope(8), using: rig.owner) == .failedClosed(.envelopeMismatch))
     }
 
+    @Test func snapshotProjectsOnlyAcknowledgedSliceAndPresentationRate() async throws {
+        let rig = try Rig.make()
+        var snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.settingsRevision == nil)
+        #expect(snapshot.effectiveSliceSeconds == nil)
+        #expect(snapshot.effectiveUIBatchesPerSecond == nil)
+
+        let initial = envelope(7, workers: 4, slice: 30, rate: 4)
+        try await rig.install(initial)
+        snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.effectiveSliceSeconds == 30)
+        #expect(snapshot.effectiveUIBatchesPerSecond == 4)
+
+        let presentation = envelope(8, workers: 4, slice: 30, rate: 1)
+        let preparedPresentation = await rig.preparePresentation(presentation)
+        let presentationToken = try #require(preparedPresentation.token)
+        #expect(await rig.controller.commitPresentation(presentationToken,
+            acknowledgedEnvelope: presentation, using: rig.owner) ==
+                .committed(settingsRevision: 8))
+        snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.effectiveSliceSeconds == 30)
+        #expect(snapshot.effectiveUIBatchesPerSecond == 1)
+
+        let invalidating = envelope(9, workers: 4, slice: 1_800, rate: 3)
+        try await rig.install(invalidating)
+        #expect(await rig.controller.updateObservation(epoch: 1, observation: .constrained,
+            acknowledgedEnvelope: invalidating, using: rig.owner) == .applied)
+        snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.effectiveSliceSeconds == 1_800)
+        #expect(snapshot.effectiveUIBatchesPerSecond == 3)
+        #expect(snapshot.effectiveWorkers == 1)
+
+        #expect(await rig.controller.updateObservation(epoch: 2, observation: .critical,
+            acknowledgedEnvelope: invalidating, using: rig.owner) == .applied)
+        snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.admission == .paused)
+        #expect(snapshot.effectiveWorkers == 0)
+        #expect(snapshot.effectiveSliceSeconds == 1_800)
+        #expect(snapshot.effectiveUIBatchesPerSecond == 3)
+
+        #expect(await rig.controller.updateObservation(epoch: 3, observation: .nominal,
+            acknowledgedEnvelope: invalidating, using: rig.owner) == .applied)
+        snapshot = await rig.scheduler.snapshot()
+        #expect(snapshot.admission != .paused)
+        #expect(snapshot.effectiveWorkers == 4)
+        #expect(snapshot.effectiveSliceSeconds == 1_800)
+        #expect(snapshot.effectiveUIBatchesPerSecond == 3)
+    }
+
     @Test func staleAndWrongRequirementsCapabilitiesRejectBeforeAccounting() async throws {
         let rig = try Rig.make(); try await rig.install(envelope(1))
         let project = try SchedulerRequirements(features: [.projects])

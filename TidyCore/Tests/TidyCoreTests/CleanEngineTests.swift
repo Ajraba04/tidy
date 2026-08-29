@@ -66,7 +66,7 @@ struct CleanEngineTests {
         #expect(Set(deepPlan.plannedItems.map(\.id)) == ["safe", "normal", "deep"])
     }
 
-    @Test("makePlan measures target sizes without deleting anything")
+    @Test("makePlan launches no measurement and reports zero bytes without deleting anything")
     func makePlanMeasuresWithoutDeleting() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
@@ -85,7 +85,10 @@ struct CleanEngineTests {
         let engine = CleanEngine(sizeScanner: SizeScanner())
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: makeEnvironment(homeDirectory: scratch.path))
 
-        #expect(plan.plannedItems.first?.estimatedBytes ?? 0 >= 100_000)
+        // Superseded by the `orchestration`-taking overload: this legacy overload launches no
+        // discovery or measurement, so its estimate is always zero.
+        #expect(plan.plannedItems.first?.estimatedBytes == 0)
+        #expect(plan.plannedItems.first?.targets.isEmpty == true)
         #expect(FileManager.default.fileExists(atPath: target.path))
     }
 
