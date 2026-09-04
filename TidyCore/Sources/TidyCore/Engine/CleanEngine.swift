@@ -28,15 +28,17 @@ public struct CustomActionOutcome: Sendable {
 /// snapshots) never has to live inside the engine itself.
 public typealias CustomActionExecutor = @Sendable (TargetPath, CleanEnvironment) async -> CustomActionOutcome
 
-/// Enumerates catalog items into a confirmable plan, then executes exactly
-/// that plan. There is no other path to deletion: every mode, including a
-/// pure dry-run preview, produces a `CleanPlan` first.
+/// Enumerates catalog items into a confirmable plan. Execution currently
+/// stops at the fixed quarantine boundary; no current plan gains cleanup
+/// authority.
 public actor CleanEngine {
     private let sizeScanner: SizeScanner
+    private let commandRunner: any CleanupCommandRunning
     private var customExecutors: [CustomOperationID: CustomActionExecutor] = [:]
 
-    public init(sizeScanner: SizeScanner) {
+    public init(sizeScanner: SizeScanner, commandRunner: any CleanupCommandRunning = SystemCleanupCommandRunner()) {
         self.sizeScanner = sizeScanner
+        self.commandRunner = commandRunner
     }
 
     public func register(_ operation: CustomOperationID, executor: @escaping CustomActionExecutor) {
@@ -47,8 +49,10 @@ public actor CleanEngine {
         customExecutors[operation] != nil
     }
 
-    /// Locates and measures every relevant item's targets. Read-only:
-    /// nothing is deleted, moved, or modified.
+    /// Superseded by the `orchestration`-taking overload below, which is the only route that
+    /// launches discovery or measurement. This overload keeps its row shape for callers not yet
+    /// moved onto the explicit session path: every relevant item still gets a row, but none of
+    /// them are discovered or measured.
     ///
     /// Tiers are cumulative, matching the shell script, where sections 1-3
     /// and most of 5-7 run on every invocation and only a handful of
@@ -56,27 +60,42 @@ public actor CleanEngine {
     /// Deep plan includes Safe and Normal. `Tier` is `Comparable` in
     /// exactly this order for that reason.
     public func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment) async -> CleanPlan {
-        let relevantItems = items.filter { $0.tier <= tier && $0.isRelevant(in: environment) }
+        let relevantItems = items.filter { $0.tier <= tier }
 
         var plannedItems: [PlannedItem] = []
         plannedItems.reserveCapacity(relevantItems.count)
 
         for item in relevantItems {
             let declaredRoot = item.declaredRoot(environment)
-            let rawTargets = item.locate(environment)
+            let discovery: ActionDiscovery
+            if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
+                discovery = ActionDiscovery(status: .unavailable, reason: "Required toolchain is not available.", targets: [])
+            } else if case .unavailable(let reason) = item.action {
+                discovery = ActionDiscovery(status: .unavailable, reason: reason, targets: [])
+            } else if let explicitDiscovery = item.discover {
+                discovery = explicitDiscovery(environment)
+            } else {
+                discovery = ActionDiscovery(status: .unavailable, reason: CapabilityRegistry.quarantineReason, targets: [])
+            }
 
             let guardian = PathGuard(protectedRoots: environment.protectedRoots)
-            let safeTargets = rawTargets.filter { target in
+            let safeTargets = discovery.targets.filter { target in
                 guard target.isFilesystemPath else { return true }
                 return guardian.isSafe(target.path, mustBeUnder: declaredRoot, home: environment.homeDirectory)
             }
-
-            let measurablePaths = safeTargets.filter(\.isFilesystemPath).map(\.path)
-            var estimatedBytes: Int64 = 0
-            if !measurablePaths.isEmpty {
-                let results = await sizeScanner.scan(paths: measurablePaths, protectedRoots: environment.protectedRoots)
-                estimatedBytes = results.reduce(0) { $0 + $1.bytes }
+            let rejectedTarget = discovery.targets.filter(\.isFilesystemPath).count != safeTargets.filter(\.isFilesystemPath).count
+            let status: ReviewStatus
+            let reason: String
+            if rejectedTarget {
+                status = .blocked; reason = "One or more targets failed path protection checks."
+            } else if discovery.status == .available, CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil {
+                status = .unavailable; reason = CapabilityRegistry.quarantineReason
+            } else {
+                status = discovery.status; reason = discovery.reason
             }
+            let normalizedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No review explanation is available."
+                : reason
 
             plannedItems.append(PlannedItem(
                 id: item.id,
@@ -85,164 +104,159 @@ public actor CleanEngine {
                 dangerNote: item.dangerNote,
                 costNote: item.costNote,
                 targets: safeTargets,
-                estimatedBytes: estimatedBytes,
+                estimatedBytes: 0,
                 action: item.action,
-                declaredRoot: declaredRoot
+                declaredRoot: declaredRoot,
+                review: ActionDescriptor(id: item.id, status: status, reason: normalizedReason, requiresPerRunOptIn: item.action.requiresPerRunOptIn)
             ))
         }
 
         return CleanPlan(tier: tier, plannedItems: plannedItems)
     }
 
-    /// Executes exactly the plan handed to it. Every target is re-validated
-    /// against `PathGuard` immediately before deletion, including the
-    /// item's own `declaredRoot`: defense in depth against however much
-    /// time has passed since the plan was made. The re-check is deliberately
-    /// identical in strength to the plan-time check, not weaker.
-    public func execute(plan: CleanPlan, environment: CleanEnvironment) async -> RunReport {
-        let startedAt = Date()
-        let freeBefore = (try? DiskStats.current().availableForImportantUsageBytes) ?? 0
-        let guardian = PathGuard(protectedRoots: environment.protectedRoots)
-
-        var results: [ItemResult] = []
-        results.reserveCapacity(plan.plannedItems.count)
-
-        // Every planned item runs, not just ones with non-empty targets:
-        // a `.runTool` action (e.g. "npm cache clean --force") has no
-        // target path by design (it's the tool's own job to know what to
-        // clean), so filtering on `targets.isEmpty` would silently skip it.
-        for item in plan.plannedItems {
-            let result = await executeItem(item, guardian: guardian, environment: environment)
-            results.append(result)
-        }
-
-        let freeAfter = (try? DiskStats.current().availableForImportantUsageBytes) ?? freeBefore
-
-        return RunReport(
-            tier: plan.tier,
-            results: results,
-            startedAt: startedAt,
-            finishedAt: Date(),
-            freeSpaceBeforeBytes: freeBefore,
-            freeSpaceAfterBytes: freeAfter
-        )
+    /// Explicit T08.4 planning path. Discovery and each bounded measurement consume the exact
+    /// caller-supplied bridge session; this overload creates no scheduler or process authority.
+    public func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment,
+                         orchestration: CoreOrchestrationContext) async -> CleanPlan {
+        await makePlan(items: items, tier: tier, environment: environment,
+            orchestration: orchestration, testHook: nil)
     }
 
-    private func executeItem(
-        _ item: PlannedItem,
-        guardian: PathGuard,
-        environment: CleanEnvironment
-    ) async -> ItemResult {
-        switch item.action {
-        case .deletePath:
-            return await deleteTargets(item, guardian: guardian, environment: environment, keepDirectory: false)
+    internal func makePlan(items: [CleanItem], tier: Tier, environment: CleanEnvironment,
+                           orchestration: CoreOrchestrationContext,
+                           testHook: (@Sendable () async -> Void)?) async -> CleanPlan {
+        let relevantItems = items.filter { $0.tier <= tier }
+        var plannedItems: [PlannedItem] = []
+        plannedItems.reserveCapacity(relevantItems.count)
 
-        case .deleteContents:
-            return await deleteTargets(item, guardian: guardian, environment: environment, keepDirectory: true)
-
-        case .runTool(let command):
-            guard let executablePath = ToolLocator.locate(command.tool.executableName) else {
-                return ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false, message: "\(command.tool.executableName) not found")
-            }
-            let succeeded = await ProcessRunner.runDiscardingOutput(
-                executableURL: URL(fileURLWithPath: executablePath),
-                arguments: command.arguments
-            )
-            return ItemResult(id: item.id, title: item.title, freedBytes: item.estimatedBytes, succeeded: succeeded, message: succeeded ? nil : "command failed")
-
-        case .custom(let operationID):
-            guard let executor = customExecutors[operationID] else {
-                return ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false, message: "\(operationID.rawValue) has no registered handler")
-            }
-            var freed: Int64 = 0
-            var reclaimedMemory: Int64 = 0
-            var succeeded = true
-            var messages: [String] = []
-            for target in item.targets {
-                // Same defense-in-depth re-validation as deleteTargets,
-                // for the custom actions whose targets are real paths
-                // (Chrome profiles, git repos) rather than an opaque
-                // identifier like a simulator UDID.
-                if target.isFilesystemPath {
-                    do {
-                        try guardian.validate(
-                            target.path,
-                            mustBeUnder: item.declaredRoot,
-                            home: environment.homeDirectory
-                        )
-                    } catch {
-                        succeeded = false
-                        messages.append("\(target.path): \(error)")
-                        continue
-                    }
+        for item in relevantItems {
+            let declaredRoot = item.declaredRoot(environment)
+            var discovery: ActionDiscovery
+            if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
+                discovery = ActionDiscovery(status: .unavailable,
+                    reason: "Required toolchain is not available.", targets: [])
+            } else if case .unavailable(let reason) = item.action {
+                discovery = ActionDiscovery(status: .unavailable, reason: reason, targets: [])
+            } else {
+                do {
+                    _ = try await orchestration.checkCurrent()
+                    discovery = try await Self.discover(item: item, environment: environment,
+                        orchestration: orchestration, testHook: testHook)
+                } catch {
+                    discovery = ActionDiscovery(status: .unavailable,
+                        reason: "Discovery was cancelled or became unavailable.", targets: [])
                 }
-                let outcome = await executor(target, environment)
-                freed += outcome.freedBytes
-                reclaimedMemory += outcome.reclaimedMemoryBytes
-                succeeded = succeeded && outcome.succeeded
-                if let message = outcome.message { messages.append(message) }
-            }
-            return ItemResult(
-                id: item.id,
-                title: item.title,
-                freedBytes: freed,
-                reclaimedMemoryBytes: reclaimedMemory,
-                succeeded: succeeded,
-                message: messages.isEmpty ? nil : messages.joined(separator: "; ")
-            )
-        }
-    }
-
-    private func deleteTargets(
-        _ item: PlannedItem,
-        guardian: PathGuard,
-        environment: CleanEnvironment,
-        keepDirectory: Bool
-    ) async -> ItemResult {
-        var freed: Int64 = 0
-        var failures: [String] = []
-
-        for target in item.targets {
-            do {
-                try guardian.validate(
-                    target.path,
-                    mustBeUnder: item.declaredRoot,
-                    home: environment.homeDirectory
-                )
-            } catch {
-                failures.append("\(target.path): \(error)")
-                continue
             }
 
-            let measured = await sizeScanner.scan(paths: [target.path], protectedRoots: environment.protectedRoots)
-            let bytes = measured.first?.bytes ?? 0
+            if (try? await orchestration.checkCurrent()) == nil {
+                discovery = ActionDiscovery(status: .unavailable,
+                    reason: "Discovery became stale before it could be published.", targets: [])
+            }
 
-            do {
-                if keepDirectory {
-                    try emptyDirectory(at: target.path)
-                } else {
-                    try FileManager.default.removeItem(atPath: target.path)
+            let guardian = PathGuard(protectedRoots: environment.protectedRoots)
+            let safeTargets = discovery.targets.filter { target in
+                guard target.isFilesystemPath else { return true }
+                return guardian.isSafe(target.path, mustBeUnder: declaredRoot,
+                                       home: environment.homeDirectory)
+            }
+            let rejected = discovery.targets.filter(\.isFilesystemPath).count
+                != safeTargets.filter(\.isFilesystemPath).count
+            var estimatedBytes: Int64 = 0
+            var measurementComplete = true
+            for path in safeTargets.filter(\.isFilesystemPath).map(\.path) {
+                if Task.isCancelled { measurementComplete = false; break }
+                do { _ = try await orchestration.checkCurrent() }
+                catch { measurementComplete = false; break }
+                let page = await SizeScanner.diskUsageBounded(
+                    sessions: orchestration.sessions, session: orchestration.session,
+                    sessionID: orchestration.sessionID, generation: orchestration.generation,
+                    rootPath: path, protectedRoots: environment.protectedRoots,
+                    limits: orchestration.traversalLimits)
+                let (next, overflow) = estimatedBytes.addingReportingOverflow(page.result.totalBytes)
+                if overflow {
+                    measurementComplete = false
+                    await page.traversal.invalidate(sessionID: orchestration.sessionID)
+                    break
                 }
-                freed += bytes
-            } catch {
-                failures.append("\(target.path): \(error.localizedDescription)")
+                estimatedBytes = next
+                if !page.result.coverage.isComplete || page.result.cursor != nil {
+                    measurementComplete = false
+                    await page.traversal.invalidate(sessionID: orchestration.sessionID)
+                    break
+                }
+                do { _ = try await orchestration.checkCurrent() }
+                catch { measurementComplete = false; break }
             }
-        }
 
-        return ItemResult(
-            id: item.id,
-            title: item.title,
-            freedBytes: freed,
-            succeeded: failures.isEmpty,
-            message: failures.isEmpty ? nil : failures.joined(separator: "; ")
-        )
+            let status: ReviewStatus
+            let reason: String
+            if rejected {
+                status = .blocked
+                reason = "One or more targets failed path protection checks."
+            } else if !measurementComplete {
+                status = .unavailable
+                reason = "Measurement is partial or unavailable; no complete estimate was claimed."
+                estimatedBytes = 0
+            } else if discovery.status == .available,
+                      CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil {
+                status = .unavailable
+                reason = CapabilityRegistry.quarantineReason
+            } else {
+                status = discovery.status
+                reason = discovery.reason
+            }
+            let normalized = reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No review explanation is available." : reason
+            plannedItems.append(PlannedItem(id: item.id, title: item.title, tier: item.tier,
+                dangerNote: item.dangerNote, costNote: item.costNote, targets: safeTargets,
+                estimatedBytes: estimatedBytes, action: item.action, declaredRoot: declaredRoot,
+                review: ActionDescriptor(id: item.id, status: status, reason: normalized,
+                    requiresPerRunOptIn: item.action.requiresPerRunOptIn)))
+        }
+        return CleanPlan(tier: tier, plannedItems: plannedItems)
     }
 
-    private func emptyDirectory(at path: String) throws {
-        let fm = FileManager.default
-        let children = try fm.contentsOfDirectory(atPath: path)
-        for child in children {
-            try? fm.removeItem(atPath: path + "/" + child)
+    private static func discover(item: CleanItem, environment: CleanEnvironment,
+                                 orchestration: CoreOrchestrationContext,
+                                 testHook: (@Sendable () async -> Void)?) async throws
+      -> ActionDiscovery {
+        switch item.id {
+        case "normal.extras.build-outputs":
+            return await CleanCatalog.discoverBuildOutputs(environment: environment,
+                orchestration: orchestration)
+        case "normal.extras.stale-node-modules":
+            return await CleanCatalog.discoverStaleNodeModules(environment: environment,
+                orchestration: orchestration)
+        case "deep.system.apfs-snapshots":
+            return await CleanCatalog.discoverLocalSnapshots(orchestration: orchestration)
+        case "deep.simulator.delete-approved":
+            return await CleanCatalog.discoverApprovedSimulators(environment: environment,
+                orchestration: orchestration)
+        case "deep.flutter.sdk-cache":
+            return await CleanCatalog.discoverFlutterSDKCache(environment: environment,
+                orchestration: orchestration)
+        default:
+            guard let explicit = item.discover else {
+                return ActionDiscovery(status: .unavailable,
+                    reason: "This synchronous catalog route awaits its named async owner; "
+                        + "no discovery was launched.", targets: [])
+            }
+            return try await orchestration.withPermit {
+                await testHook?()
+                return explicit(environment)
+            }
         }
+    }
+
+    /// Internal denial-only compatibility for quarantine regression tests.
+    /// This entry can never become an effect route, including after adapter acceptance.
+    internal func execute(plan: CleanPlan, environment: CleanEnvironment) async -> RunReport {
+        let results = plan.plannedItems.map {
+            ItemResult(id: $0.id, title: $0.title, freedBytes: 0, succeeded: false,
+                       message: CapabilityRegistry.quarantineReason)
+        }
+        return RunReport(tier: plan.tier, results: results, startedAt: Date(), finishedAt: Date(),
+                         freeSpaceBeforeBytes: 0, freeSpaceAfterBytes: 0,
+                         disposition: .unavailableSelection, coordinatorMeasurementsAvailable: false)
     }
 }

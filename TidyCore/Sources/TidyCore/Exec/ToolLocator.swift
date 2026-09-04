@@ -17,36 +17,17 @@ public enum ToolLocator: Sendable {
         "/sbin"
     ]
 
-    /// A tool's resolved path never changes mid-run, so results are cached
-    /// by name. Beyond the obvious repeat-lookup saving, this bounds how
-    /// many `xcrun --find` processes ever spawn (one per distinct name, not
-    /// one per caller). `locateViaXcrun` blocks its calling thread inside
-    /// `Process.waitUntilExit()`'s own nested run loop, and enough
-    /// concurrent callers (many catalog items checked at once, a large
-    /// test suite) can exhaust Swift's cooperative thread pool the same way
-    /// `ProcessRunner` guards against.
-    private static let cache = LocatorCache()
-
-    /// Caps concurrent `xcrun --find` spawns for names not yet cached (a
-    /// cold-start thundering herd), independent of `ProcessRunner`'s gate
-    /// since this path never goes through `ProcessRunner`.
-    private static let concurrencyLimit = DispatchSemaphore(value: 4)
+    /// Synchronous catalog discovery is intentionally fixed-path-only. The
+    /// later T08.4 async catalog owner can adopt `locateAsync`; this route
+    /// never blocks a cooperative thread or starts a private process.
+    private static let fixedCache = LocatorCache(limit: 128)
+    private static let asyncCache = AsyncLocatorCache(resultLimit: 128, inFlightLimit: 32)
 
     public static func locate(_ name: String) -> String? {
-        if let cached = cache.value(for: name) {
-            return cached
-        }
-        concurrencyLimit.wait()
-        defer { concurrencyLimit.signal() }
-
-        // Another thread may have populated the cache while this one
-        // waited on the semaphore.
-        if let cached = cache.value(for: name) {
-            return cached
-        }
-
-        let resolved = locateUncached(name)
-        cache.store(resolved, for: name)
+        guard validName(name) else { return nil }
+        if let cached = fixedCache.value(for: name) { return cached }
+        let resolved = locateInFixedDirectories(name)
+        fixedCache.store(resolved, for: name)
         return resolved
     }
 
@@ -54,10 +35,25 @@ public enum ToolLocator: Sendable {
         locate(name) != nil
     }
 
-    private static func locateUncached(_ name: String) -> String? {
-        if let found = locateViaXcrun(name) {
-            return found
-        }
+    /// Async discovery adds the reviewed `xcrun --find` fallback through the
+    /// sole bounded process runner. Same-name cold lookups share one in-flight
+    /// task; both in-flight and retained result cardinality are finite.
+    public static func locateAsync(_ name: String) async -> String? {
+        guard validName(name) else { return nil }
+        if let fixed = locate(name) { return fixed }
+        return await asyncCache.resolve(name) { await locateViaXcrun(name) }
+    }
+
+    public static func isAvailableAsync(_ name: String) async -> Bool {
+        await locateAsync(name) != nil
+    }
+
+    private static func validName(_ name: String) -> Bool {
+        !name.isEmpty && name.utf8.count <= 128
+            && name.allSatisfy { $0.isLetter || $0.isNumber || "-._+".contains($0) }
+    }
+
+    private static func locateInFixedDirectories(_ name: String) -> String? {
         for directory in fixedSearchDirectories {
             let candidate = directory + "/" + name
             if FileManager.default.isExecutableFile(atPath: candidate) {
@@ -67,30 +63,14 @@ public enum ToolLocator: Sendable {
         return nil
     }
 
-    private static func locateViaXcrun(_ name: String) -> String? {
+    private static func locateViaXcrun(_ name: String) async -> String? {
         guard FileManager.default.isExecutableFile(atPath: xcrunPath) else { return nil }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: xcrunPath)
-        process.arguments = ["--find", name]
-        process.environment = ProcessRunner.minimalEnvironment
-
-        let outPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
+        guard let output = try? await ProcessRunner.runXcrunFind(name), output.succeeded else {
             return nil
         }
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        guard let path = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !path.isEmpty,
+        let path = output.standardOutput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty,
             FileManager.default.isExecutableFile(atPath: path)
         else {
             return nil
@@ -103,7 +83,11 @@ public enum ToolLocator: Sendable {
 /// not found" (`nil`).
 private final class LocatorCache: @unchecked Sendable {
     private let lock = NSLock()
+    private let limit: Int
     private var storage: [String: String?] = [:]
+    private var order: [String] = []
+
+    init(limit: Int) { self.limit = limit }
 
     func value(for name: String) -> String?? {
         lock.lock()
@@ -113,7 +97,47 @@ private final class LocatorCache: @unchecked Sendable {
 
     func store(_ path: String?, for name: String) {
         lock.lock()
-        storage[name] = path
+        if storage[name] == nil {
+            if order.count == limit, let oldest = order.first {
+                order.removeFirst(); storage.removeValue(forKey: oldest)
+            }
+            order.append(name)
+        }
+        storage.updateValue(path, forKey: name)
         lock.unlock()
+    }
+}
+
+private actor AsyncLocatorCache {
+    private enum Entry { case found(String), missing }
+    private let resultLimit: Int
+    private let inFlightLimit: Int
+    private var results: [String: Entry] = [:]
+    private var order: [String] = []
+    private var inFlight: [String: Task<String?, Never>] = [:]
+
+    init(resultLimit: Int, inFlightLimit: Int) {
+        self.resultLimit = resultLimit; self.inFlightLimit = inFlightLimit
+    }
+
+    func resolve(_ name: String, operation: @escaping @Sendable () async -> String?) async -> String? {
+        if let entry = results[name] {
+            if case .found(let path) = entry { return path }
+            return nil
+        }
+        if let existing = inFlight[name] { return await existing.value }
+        guard inFlight.count < inFlightLimit else { return nil }
+        let task = Task { await operation() }
+        inFlight[name] = task
+        let value = await task.value
+        inFlight.removeValue(forKey: name)
+        if results[name] == nil {
+            if order.count == resultLimit, let oldest = order.first {
+                order.removeFirst(); results.removeValue(forKey: oldest)
+            }
+            order.append(name)
+        }
+        results[name] = value.map(Entry.found) ?? .missing
+        return value
     }
 }

@@ -20,6 +20,7 @@ public struct CleanItem: Identifiable, Sendable {
     /// return zero targets if nothing is present. Read-only: locating a
     /// target never deletes anything.
     public let locate: @Sendable (CleanEnvironment) -> [TargetPath]
+    public let discover: (@Sendable (CleanEnvironment) -> ActionDiscovery)?
     public let action: CleanAction
 
     public init(
@@ -31,7 +32,8 @@ public struct CleanItem: Identifiable, Sendable {
         costNote: String? = nil,
         declaredRoot: @escaping @Sendable (CleanEnvironment) -> String?,
         locate: @escaping @Sendable (CleanEnvironment) -> [TargetPath],
-        action: CleanAction
+        action: CleanAction,
+        discover: (@Sendable (CleanEnvironment) -> ActionDiscovery)? = nil
     ) {
         self.id = id
         self.title = title
@@ -42,6 +44,7 @@ public struct CleanItem: Identifiable, Sendable {
         self.declaredRoot = declaredRoot
         self.locate = locate
         self.action = action
+        self.discover = discover
     }
 
     public func isRelevant(in environment: CleanEnvironment) -> Bool {

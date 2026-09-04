@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!--
+		Disk space APIs: DiskStats.swift (.volumeTotalCapacityKey,
+		.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
+		.volumeUUIDStringKey), read for every volume Scan/Headroom shows. The
+		free/used figures are always displayed directly in the app UI
+		(StatsGaugeRow, HeadroomView, ScanView), never used off-device or to
+		gate a hidden decision, which is the documented fit for E174.1.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>E174.1</string>
+			</array>
+		</dict>
+		<!--
+		System boot time APIs: SystemMonitor.swift's LiveSystemProbe reads
+		kern.boottime (via sysctlbyname) solely to detect that the Mac
+		rebooted since the last sample, so a cumulative swap page-out counter
+		is not misread as a negative/impossible delta across that reset. The
+		value is used only for this in-app comparison and is never persisted,
+		displayed as a wall-clock boot time, or transmitted off-device.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

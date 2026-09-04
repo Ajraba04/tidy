@@ -107,26 +107,56 @@ extension CleanCatalog {
             requires: .flutter,
             costNote: "Several GB of engine artifacts; 'flutter precache' re-downloads them",
             declaredRoot: { env in env.homeDirectory },
-            locate: { env in
-                // The SDK lives wherever the user unpacked it, so it is
-                // resolved from the `flutter` executable rather than
-                // guessed. Only offered when the SDK sits inside $HOME:
-                // an SDK installed system-wide is outside this item's
-                // declared root, and PathGuard would refuse it anyway.
-                guard let executable = ToolLocator.locate("flutter") else { return [] }
-                let sdkRoot = ((executable as NSString).deletingLastPathComponent as NSString)
-                    .deletingLastPathComponent
-                let cachePath = sdkRoot + "/bin/cache"
-                guard PathGuard.isEqualOrDescendant(
-                    PathGuard.canonicalize(cachePath),
-                    of: PathGuard.canonicalize(env.homeDirectory)
-                ) else { return [] }
-                guard FileManager.default.fileExists(atPath: cachePath) else { return [] }
-                return [TargetPath(path: cachePath, label: PathDisplay.tilde(cachePath))]
-            },
+            locate: { _ in [] },
             action: .deletePath
         ))
 
         return CleanCategory(id: "dependency-caches", title: "Dependency caches", items: items)
+    }
+
+    static func discoverFlutterSDKCache(environment: CleanEnvironment,
+                                        orchestration: CoreOrchestrationContext) async
+      -> ActionDiscovery {
+        let executable: String
+        do {
+            executable = try await orchestration.withCommand {
+                guard let path = await ToolLocator.locateAsync("flutter") else {
+                    throw CoreOrchestrationError.schedulerUnavailable
+                }
+                return path
+            }
+        } catch {
+            return ActionDiscovery(status: .unavailable,
+                reason: "The bounded Flutter tool lookup was unavailable.", targets: [])
+        }
+        let sdkRoot = ((executable as NSString).deletingLastPathComponent as NSString)
+            .deletingLastPathComponent
+        let cachePath = sdkRoot + "/bin/cache"
+        guard PathGuard.isEqualOrDescendant(PathGuard.canonicalize(cachePath),
+            of: PathGuard.canonicalize(environment.homeDirectory)) else {
+            return ActionDiscovery(status: .blocked,
+                reason: "The Flutter SDK cache is outside the declared home-directory root.",
+                targets: [])
+        }
+        do {
+            let exists = try await orchestration.withPermit {
+                do {
+                    _ = try FileManager.default.attributesOfItem(atPath: cachePath)
+                    return true
+                } catch let error as NSError where error.code == NSFileNoSuchFileError
+                    || error.code == NSFileReadNoSuchFileError {
+                    return false
+                }
+            }
+            return exists
+                ? ActionDiscovery(status: .available,
+                    reason: "The bounded Flutter lookup found the SDK cache.",
+                    targets: [TargetPath(path: cachePath, label: PathDisplay.tilde(cachePath))])
+                : ActionDiscovery(status: .noWork,
+                    reason: "No Flutter SDK cache exists at the resolved path.", targets: [])
+        } catch {
+            return ActionDiscovery(status: .unavailable,
+                reason: "The resolved Flutter SDK cache could not be inspected.", targets: [])
+        }
     }
 }

@@ -24,7 +24,8 @@ extension CleanCatalog {
             locate: { _ in
                 [TargetPath(path: "purge", label: "Inactive memory", isFilesystemPath: false)]
             },
-            action: .custom(.purgeInactiveMemory)
+            action: .custom(.purgeInactiveMemory),
+            discover: { _ in ActionDiscovery(status: .available, reason: "Memory request requires an accepted contract.", targets: [TargetPath(path: "purge", label: "Inactive memory", isFilesystemPath: false)]) }
         ))
 
         items.append(CleanItem(
@@ -39,7 +40,8 @@ extension CleanCatalog {
                     TargetPath(path: name, label: name, isFilesystemPath: false)
                 }
             },
-            action: .custom(.quitMemoryHog)
+            action: .custom(.quitMemoryHog),
+            discover: { env in ActionDiscovery(status: .available, reason: "Memory request requires an accepted contract.", targets: env.appsApprovedForQuit.map { TargetPath(path: $0, label: $0, isFilesystemPath: false) }) }
         ))
 
         items.append(CleanItem(
@@ -47,7 +49,7 @@ extension CleanCatalog {
             title: "Restart to reclaim swap",
             tier: .deep,
             dangerNote: "Restarts this Mac. Save your work first",
-            costNote: "The only way to return swap: macOS grows swapfiles on demand and never shrinks them while booted",
+            costNote: "Restart is an optional system request, not a guaranteed reclaim amount.",
             declaredRoot: { env in env.homeDirectory },
             locate: { env in
                 // Ships off. Requires an explicit opt-in in Settings on top
@@ -57,7 +59,8 @@ extension CleanCatalog {
                 guard env.allowRestartToReclaimSwap else { return [] }
                 return [TargetPath(path: "restart", label: "Restart this Mac", isFilesystemPath: false)]
             },
-            action: .custom(.restartToReclaimSwap)
+            action: .custom(.restartToReclaimSwap),
+            discover: { _ in ActionDiscovery(status: .available, reason: "Memory request requires an accepted contract.", targets: [TargetPath(path: "restart", label: "Restart this Mac", isFilesystemPath: false)]) }
         ))
 
         return CleanCategory(id: "memory", title: "Memory & Swap", items: items)

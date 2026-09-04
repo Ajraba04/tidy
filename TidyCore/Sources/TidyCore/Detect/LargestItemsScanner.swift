@@ -111,4 +111,33 @@ public enum LargestItemsScanner: Sendable {
 
         return Array(results.sorted { $0.bytes > $1.bytes }.prefix(limit))
     }
+
+    /// Starts the bounded large-file walk through the caller's explicit bridge session. The
+    /// retained heap is capped by both the adapter's requested limit and the traversal hard limit.
+    public static func filesAtLeastBounded(
+        _ minimumBytes: Int64,
+        homeDirectory: String,
+        protectedRoots: [String],
+        limit: Int,
+        sessions: BridgeExplicitSessions,
+        session: WorkSession,
+        sessionID: UUID,
+        generation: UInt64,
+        limits: TraversalLimits
+    ) async -> BoundedTraversalPage {
+        let traversalLimits = limits.replacing(topN: min(max(0, limit), limits.topN))
+        let traversal = BoundedTraversal(sessions: sessions, limits: traversalLimits)
+        let result = await traversal.start(
+            root: homeDirectory,
+            session: session,
+            sessionID: sessionID,
+            generation: generation,
+            options: TraversalOptions(
+                protectedRoots: protectedRoots,
+                minimumFileBytes: minimumBytes,
+                recordSelection: .none
+            )
+        )
+        return BoundedTraversalPage(traversal: traversal, result: result)
+    }
 }

@@ -2,54 +2,29 @@ import Foundation
 import Observation
 import TidyCore
 
-@Observable
-@MainActor
+@Observable @MainActor
 final class CustomViewModel {
     enum Phase {
-        case loadingPlan
-        case selecting(CleanPlan)
-        case executing
-        case complete(RunReport)
+        case loadingPlan, selecting(CleanPlan), executing, complete(RunReport), failed(String)
     }
-
-    private(set) var phase: Phase = .loadingPlan
-    var selectedIDs: Set<String> = []
-
-    private let engine: CleanEngine
-    private let environment: CleanEnvironment
-
-    init(engine: CleanEngine, environment: CleanEnvironment) {
-        self.engine = engine
-        self.environment = environment
+    private let session: AppReviewSession
+    var selection: PlanSelectionModel? { session.selection }
+    var registeredReview: RegisteredReview? { session.registeredReview }
+    var phase: Phase {
+        switch session.phase {
+        case .loadingPlan: return .loadingPlan
+        case .reviewing(let plan): return .selecting(plan)
+        case .executing: return .executing
+        case .complete(let report): return .complete(report)
+        case .failed(let message): return .failed(message)
+        }
     }
-
-    func loadPlan() async {
-        phase = .loadingPlan
-        await DefaultCustomActionExecutors.registerAll(on: engine)
-        let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: .deep, environment: environment)
-        selectedIDs = []
-        phase = .selecting(plan)
+    init(services: AppExecutionServices) {
+        session = AppReviewSession(tier: .deep, selectDefaults: false, services: services)
     }
-
-    func applyPreset(_ preset: CustomPreset) {
-        selectedIDs = preset.itemIDs
-    }
-
-    var selectedEstimatedBytes: Int64 {
-        guard case .selecting(let plan) = phase else { return 0 }
-        return plan.plannedItems.filter { selectedIDs.contains($0.id) }.reduce(0) { $0 + $1.estimatedBytes }
-    }
-
-    /// Only reachable from the confirmation dialog on the selection
-    /// screen. There is no other path from a selection to a deletion.
-    func executeSelected() async {
-        guard case .selecting(let plan) = phase else { return }
-        let filteredItems = plan.plannedItems.filter { selectedIDs.contains($0.id) }
-        let filteredPlan = CleanPlan(tier: plan.tier, plannedItems: filteredItems)
-
-        phase = .executing
-        let report = await engine.execute(plan: filteredPlan, environment: environment)
-        RunLog.append(report)
-        phase = .complete(report)
-    }
+    func requestLoad() -> Task<Void, Never> { session.requestLoad() }
+    func loadPlan() async { await requestLoad().value }
+    func confirm() { session.confirm() }
+    func policyDidChange() { session.policyDidChange() }
+    func teardown() -> Task<Void, Never> { session.teardown() }
 }

@@ -2,10 +2,17 @@ import SwiftUI
 import TidyCore
 
 struct MenuBarContentView: View {
-    @State private var refresher = StatsRefresher()
+    @State private var refresher: StatsRefresher
     @Environment(\.openWindow) private var openWindow
     @Environment(AppConfigStore.self) private var configStore
-    @State private var hasCheckedOnboarding = false
+
+    init(services: AppExecutionServices) {
+        _refresher = State(initialValue: StatsRefresher(monitor: services.systemMonitor))
+    }
+
+    private var disk: DiskStats? { refresher.snapshot?.volumes.first?.disk }
+    private var memory: MemoryStats? { refresher.snapshot?.memory }
+    private var swap: SwapStats? { refresher.snapshot?.swap }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -13,7 +20,7 @@ struct MenuBarContentView: View {
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 10) {
-                if let disk = refresher.disk {
+                if let disk {
                     StatsGaugeRow(
                         title: "Disk",
                         usedBytes: disk.usedBytes,
@@ -22,14 +29,21 @@ struct MenuBarContentView: View {
                     )
                 }
 
-                StatsGaugeRow(
-                    title: "Memory",
-                    usedBytes: refresher.memory.usedBytes,
-                    totalBytes: refresher.memory.totalBytes,
-                    detail: "\(ByteFormat.human(refresher.memory.usedBytes)) used"
-                )
+                if let memory, let used = memory.usedBytes {
+                    StatsGaugeRow(
+                        title: "Memory",
+                        usedBytes: used,
+                        totalBytes: memory.totalBytes,
+                        detail: "\(ByteFormat.human(used)) used"
+                    )
+                } else if refresher.snapshot != nil {
+                    // A denied/unsupported read is reported honestly, never as zero used.
+                    Text("Memory: unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-                if let swap = refresher.swap, swap.totalBytes > 0 {
+                if let swap, swap.totalBytes > 0 {
                     StatsGaugeRow(
                         title: "Swap",
                         usedBytes: swap.usedBytes,
@@ -44,6 +58,10 @@ struct MenuBarContentView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ModeButton(title: "Scan", subtitle: "See what's using space, nothing deleted") {
                     open(WindowID.scan)
+                }
+
+                ModeButton(title: "Headroom", subtitle: "Live disk, memory, swap and pressure signals") {
+                    open(WindowID.headroom)
                 }
 
                 ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {
@@ -65,6 +83,12 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            if !configStore.config.hasCompletedOnboarding {
+                Button("Set up Tidy…") {
+                    open(WindowID.onboarding)
+                }
+            }
+
             HStack {
                 Button("Settings…") {
                     open(WindowID.settings)
@@ -78,8 +102,8 @@ struct MenuBarContentView: View {
         .padding(16)
         .frame(width: 300)
         .onAppear {
+            refresher.applyPolicy(configStore.effectivePolicy)
             refresher.onPopoverAppear()
-            checkOnboardingOnce()
         }
         .onDisappear { refresher.onPopoverDisappear() }
     }
@@ -92,12 +116,5 @@ struct MenuBarContentView: View {
     private func open<D: Hashable & Codable>(_ id: String, value: D) {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: id, value: value)
-    }
-
-    private func checkOnboardingOnce() {
-        guard !hasCheckedOnboarding else { return }
-        hasCheckedOnboarding = true
-        guard !configStore.config.hasCompletedOnboarding else { return }
-        open(WindowID.onboarding)
     }
 }

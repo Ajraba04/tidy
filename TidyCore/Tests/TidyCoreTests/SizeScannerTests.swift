@@ -140,4 +140,22 @@ struct SizeScannerTests {
         let results = await scanner.scan(paths: [scratch.path], protectedRoots: [])
         #expect(results.first?.bytes ?? 0 >= 10_000)
     }
+
+    @Test("bounded disk usage requires the supplied bridge facade and preserves bytes")
+    @MainActor
+    func boundedDiskUsagePreservesBytes() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let fixture = rig.root.appendingPathComponent("size-bounded", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        try Data(repeating: 3, count: 200_000).write(to: fixture.appendingPathComponent("a.bin"))
+
+        let page = await SizeScanner.diskUsageBounded(sessions: rig.sessions,
+            session: rig.session, sessionID: UUID(), generation: 1,
+            rootPath: fixture.path, protectedRoots: [], limits: try standardLimits())
+
+        #expect(page.result.coverage.isComplete)
+        #expect(page.result.totalBytes == SizeScanner.diskUsage(ofPath: fixture.path,
+                                                                 protectedRoots: []))
+    }
 }

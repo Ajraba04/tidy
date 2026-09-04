@@ -23,3 +23,6 @@ dist/
 /Cleanup.command
 /execplan/
 /.claude/
+
+# Local implementation/review coordination
+/.superpowers/

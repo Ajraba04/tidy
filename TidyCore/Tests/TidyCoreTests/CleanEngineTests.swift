@@ -66,7 +66,7 @@ struct CleanEngineTests {
         #expect(Set(deepPlan.plannedItems.map(\.id)) == ["safe", "normal", "deep"])
     }
 
-    @Test("makePlan measures target sizes without deleting anything")
+    @Test("makePlan launches no measurement and reports zero bytes without deleting anything")
     func makePlanMeasuresWithoutDeleting() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
@@ -85,7 +85,10 @@ struct CleanEngineTests {
         let engine = CleanEngine(sizeScanner: SizeScanner())
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: makeEnvironment(homeDirectory: scratch.path))
 
-        #expect(plan.plannedItems.first?.estimatedBytes ?? 0 >= 100_000)
+        // Superseded by the `orchestration`-taking overload: this legacy overload launches no
+        // discovery or measurement, so its estimate is always zero.
+        #expect(plan.plannedItems.first?.estimatedBytes == 0)
+        #expect(plan.plannedItems.first?.targets.isEmpty == true)
         #expect(FileManager.default.fileExists(atPath: target.path))
     }
 
@@ -112,14 +115,16 @@ struct CleanEngineTests {
 
     // MARK: - execute: deletePath / deleteContents
 
-    @Test("execute deletePath removes the target and reports freed bytes")
-    func executeDeletePathRemovesTarget() async throws {
+    @Test("execute denies an unaccepted deletePath and leaves its target intact")
+    func executeDeletePathDeniesTarget() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         let target = scratch.appendingPathComponent("cache", isDirectory: true)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-        try Data(repeating: 0x1, count: 50_000).write(to: target.appendingPathComponent("f.bin"))
+        let payload = Data(repeating: 0x1, count: 50_000)
+        let payloadPath = target.appendingPathComponent("f.bin")
+        try payload.write(to: payloadPath)
 
         let item = CleanItem(
             id: "cache-item", title: "Cache", tier: .safe,
@@ -133,19 +138,23 @@ struct CleanEngineTests {
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
 
-        #expect(!FileManager.default.fileExists(atPath: target.path))
-        #expect(report.results.first?.succeeded == true)
-        #expect(report.totalFreedBytes >= 50_000)
+        #expect(FileManager.default.fileExists(atPath: target.path))
+        #expect(try Data(contentsOf: payloadPath) == payload)
+        #expect(report.results.first?.succeeded == false)
+        #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
+        #expect(report.totalFreedBytes == 0)
     }
 
-    @Test("execute deleteContents empties the directory but keeps it")
-    func executeDeleteContentsKeepsDirectory() async throws {
+    @Test("execute denies an unaccepted deleteContents and leaves its payload intact")
+    func executeDeleteContentsDeniesTarget() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         let target = scratch.appendingPathComponent("DerivedData", isDirectory: true)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-        try Data(repeating: 0x1, count: 50_000).write(to: target.appendingPathComponent("build.o"))
+        let payload = Data(repeating: 0x1, count: 50_000)
+        let payloadPath = target.appendingPathComponent("build.o")
+        try payload.write(to: payloadPath)
 
         let item = CleanItem(
             id: "derived-data", title: "DerivedData", tier: .safe,
@@ -162,8 +171,11 @@ struct CleanEngineTests {
         var isDirectory: ObjCBool = false
         let stillExists = FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory)
         #expect(stillExists && isDirectory.boolValue)
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: target.path))?.isEmpty == true)
-        #expect(report.totalFreedBytes >= 50_000)
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: target.path))?.isEmpty == false)
+        #expect(try Data(contentsOf: payloadPath) == payload)
+        #expect(report.results.first?.succeeded == false)
+        #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
+        #expect(report.totalFreedBytes == 0)
     }
 
     @Test("execute never deletes anything for a tier with an empty plan")
@@ -182,8 +194,8 @@ struct CleanEngineTests {
 
     // MARK: - execute: runTool
 
-    @Test("execute runTool runs the resolved executable")
-    func executeRunToolRunsResolvedExecutable() async throws {
+    @Test("execute denies an unaccepted tool action")
+    func executeRunToolDenies() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
@@ -194,18 +206,21 @@ struct CleanEngineTests {
             action: .runTool(ToolCommand(.git, ["--version"]))
         )
 
-        let engine = CleanEngine(sizeScanner: SizeScanner())
+        let commands = CleanEngineCommandRecorder()
+        let engine = CleanEngine(sizeScanner: SizeScanner(), commandRunner: commands)
         let environment = makeEnvironment(homeDirectory: scratch.path)
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
 
-        #expect(report.results.first?.succeeded == true)
+        #expect(report.results.first?.succeeded == false)
+        #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
+        #expect(await commands.calls.isEmpty)
     }
 
     // MARK: - execute: custom
 
-    @Test("execute dispatches a custom action to its registered executor, once per target")
-    func executeDispatchesCustomAction() async throws {
+    @Test("execute denies a custom action before its registered executor")
+    func executeDeniesCustomActionBeforeExecutor() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
@@ -233,9 +248,10 @@ struct CleanEngineTests {
         let plan = await engine.makePlan(items: [item], tier: .safe, environment: environment)
         let report = await engine.execute(plan: plan, environment: environment)
 
-        #expect(callCount.value == 2)
-        #expect(report.results.first?.freedBytes == 20)
-        #expect(report.results.first?.succeeded == true)
+        #expect(callCount.value == 0)
+        #expect(report.results.first?.freedBytes == 0)
+        #expect(report.results.first?.succeeded == false)
+        #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
     }
 
     @Test("execute reports failure for a custom action with no registered executor")
@@ -288,4 +304,13 @@ private final class LockedCounter: @unchecked Sendable {
     private var _value = 0
     var value: Int { lock.lock(); defer { lock.unlock() }; return _value }
     func increment() { lock.lock(); _value += 1; lock.unlock() }
+}
+
+private actor CleanEngineCommandRecorder: CleanupCommandRunning {
+    private(set) var calls: [String] = []
+
+    func run(executableName: String, arguments: [String], timeout: TimeInterval) async -> CleanupCommandOutput {
+        calls.append(([executableName] + arguments).joined(separator: " "))
+        return CleanupCommandOutput(succeeded: true)
+    }
 }

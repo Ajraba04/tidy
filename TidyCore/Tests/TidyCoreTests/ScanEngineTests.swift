@@ -4,8 +4,8 @@ import Testing
 
 @Suite("ScanEngine")
 struct ScanEngineTests {
-    @Test("produces a complete report end to end without crashing or deleting anything")
-    func producesCompleteReport() async throws {
+    @Test("returns a structurally valid report without launching discovery or measurement")
+    func producesUnmeasuredNoOpReport() async throws {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ScanEngineTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch.appendingPathComponent("Library"), withIntermediateDirectories: true)
@@ -22,7 +22,10 @@ struct ScanEngineTests {
 
         #expect(report.memoryStats.totalBytes > 0)
         #expect(report.detectedTools == environment.detectedTools)
-        // The scratch home has one entry ("Library"); confirm it was actually measured.
-        #expect(report.topLevelHomeRanking.contains { $0.path.hasSuffix("/Library") })
+        // Superseded by ScanEngine.start(environment:registry:sessions:session:): this legacy
+        // overload launches no discovery or measurement, so nothing was ever walked.
+        #expect(report.topLevelHomeRanking.isEmpty)
+        #expect(report.libraryRanking.isEmpty)
+        #expect(report.filesOver1GB.isEmpty)
     }
 }

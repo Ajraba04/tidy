@@ -12,10 +12,9 @@ public struct ProcessUsage: Sendable, Identifiable, Equatable {
 /// the shell script itself does.
 public enum ProcessSurvey: Sendable {
     public static func topMemoryConsumers(limit: Int = 8) async -> [ProcessUsage] {
-        guard let psPath = ToolLocator.locate("ps") else { return [] }
-        guard let output = try? await ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: psPath),
-            arguments: ["-Ao", "rss,comm", "-m"]
+        guard let psPath = await ToolLocator.locateAsync("ps") else { return [] }
+        guard let output = try? await ProcessRunner.runProcessSurvey(
+            psURL: URL(fileURLWithPath: psPath)
         ), output.succeeded else {
             return []
         }
