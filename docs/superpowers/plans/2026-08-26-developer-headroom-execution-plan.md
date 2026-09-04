@@ -40,6 +40,8 @@ Execution-entry gate: before each work unit, produce a narrow task card with the
 | C — Low-impact engine | T08–T10 | Cancellable scans, bounded index and accurate headroom signals | A, policy types from B |
 | D — Developer workflows | T11–T13 | Projects, working-set protection, ranked Build Prep | B, C |
 | E — Bounded integrations | T14–T20 | Rescue and broad inventories with narrowly supported cleanup | D |
+
+**Progress 2026-09-04:** Packages A, B and C (T01–T10) are implemented, independently reviewed per work unit and merged to `main` from `CAJ/developer-headroom`; the full core suite passed at the merged tree (623 tests in 63 suites, exit 0). Checked boxes below mark implementation and test evidence recorded in `docs/verification/` (per-unit files plus `headroom-progress.md`). Still open within that scope: physical-device acceptance (8 GiB Intel, macOS 14 smoke, VoiceOver/contrast on hardware — gated in T23), T07.3d dependency-bound data clearing, and the T22.3/T22.4 items dependency-bound to optional maintenance. T11–T24 have not been started.
 | F — Assistance and acceptance | T21–T24 | Budgets, optional maintenance, device/performance evidence, handoff | E |
 
 No later stage may reintroduce broad hidden tool actions to make a feature work. A blocked adapter remains visibly read-only; that is not an executor fallback. Stage A may temporarily have fewer cleanup capabilities than v1.5.0: unverified legacy effects are quarantined first, then restored individually after their acceptance gates.
@@ -127,14 +129,14 @@ public struct ActionDescriptor: Sendable {
 }
 ```
 
-- [ ] RED: empty-target command remains a visible row; blocked/no-work rows show reasons; a zero-byte memory action is visible; all modes use the same rows/counts/selection.
-- [ ] Run `cd TidyCore && swift test --filter PlanVisibilityTests`; expect regression against target-count filtering.
-- [ ] Replace nonEmptyItems as the UI/execution predicate. Status is assigned by action-specific discovery, not inferred from bytes/targets. Plain missing paths are noWork; supported targetless commands can be available.
-- [ ] Add a default-deny capability registry at the EFFECT boundary. Every legacy item without an accepted exact-scope, ownership/activity, local-only, interruption and recovery contract is quarantined. Audit ALL catalog IDs now, including filesystem actions/custom executors; not just tool commands. Broad npm/brew/pod/uv/pnpm/deno/Go commands, remote prune, immediate Git gc, worktree prune and forced lock removal are unavailable. Registration, presets, handcrafted plans and UI bypass cannot grant capability.
-- [ ] Re-enable only individually accepted contracts through compiled-in registry changes and their adversarial tests. Production API exposes no “allow all”/test-bypass flag. Mutations remain blocked even if old UI calls raw execute before T02 lands.
-- [ ] Remove `deep.simulator.erase-all` as an executable capability. Legacy preset entry is preserved as unavailable, not remapped to another destructive action.
-- [ ] Make all tier plans individually deselectable. Cost/risk warnings appear in standard and Custom rows. Memory purge/restart are separate advanced confirmations, never automatically selected by Deep.
-- [ ] GREEN: review count equals selected executable count; accepted tool-only fixture plans are actionable; deselected/quarantined actions never invoke recording executors through any entry point. Full core test/build and intentional diff checkpoint.
+- [x] RED: empty-target command remains a visible row; blocked/no-work rows show reasons; a zero-byte memory action is visible; all modes use the same rows/counts/selection.
+- [x] Run `cd TidyCore && swift test --filter PlanVisibilityTests`; expect regression against target-count filtering.
+- [x] Replace nonEmptyItems as the UI/execution predicate. Status is assigned by action-specific discovery, not inferred from bytes/targets. Plain missing paths are noWork; supported targetless commands can be available.
+- [x] Add a default-deny capability registry at the EFFECT boundary. Every legacy item without an accepted exact-scope, ownership/activity, local-only, interruption and recovery contract is quarantined. Audit ALL catalog IDs now, including filesystem actions/custom executors; not just tool commands. Broad npm/brew/pod/uv/pnpm/deno/Go commands, remote prune, immediate Git gc, worktree prune and forced lock removal are unavailable. Registration, presets, handcrafted plans and UI bypass cannot grant capability.
+- [x] Re-enable only individually accepted contracts through compiled-in registry changes and their adversarial tests. Production API exposes no “allow all”/test-bypass flag. Mutations remain blocked even if old UI calls raw execute before T02 lands.
+- [x] Remove `deep.simulator.erase-all` as an executable capability. Legacy preset entry is preserved as unavailable, not remapped to another destructive action.
+- [x] Make all tier plans individually deselectable. Cost/risk warnings appear in standard and Custom rows. Memory purge/restart are separate advanced confirmations, never automatically selected by Deep.
+- [x] GREEN: review count equals selected executable count; accepted tool-only fixture plans are actionable; deselected/quarantined actions never invoke recording executors through any entry point. Full core test/build and intentional diff checkpoint.
 
 Test seed (add in the named test file with `import Testing` and `@testable import TidyCore`):
 
@@ -172,13 +174,13 @@ public struct ReviewBinding: Equatable, Sendable {
 // Only coordinator-held plans may be confirmed; tokens are single-use.
 ```
 
-- [ ] RED: forged/consumed/stale token; changed selection; changed settings; two windows; two engines; changed resource identity; unknown selected ID.
-- [ ] Run `cd TidyCore && swift test --filter ConfirmedExecutionTests`; expect missing contract failures.
-- [ ] Store registered plans privately in the coordinator; create single-use opaque tokens after matching full review binding. Recheck revision before each item, not just run start.
-- [ ] Capture exact snapshot identifiers at planning; delete those only. Capture simulator UDIDs, never names. No operation may rediscover a broader set at execution.
-- [ ] Share one coordinator from TidyApp. Actor reentrancy must not allow a second run across awaits: explicit running state rejects concurrent requests with a busy result. Detect another Tidy process using an advisory lock on the private journal directory. The durable uncertain-effect ledger overrides a free lock: Tidy process death never proves child/daemon completion.
-- [ ] Persist boot ID, child executable/start identity and adapter operation token before mutating submission. Use a start handshake where needed so no effect precedes durable intent. Crash in a submission ambiguity window yields uncertainAndPossiblyRunning, never an assumed unstarted effect.
-- [ ] GREEN: selected ≤ reviewed ≤ discovered invariant and single-run invariant hold under concurrent tasks. No raw plan call sites remain. Full tests/build and diff checkpoint.
+- [x] RED: forged/consumed/stale token; changed selection; changed settings; two windows; two engines; changed resource identity; unknown selected ID.
+- [x] Run `cd TidyCore && swift test --filter ConfirmedExecutionTests`; expect missing contract failures.
+- [x] Store registered plans privately in the coordinator; create single-use opaque tokens after matching full review binding. Recheck revision before each item, not just run start.
+- [x] Capture exact snapshot identifiers at planning; delete those only. Capture simulator UDIDs, never names. No operation may rediscover a broader set at execution.
+- [x] Share one coordinator from TidyApp. Actor reentrancy must not allow a second run across awaits: explicit running state rejects concurrent requests with a busy result. Detect another Tidy process using an advisory lock on the private journal directory. The durable uncertain-effect ledger overrides a free lock: Tidy process death never proves child/daemon completion.
+- [x] Persist boot ID, child executable/start identity and adapter operation token before mutating submission. Use a start handshake where needed so no effect precedes durable intent. Crash in a submission ambiguity window yields uncertainAndPossiblyRunning, never an assumed unstarted effect.
+- [x] GREEN: selected ≤ reviewed ≤ discovered invariant and single-run invariant hold under concurrent tasks. No raw plan call sites remain. Full tests/build and diff checkpoint.
 
 ```swift
 @Test func policyChangeInvalidatesReview() {
@@ -213,14 +215,14 @@ public struct ByteObservation: Codable, Equatable, Sendable {
 }
 ```
 
-- [ ] RED: descendant exclusion under a deletable parent; symlink swap; replaced directory inode; mounted child volume; same-prefix sibling; permission-denied child; removed target; hardlinks/clones; new children/growing files; cancellation/deadline during many-file deletion; cap exhaustion mid-batch; unchanged bytes after failed tool.
-- [ ] Run `cd TidyCore && swift test --filter GuardedDeletionTests`.
-- [ ] Anchor to validated directory file descriptors; walk children no-follow; refuse device/inode changes and protected ancestors/descendants. Use unlinkat-style relative operations for catalog-approved trees; refuse unsafe races, do not retry through a fresh path.
-- [ ] Bind the reviewed descendant manifest digest to confirmation. Each batch is ≤5,000 nodes/8 MiB. New/replaced/changed/grown nodes are skipped, newly created children remain intact, parent removed only if reviewed and empty. Never authorize a recursive delete solely by parent inode.
-- [ ] Manual caps limit reviewed allocated estimates and future scheduling, not guaranteed atomic actual bytes. Recheck metadata/budget before each leaf. Monotonic deadline prevents new dispatch at per-leaf boundaries; record syscall overruns. Unattended operations require producer-supported immutability/quiescence through effect; no such proof means unavailable.
-- [ ] Enforce catalog ownership constraints, not just “inside home.” DeleteContents propagates per-child errors; remove try? swallowing. Partial success counts only observed completed removals.
-- [ ] Separate apparent/allocated bytes and observed per-volume free-space delta. Shared APFS extents or unknown measurements cannot be added as proven reclaimed bytes. A command exit 0 is not a disk measurement.
-- [ ] GREEN: scratch sentinel outside selected roots remains intact under every adversarial test. Full tests/build and diff checkpoint.
+- [x] RED: descendant exclusion under a deletable parent; symlink swap; replaced directory inode; mounted child volume; same-prefix sibling; permission-denied child; removed target; hardlinks/clones; new children/growing files; cancellation/deadline during many-file deletion; cap exhaustion mid-batch; unchanged bytes after failed tool.
+- [x] Run `cd TidyCore && swift test --filter GuardedDeletionTests`.
+- [x] Anchor to validated directory file descriptors; walk children no-follow; refuse device/inode changes and protected ancestors/descendants. Use unlinkat-style relative operations for catalog-approved trees; refuse unsafe races, do not retry through a fresh path.
+- [x] Bind the reviewed descendant manifest digest to confirmation. Each batch is ≤5,000 nodes/8 MiB. New/replaced/changed/grown nodes are skipped, newly created children remain intact, parent removed only if reviewed and empty. Never authorize a recursive delete solely by parent inode.
+- [x] Manual caps limit reviewed allocated estimates and future scheduling, not guaranteed atomic actual bytes. Recheck metadata/budget before each leaf. Monotonic deadline prevents new dispatch at per-leaf boundaries; record syscall overruns. Unattended operations require producer-supported immutability/quiescence through effect; no such proof means unavailable.
+- [x] Enforce catalog ownership constraints, not just “inside home.” DeleteContents propagates per-child errors; remove try? swallowing. Partial success counts only observed completed removals.
+- [x] Separate apparent/allocated bytes and observed per-volume free-space delta. Shared APFS extents or unknown measurements cannot be added as proven reclaimed bytes. A command exit 0 is not a disk measurement.
+- [x] GREEN: scratch sentinel outside selected roots remains intact under every adversarial test. Full tests/build and diff checkpoint.
 
 ```swift
 @Test func unavailableBytesRemainUnavailable() {
@@ -242,13 +244,13 @@ public struct ByteObservation: Codable, Equatable, Sendable {
 **Consumes:** T02 coordinator and T03 outcome types.
 **Produces:** journal states planned → confirmed → started → per-item terminal → finished; interrupted/uncertain recovery.
 
-- [ ] RED: crash before/after effect; child surviving Tidy death; daemon job surviving CLI exit; PID reuse; submission ambiguity; full disk journal write; corrupt tail; oversized stdout/stderr; descendant holding pipe open; queued cancellation; mutating command timeout.
-- [ ] Run `cd TidyCore && swift test --filter 'RunRecoveryTests|BoundedProcessRunnerTests'`.
-- [ ] Append durable intent before effect; failure to persist intent blocks effect. On restart, unfinished potentially active effects enter uncertainAndPossiblyRunning and block ALL new mutations. Fresh inventory/review alone cannot clear this state. Only adapter-specific positive quiescence/completion evidence releases it; unsupported reconciliation keeps the capability unavailable. No “clear history”/reset button can discard this block.
-- [ ] Once quiescence is proven, require fresh inventory/review for any remaining work. Never auto-resume a destructive command. Completed IDs are not silently replayed. OS restart only helps when the adapter proves no persisted daemon job can survive/restart; do not use boot change as a universal shortcut.
-- [ ] Drain output concurrently with a 1 MiB retained cap per stream, continue draining/discarding after cap, mark truncated; max command duration is adapter-owned. Read-only child trees may be terminated/reaped; mutation timeout becomes uncertain, prevents subsequent work and cannot be labelled cancelled cleanly.
-- [ ] Replace free-form application-name AppleScript with injected app-layer graceful termination of verified NSRunningApplication identities. Keep the advanced restart request isolated, unselected and separately confirmed.
-- [ ] GREEN: no deadlock on oversized output or descendant pipe ownership; memory stays bounded; no unauthorized signals to user processes. Results show separate disk/RAM observations and per-item reasons. Full tests/build and diff checkpoint.
+- [x] RED: crash before/after effect; child surviving Tidy death; daemon job surviving CLI exit; PID reuse; submission ambiguity; full disk journal write; corrupt tail; oversized stdout/stderr; descendant holding pipe open; queued cancellation; mutating command timeout.
+- [x] Run `cd TidyCore && swift test --filter 'RunRecoveryTests|BoundedProcessRunnerTests'`.
+- [x] Append durable intent before effect; failure to persist intent blocks effect. On restart, unfinished potentially active effects enter uncertainAndPossiblyRunning and block ALL new mutations. Fresh inventory/review alone cannot clear this state. Only adapter-specific positive quiescence/completion evidence releases it; unsupported reconciliation keeps the capability unavailable. No “clear history”/reset button can discard this block.
+- [x] Once quiescence is proven, require fresh inventory/review for any remaining work. Never auto-resume a destructive command. Completed IDs are not silently replayed. OS restart only helps when the adapter proves no persisted daemon job can survive/restart; do not use boot change as a universal shortcut.
+- [x] Drain output concurrently with a 1 MiB retained cap per stream, continue draining/discarding after cap, mark truncated; max command duration is adapter-owned. Read-only child trees may be terminated/reaped; mutation timeout becomes uncertain, prevents subsequent work and cannot be labelled cancelled cleanly.
+- [x] Replace free-form application-name AppleScript with injected app-layer graceful termination of verified NSRunningApplication identities. Keep the advanced restart request isolated, unselected and separately confirmed.
+- [x] GREEN: no deadlock on oversized output or descendant pipe ownership; memory stays bounded; no unauthorized signals to user processes. Results show separate disk/RAM observations and per-item reasons. Full tests/build and diff checkpoint.
 
 Contract code:
 
@@ -279,12 +281,12 @@ public enum RecoveryDecision: Equatable, Sendable {
 **Consumes:** current schema-1 shapes and old run records, T02 coordinator.
 **Produces:** schema-2 envelope, recoverable load result, monotonic revisions and a separate safe test host.
 
-- [ ] RED: old JSON missing memory fields loses no roots/presets/domains; future version untouched; malformed file preserved; failed write leaves old file; two-window revisions agree; old reports decode unavailable memory.
-- [ ] Run `cd TidyCore && swift test --filter SettingsMigrationTests`.
-- [ ] Decode version before payload. Missing file alone means new defaults; existing invalid/future file means read-only recovery. Owner-only atomic backup/write, single writer actor; never silently reset corrupt state.
-- [ ] Create a separate UI fixture host target depending on shared app views and injected protocols. Exclude its files/resources from production target; use no production default paths and no real executor even when launch arguments are malformed.
-- [ ] UI RED/GREEN: targetless action visible; deselection prevents recording invocation; unknown settings import never runs; closing one window does not orphan a hidden second execution; policy update invalidates confirmation.
-- [ ] Run UI command from `3, full core suite/build, and inspect production app bundle for absence of fixture host/test hooks.
+- [x] RED: old JSON missing memory fields loses no roots/presets/domains; future version untouched; malformed file preserved; failed write leaves old file; two-window revisions agree; old reports decode unavailable memory.
+- [x] Run `cd TidyCore && swift test --filter SettingsMigrationTests`.
+- [x] Decode version before payload. Missing file alone means new defaults; existing invalid/future file means read-only recovery. Owner-only atomic backup/write, single writer actor; never silently reset corrupt state.
+- [x] Create a separate UI fixture host target depending on shared app views and injected protocols. Exclude its files/resources from production target; use no production default paths and no real executor even when launch arguments are malformed.
+- [x] UI RED/GREEN: targetless action visible; deselection prevents recording invocation; unknown settings import never runs; closing one window does not orphan a hidden second execution; policy update invalidates confirmation.
+- [x] Run UI command from `3, full core suite/build, and inspect production app bundle for absence of fixture host/test hooks.
 
 ```swift
 public enum SettingsLoadDisposition: Equatable, Sendable {
@@ -305,13 +307,13 @@ public enum SettingsLoadDisposition: Equatable, Sendable {
 **Consumes:** migrated settings/revisions from T05.
 **Produces:** EffectivePolicy snapshot with per-field source/reason, validated settings and restrictions.
 
-- [ ] RED: global/profile/project/run precedence; deny beats enable; exclusion union; strictest cap; invalid age/range; NaN/overflow; missing volume capacity; unknown feature ID; every design-default row has a test.
-- [ ] Run `cd TidyCore && swift test --filter 'PolicyResolutionTests|PolicyDefaultsTests|PolicyValidationTests'`.
-- [ ] Implement every stable-key row in the binding appendix, including types/defaults/ranges, presentation settings and exact factory overrides. Defaults live in one registry; UI/serialization do not duplicate values. A registry row missing coverage blocks this task.
-- [ ] Resolve P preferences by replacement, R explicit restrictions by intersection, A authorities from a separate ledger, H ceilings immutably. The default 10 GiB is NOT a permanent cap. Requested 40 GiB works unless an explicit 8 GiB hard cap applies. Custom cannot remove protected paths/critical pause.
-- [ ] Persist two different volume-UUID headroom override records and verify both after relaunch. Test generic versus volume-specific overrides at every layer, inherit/automatic/fixed values, unavailable capacity and unmatched imported volume IDs. Factory profiles may carry P and stricter R only; Battery never changes A/H.
-- [ ] Validate numeric inputs before conversion/multiplication; clamp only temporary display values, reject invalid persisted edits with field-specific errors. Missing capacity prevents capacity-derived target calculation.
-- [ ] GREEN: table-driven snapshot of default/effective/source for every setting; disabled feature has no scheduled work; caps cannot be exceeded by profile activation. Full tests/build and diff checkpoint.
+- [x] RED: global/profile/project/run precedence; deny beats enable; exclusion union; strictest cap; invalid age/range; NaN/overflow; missing volume capacity; unknown feature ID; every design-default row has a test.
+- [x] Run `cd TidyCore && swift test --filter 'PolicyResolutionTests|PolicyDefaultsTests|PolicyValidationTests'`.
+- [x] Implement every stable-key row in the binding appendix, including types/defaults/ranges, presentation settings and exact factory overrides. Defaults live in one registry; UI/serialization do not duplicate values. A registry row missing coverage blocks this task.
+- [x] Resolve P preferences by replacement, R explicit restrictions by intersection, A authorities from a separate ledger, H ceilings immutably. The default 10 GiB is NOT a permanent cap. Requested 40 GiB works unless an explicit 8 GiB hard cap applies. Custom cannot remove protected paths/critical pause.
+- [x] Persist two different volume-UUID headroom override records and verify both after relaunch. Test generic versus volume-specific overrides at every layer, inherit/automatic/fixed values, unavailable capacity and unmatched imported volume IDs. Factory profiles may carry P and stricter R only; Battery never changes A/H.
+- [x] Validate numeric inputs before conversion/multiplication; clamp only temporary display values, reject invalid persisted edits with field-specific errors. Missing capacity prevents capacity-derived target calculation.
+- [x] GREEN: table-driven snapshot of default/effective/source for every setting; disabled feature has no scheduled work; caps cannot be exceeded by profile activation. Full tests/build and diff checkpoint.
 
 ```swift
 public enum PolicyMath {
@@ -340,12 +342,12 @@ public enum PolicyMath {
 **Consumes:** T06 registry and effective policy.
 **Produces:** searchable basic/advanced settings, named profile CRUD, diff preview, portable preferences without machine authority.
 
-- [ ] RED: imported rule cannot enable maintenance; imported roots/executable paths/volume IDs remain unresolved; unknown IDs retained disabled; duplicate profile names use stable IDs; selective reset respects pins/protections.
-- [ ] Run `cd TidyCore && swift test --filter SettingsTransferTests`.
-- [ ] Export portable preference values only; omit authorization ledger. Parse import into an inert preview; explicitly confirm each local root, compare every changed setting and save atomically after validation. Cancel makes no writes.
-- [ ] Provide factory Xcode/Android/Flutter/Web/Local AI/Battery profiles from design; clone, edit, rename, export, delete, reset; no automatic profile activation. Deleting active profile falls back visibly to global policy and invalidates plans.
-- [ ] Controls show default/effective/source, range and consequence. Keyboard navigation, VoiceOver labels, text scaling and contrast must work. History/index clearing has scoped confirmation, never a broad application-support directory wipe.
-- [ ] GREEN: all design controls reachable and persisted; relaunch round trip; two windows synchronized; import/reset can't bypass safety. Core/UI suites/build and diff checkpoint.
+- [x] RED: imported rule cannot enable maintenance; imported roots/executable paths/volume IDs remain unresolved; unknown IDs retained disabled; duplicate profile names use stable IDs; selective reset respects pins/protections.
+- [x] Run `cd TidyCore && swift test --filter SettingsTransferTests`.
+- [x] Export portable preference values only; omit authorization ledger. Parse import into an inert preview; explicitly confirm each local root, compare every changed setting and save atomically after validation. Cancel makes no writes.
+- [x] Provide factory Xcode/Android/Flutter/Web/Local AI/Battery profiles from design; clone, edit, rename, export, delete, reset; no automatic profile activation. Deleting active profile falls back visibly to global policy and invalidates plans.
+- [x] Controls show default/effective/source, range and consequence. Keyboard navigation, VoiceOver labels, text scaling and contrast must work. History/index clearing has scoped confirmation, never a broad application-support directory wipe.
+- [x] GREEN: all design controls reachable and persisted; relaunch round trip; two windows synchronized; import/reset can't bypass safety. Core/UI suites/build and diff checkpoint.
 
 Required production regression: serialize a hostile import containing `maintenance.mode=authorizedCaches`, executable/root approvals and model-deletion IDs; pass those bytes through SettingsTransfer's real preview/commit path. Assert the local authorization ledger is byte-identical, unknown capabilities remain inert, the real coordinator rejects the forged operation and the recording effect client sees zero calls. Comparing a constant named “imported consent” is not this test.
 
@@ -361,13 +363,13 @@ Required production regression: serialize a hostile import containing `maintenan
 **Consumes:** EffectivePolicy, injected clock/pressure inputs.
 **Produces:** shared bounded worker permits; AsyncStream<ScanEvent>; cancellation by session ID.
 
-- [ ] RED: ten scans cannot each claim a private worker pool; queued waiter cancellation releases no extra permit; no work after cancel; slow synchronous enumerator cooperates; separate UI session close doesn't cancel other session incorrectly.
-- [ ] Run `cd TidyCore && swift test --filter ScanSchedulingTests`.
-- [ ] Route all filesystem traversals, catalog locate work and process discovery through one budget. Replace unbounded task fanout; move blocking work off the main actor and avoid exhausting Swift's cooperative pool.
-- [ ] Use one shared ceiling of two concurrent launched command jobs including the mutator; configured read-only ceiling is 1...2 but never additive. Test two readers delay a mutator and one mutator leaves at most one reader slot. Reserve declared adapter needs before dispatch and reject undeclared nested launches; unknown descendant bounds keep the adapter unavailable.
-- [ ] Check cancellation between bounded enumeration batches; cap queued paths/results; stream ≤4 UI batches/second; top-N ranking uses bounded heaps, not all large files retained.
-- [ ] Scan time slice returns partial coverage with Continue. Critical pressure pauses discovery; serious/LPM applies one-worker ceiling. Already-started mutation semantics stay with T04, not scanner cancellation.
-- [ ] GREEN: worker count never exceeds effective cap; 20 cancel/resume cycles return FDs/permits; fixture cancellation and first-result latency meet design section 7. Core/UI tests/build and diff checkpoint.
+- [x] RED: ten scans cannot each claim a private worker pool; queued waiter cancellation releases no extra permit; no work after cancel; slow synchronous enumerator cooperates; separate UI session close doesn't cancel other session incorrectly.
+- [x] Run `cd TidyCore && swift test --filter ScanSchedulingTests`.
+- [x] Route all filesystem traversals, catalog locate work and process discovery through one budget. Replace unbounded task fanout; move blocking work off the main actor and avoid exhausting Swift's cooperative pool.
+- [x] Use one shared ceiling of two concurrent launched command jobs including the mutator; configured read-only ceiling is 1...2 but never additive. Test two readers delay a mutator and one mutator leaves at most one reader slot. Reserve declared adapter needs before dispatch and reject undeclared nested launches; unknown descendant bounds keep the adapter unavailable.
+- [x] Check cancellation between bounded enumeration batches; cap queued paths/results; stream ≤4 UI batches/second; top-N ranking uses bounded heaps, not all large files retained.
+- [x] Scan time slice returns partial coverage with Continue. Critical pressure pauses discovery; serious/LPM applies one-worker ceiling. Already-started mutation semantics stay with T04, not scanner cancellation.
+- [x] GREEN: worker count never exceeds effective cap; 20 cancel/resume cycles return FDs/permits; fixture cancellation and first-result latency meet design section 7. Core/UI tests/build and diff checkpoint.
 
 ```swift
 public struct ScanBudget: Equatable, Sendable {
@@ -394,14 +396,14 @@ public struct ScanBudget: Equatable, Sendable {
 **Consumes:** bounded scan records, scoped approved roots, policy revision.
 **Produces:** native SQLite aggregate cache with freshness/coverage, FSEvents invalidation and bounded eviction.
 
-- [ ] RED: deeply changed child with unchanged root mtime; dropped/coalesced events; moved root; unmounted/replaced volume; app absent during changes; policy/protected-root change; crash during update.
-- [ ] Run `cd TidyCore && swift test --filter 'ScanIndexTests|ScanInvalidationTests'`.
-- [ ] Key records by volume UUID, stable root identity, scanner version and policy fingerprint; persist aggregate totals/coverage/time, not all file paths. SQLite transaction per completed batch; partial scans never replace complete records.
-- [ ] Start scoped FSEvents before baseline traversal; invalidate affected roots, replay a persisted cursor on resume, invalidate fully on loss/root change/wrap/unavailable history. Parent mtime alone never proves validity.
-- [ ] Maintain a per-root generation. A scan captures generation G; any event affecting its root increments generation before processing scan commits. Drain through an event-delivery barrier before publication; publish aggregate/coverage/generation/processed cursor in ONE transaction only when current generation still equals G. Otherwise retain stale status and reschedule bounded work.
-- [ ] Test modification to an already-scanned descendant while the baseline is finishing, invalidation immediately before commit, crash before/after cursor persistence, and dropped events during the barrier. “Fresh” means event-consistent through the recorded watermark, never execution authority or an atomic filesystem snapshot.
-- [ ] When indexing is off, no event stream remains. On expiry/corruption/budget eviction display cached/stale/unavailable explicitly and use fresh scan when requested. Cached bytes/eligibility can never authorize execution.
-- [ ] GREEN: reference fresh traversal equals incremental results after every fixture event sequence; unchanged 100k-entry case reduces metadata visits ≥80%; cache remains ≤ configured cap including WAL/shm/temporary files. Full tests/build and diff checkpoint.
+- [x] RED: deeply changed child with unchanged root mtime; dropped/coalesced events; moved root; unmounted/replaced volume; app absent during changes; policy/protected-root change; crash during update.
+- [x] Run `cd TidyCore && swift test --filter 'ScanIndexTests|ScanInvalidationTests'`.
+- [x] Key records by volume UUID, stable root identity, scanner version and policy fingerprint; persist aggregate totals/coverage/time, not all file paths. SQLite transaction per completed batch; partial scans never replace complete records.
+- [x] Start scoped FSEvents before baseline traversal; invalidate affected roots, replay a persisted cursor on resume, invalidate fully on loss/root change/wrap/unavailable history. Parent mtime alone never proves validity.
+- [x] Maintain a per-root generation. A scan captures generation G; any event affecting its root increments generation before processing scan commits. Drain through an event-delivery barrier before publication; publish aggregate/coverage/generation/processed cursor in ONE transaction only when current generation still equals G. Otherwise retain stale status and reschedule bounded work.
+- [x] Test modification to an already-scanned descendant while the baseline is finishing, invalidation immediately before commit, crash before/after cursor persistence, and dropped events during the barrier. “Fresh” means event-consistent through the recorded watermark, never execution authority or an atomic filesystem snapshot.
+- [x] When indexing is off, no event stream remains. On expiry/corruption/budget eviction display cached/stale/unavailable explicitly and use fresh scan when requested. Cached bytes/eligibility can never authorize execution.
+- [x] GREEN: reference fresh traversal equals incremental results after every fixture event sequence; unchanged 100k-entry case reduces metadata visits ≥80%; cache remains ≤ configured cap including WAL/shm/temporary files. Full tests/build and diff checkpoint.
 
 ```swift
 public enum InvalidationDecision: Equatable, Sendable {
@@ -429,13 +431,13 @@ public enum InvalidationDecision: Equatable, Sendable {
 **Consumes:** T06 preferences, T08 budget inputs, injected system probes.
 **Produces:** optional timestamped per-volume/system observations, not a composite score.
 
-- [ ] RED: API denial; unsupported signal; wake resets cumulative counters; negative delta; zero elapsed time; nondefault page size; changed boot identity; hidden window produces no timer when monitoring disabled.
-- [ ] Run `cd TidyCore && swift test --filter HeadroomSignalsTests`.
-- [ ] Use Dispatch memory-pressure events, ProcessInfo thermal/power notifications, bounded VM/swap syscalls and per-volume capacity queries. Page-out rate is a pressure indicator, not labelled exact SSD writes or proof swap must be cleared.
-- [ ] Poll processes only on explicit request or selected visible rescue screen, not every stats tick. History is opt-in, bounded and stores no process argv.
-- [ ] Label available capacity types separately; readiness is “target met,” not guaranteed buildability. Replace absolute “swap never shrinks”/restart-only claims throughout README and UI with observed, qualified wording.
-- [ ] Verify Apple required-reason API usage against current documentation and add the applicable manifest reasons; validate plist and bundled resource. No invented reason code.
-- [ ] GREEN: deterministic signals, empty/error states and low-resource UI pass; hidden-off instrumentation records zero repeating tasks. Full tests/build and diff checkpoint.
+- [x] RED: API denial; unsupported signal; wake resets cumulative counters; negative delta; zero elapsed time; nondefault page size; changed boot identity; hidden window produces no timer when monitoring disabled.
+- [x] Run `cd TidyCore && swift test --filter HeadroomSignalsTests`.
+- [x] Use Dispatch memory-pressure events, ProcessInfo thermal/power notifications, bounded VM/swap syscalls and per-volume capacity queries. Page-out rate is a pressure indicator, not labelled exact SSD writes or proof swap must be cleared.
+- [x] Poll processes only on explicit request or selected visible rescue screen, not every stats tick. History is opt-in, bounded and stores no process argv.
+- [x] Label available capacity types separately; readiness is “target met,” not guaranteed buildability. Replace absolute “swap never shrinks”/restart-only claims throughout README and UI with observed, qualified wording.
+- [x] Verify Apple required-reason API usage against current documentation and add the applicable manifest reasons; validate plist and bundled resource. No invented reason code.
+- [x] GREEN: deterministic signals, empty/error states and low-resource UI pass; hidden-off instrumentation records zero repeating tasks. Full tests/build and diff checkpoint.
 
 ```swift
 public func counterRate(before: UInt64, after: UInt64, seconds: Double) -> Double? {
