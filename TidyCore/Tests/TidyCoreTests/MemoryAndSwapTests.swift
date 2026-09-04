@@ -147,6 +147,14 @@ struct MemoryAndSwapTests {
     func surveysRealVMDirectories() {
         let survey = RestartReclaimSurvey.current()
         #expect(survey.totalBytes >= 0)
-        #expect(survey.pagedOutBytes >= 0)
+        // `vm.swapusage` is expected to succeed on a real Mac, but this
+        // suite must not fail if a future sandboxed test environment denies
+        // it -- that is exactly the "unavailable, not a fabricated zero"
+        // case this field exists to represent.
+        if let pagedOutBytes = survey.pagedOutBytes {
+            #expect(pagedOutBytes >= 0)
+        } else {
+            #expect(survey.pagedOutUnavailableReason != nil)
+        }
     }
 }

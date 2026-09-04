@@ -16,7 +16,7 @@ public struct CustomPreset: Sendable, Codable, Identifiable, Equatable {
 /// schema change can migrate rather than break. Every collection here
 /// ships empty: nothing defaults to any one person's machine.
 public struct TidyConfig: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var hasCompletedOnboarding: Bool
@@ -51,6 +51,21 @@ public struct TidyConfig: Sendable, Codable, Equatable {
         self.appsApprovedForQuit = appsApprovedForQuit
         self.allowRestartToReclaimSwap = allowRestartToReclaimSwap
         self.presets = presets
+    }
+
+    public func makePolicyEnvironment(homeDirectory: String, detectedTools: Set<ToolchainID>) -> CleanEnvironment {
+        CleanEnvironment(
+            homeDirectory: homeDirectory,
+            detectedTools: detectedTools,
+            gitRoots: gitRoots,
+            protectedRoots: CleanEnvironment.defaultProtectedRoots(homeDirectory: homeDirectory),
+            keepCookieDomains: keepCookieDomains,
+            simulatorsApprovedForDeletion: simulatorsApprovedForDeletion,
+            staleNodeModulesThresholdDays: staleNodeModulesThresholdDays,
+            transcriptAgeThresholdDays: transcriptAgeThresholdDays,
+            appsApprovedForQuit: appsApprovedForQuit,
+            allowRestartToReclaimSwap: allowRestartToReclaimSwap
+        )
     }
 
     public func makeEnvironment(homeDirectory: String = NSHomeDirectory()) -> CleanEnvironment {

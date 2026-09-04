@@ -1,7 +1,12 @@
 import SwiftUI
+import TidyCore
 
 struct ScanView: View {
-    @State private var model = ScanViewModel()
+    @State private var model: ScanViewModel
+
+    init(services: AppExecutionServices) {
+        _model = State(initialValue: ScanViewModel(services: services))
+    }
 
     var body: some View {
         VStack {
@@ -16,11 +21,47 @@ struct ScanView: View {
                         Task { await model.runScan() }
                     }
                 }
+                .accessibilityIdentifier("scan.phase.idle")
             case .running:
-                ProgressView("Scanning…")
-                    .padding()
+                VStack(spacing: 12) {
+                    ProgressView("Scanning…")
+                    Button("Cancel") {
+                        Task { await model.cancelScan() }
+                    }
+                }
+                .padding()
+                .accessibilityIdentifier("scan.phase.running")
+            case .partial(let result):
+                VStack(alignment: .leading, spacing: 0) {
+                    partialBanner(result)
+                    ScanReportView(report: result.report)
+                }
+                .accessibilityIdentifier("scan.phase.partial")
+            case .paused:
+                ContentUnavailableView {
+                    Label("Scan Paused", systemImage: "pause.circle")
+                } description: {
+                    Text("System conditions are constrained right now. Try again shortly.")
+                } actions: {
+                    Button("Try Again") {
+                        Task { await model.runScan() }
+                    }
+                }
+                .accessibilityIdentifier("scan.phase.paused")
+            case .cancelled:
+                ContentUnavailableView {
+                    Label("Scan Cancelled", systemImage: "xmark.circle")
+                } description: {
+                    Text("The scan was cancelled before it finished.")
+                } actions: {
+                    Button("Scan Again") {
+                        Task { await model.runScan() }
+                    }
+                }
+                .accessibilityIdentifier("scan.phase.cancelled")
             case .complete(let report):
                 ScanReportView(report: report)
+                    .accessibilityIdentifier("scan.phase.complete")
             case .failed(let message):
                 ContentUnavailableView {
                     Label("Scan Failed", systemImage: "exclamationmark.triangle")
@@ -31,11 +72,12 @@ struct ScanView: View {
                         Task { await model.runScan() }
                     }
                 }
+                .accessibilityIdentifier("scan.phase.failed")
             }
         }
         .frame(minWidth: 420, idealWidth: 480, minHeight: 480, idealHeight: 640)
         .toolbar {
-            if case .complete = model.phase {
+            if isRescannable {
                 ToolbarItem {
                     Button("Rescan") {
                         Task { await model.runScan() }
@@ -43,10 +85,31 @@ struct ScanView: View {
                 }
             }
         }
-        .task {
-            if case .idle = model.phase {
-                await model.runScan()
-            }
+        .task { model.attachToActiveScanIfNeeded() }
+        .onDisappear { model.detachSubscription() }
+    }
+
+    private var isRescannable: Bool {
+        switch model.phase {
+        case .complete, .partial, .cancelled, .failed: return true
+        case .idle, .running, .paused: return false
         }
+    }
+
+    @ViewBuilder
+    private func partialBanner(_ result: CoreScanResult) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+            Text(result.continuationAvailable
+                ? "Partial results. More can still be scanned."
+                : "Partial results. Continuing this scan is not available.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(result.continuationAvailable
+            ? "scan.partial.continueAvailable" : "scan.partial.continueUnavailable")
     }
 }

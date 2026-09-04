@@ -32,3 +32,62 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+  TidyUITestHost:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: TidyUITestHost/TestHostApp.swift
+      - path: Tidy/Clean/CleanPlanView.swift
+      - path: Tidy/Clean/PlanReviewRow.swift
+      - path: Tidy/Clean/PlanSelectionModel.swift
+      - path: Tidy/Custom/CustomPlanView.swift
+    dependencies:
+      - package: TidyCore
+    settings:
+      base:
+        PRODUCT_NAME: TidyUITestHost
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy.ManualReviewFixtures
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+  TidyAppModelTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: TidyAppModelTests/ConfirmationLifecycleTests.swift
+      - path: TidyAppModelTests/SharedSettingsWiringTests.swift
+      - path: TidyAppModelTests/RunReportPresentationTests.swift
+      - path: Tidy/Clean/PlanSelectionModel.swift
+      - path: Tidy/Clean/CleanViewModel.swift
+      - path: Tidy/Custom/CustomViewModel.swift
+      - path: Tidy/Execution/AppExecutionServices.swift
+      - path: Tidy/Settings/AppConfigStore.swift
+      - path: Tidy/Clean/RunReportPresentation.swift
+    dependencies:
+      - package: TidyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy.AppModelTests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+
+schemes:
+  TidyAppModelTests:
+    build:
+      targets:
+        TidyAppModelTests: all
+    test:
+      targets:
+        - TidyAppModelTests
+  TidyUITestHost:
+    build:
+      targets:
+        TidyUITestHost: all
+    run:
+      config: Debug

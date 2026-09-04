@@ -5,15 +5,16 @@ import Testing
 @Suite("ToolchainDetector")
 struct ToolchainDetectorTests {
     @Test("detects Xcode and git on any Mac with Xcode or the Command Line Tools installed")
-    func detectsXcodeAndGit() {
-        let found = ToolchainDetector.detect()
+    func detectsXcodeAndGit() async {
+        let found = await ToolchainDetector.detectAsync()
         #expect(found.contains(.xcode))
         #expect(found.contains(.git))
     }
 
     @Test("home-directory-dependent tools are absent under a bogus home, CLI-resolved tools are not")
-    func homeDependentToolsAbsentUnderBogusHome() {
-        let found = ToolchainDetector.detect(homeDirectory: "/nonexistent-home-\(UUID().uuidString)")
+    func homeDependentToolsAbsentUnderBogusHome() async {
+        let found = await ToolchainDetector.detectAsync(
+            homeDirectory: "/nonexistent-home-\(UUID().uuidString)")
         #expect(!found.contains(.gradle))
         #expect(!found.contains(.android))
         #expect(!found.contains(.chrome))

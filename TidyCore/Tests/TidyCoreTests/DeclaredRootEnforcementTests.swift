@@ -84,15 +84,16 @@ struct DeclaredRootEnforcementTests {
         #expect(report.results.first?.freedBytes == 0)
     }
 
-    @Test("execute still deletes a target that does respect its declared root")
-    func executeDeletesContainedTarget() async throws {
+    @Test("execute denies an unaccepted target even when it respects its declared root")
+    func executeDeniesUnacceptedContainedTarget() async throws {
         let scratch = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         let declaredRoot = scratch.appendingPathComponent("declared", isDirectory: true)
         try FileManager.default.createDirectory(at: declaredRoot, withIntermediateDirectories: true)
         let doomed = declaredRoot.appendingPathComponent("doomed.txt")
-        try Data("delete me".utf8).write(to: doomed)
+        let payload = Data("delete me".utf8)
+        try payload.write(to: doomed)
 
         let planned = PlannedItem(
             id: "test.contained",
@@ -113,8 +114,10 @@ struct DeclaredRootEnforcementTests {
             environment: environment
         )
 
-        #expect(!FileManager.default.fileExists(atPath: doomed.path))
-        #expect(report.results.first?.succeeded == true)
+        #expect(FileManager.default.fileExists(atPath: doomed.path))
+        #expect(try Data(contentsOf: doomed) == payload)
+        #expect(report.results.first?.succeeded == false)
+        #expect(report.results.first?.message == CapabilityRegistry.quarantineReason)
     }
 
     // MARK: - System container denylist

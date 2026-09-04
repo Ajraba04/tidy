@@ -2,41 +2,31 @@ import Foundation
 import Observation
 import TidyCore
 
-@Observable
-@MainActor
+@Observable @MainActor
 final class CleanViewModel {
     enum Phase {
-        case loadingPlan
-        case reviewingPlan(CleanPlan)
-        case executing
-        case complete(RunReport)
-        case failed(String)
+        case loadingPlan, reviewingPlan(CleanPlan), executing, complete(RunReport), failed(String)
     }
-
     let tier: Tier
-    private(set) var phase: Phase = .loadingPlan
-    private let engine: CleanEngine
-    private let environment: CleanEnvironment
-
-    init(tier: Tier, engine: CleanEngine, environment: CleanEnvironment) {
+    private let session: AppReviewSession
+    var selection: PlanSelectionModel? { session.selection }
+    var registeredReview: RegisteredReview? { session.registeredReview }
+    var phase: Phase {
+        switch session.phase {
+        case .loadingPlan: return .loadingPlan
+        case .reviewing(let plan): return .reviewingPlan(plan)
+        case .executing: return .executing
+        case .complete(let report): return .complete(report)
+        case .failed(let message): return .failed(message)
+        }
+    }
+    init(tier: Tier, services: AppExecutionServices) {
         self.tier = tier
-        self.engine = engine
-        self.environment = environment
+        session = AppReviewSession(tier: tier, selectDefaults: true, services: services)
     }
-
-    func loadPlan() async {
-        phase = .loadingPlan
-        await DefaultCustomActionExecutors.registerAll(on: engine)
-        let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier, environment: environment)
-        phase = .reviewingPlan(plan)
-    }
-
-    /// Only reachable after the plan screen's confirmation dialog.
-    /// There is no other path from a plan to a deletion.
-    func executeConfirmedPlan(_ plan: CleanPlan) async {
-        phase = .executing
-        let report = await engine.execute(plan: plan, environment: environment)
-        RunLog.append(report)
-        phase = .complete(report)
-    }
+    func requestLoad() -> Task<Void, Never> { session.requestLoad() }
+    func loadPlan() async { await requestLoad().value }
+    func confirm() { session.confirm() }
+    func policyDidChange() { session.policyDidChange() }
+    func teardown() -> Task<Void, Never> { session.teardown() }
 }

@@ -9,20 +9,30 @@ struct DiskStatsTests {
         #expect(stats.totalBytes > 0)
         #expect(stats.availableBytes >= 0)
         #expect(stats.availableBytes <= stats.totalBytes)
-        // Finder-style "important usage" free space includes purgeable
-        // space, so it is never smaller than the strict figure.
-        #expect(stats.availableForImportantUsageBytes >= stats.availableBytes)
+        // These live policy estimates are independent and are not guaranteed
+        // to be ordered against each other.
+        #expect(stats.availableForImportantUsageBytes >= 0)
+        #expect(stats.availableForImportantUsageBytes <= stats.totalBytes)
     }
 }
 
 @Suite("MemoryStats")
 struct MemoryStatsTests {
     @Test("reports sane figures for physical memory")
-    func reportsSaneFiguresForMemory() {
+    func reportsSaneFiguresForMemory() throws {
         let stats = MemoryStats.current()
         #expect(stats.totalBytes > 0)
-        #expect(stats.usedBytes >= 0)
-        #expect(stats.usedBytes <= stats.totalBytes)
+        let used = try #require(stats.usedBytes, "the real host_statistics64 call should not be denied here")
+        #expect(used >= 0)
+        #expect(used <= stats.totalBytes)
+        #expect(stats.unavailableReason == nil)
+    }
+
+    @Test("denial is reported explicitly, never silently shown as zero bytes used")
+    func deniedReadIsExplicitNotZero() {
+        let stats = MemoryStats(totalBytes: 1_000, usedBytes: nil, unavailableReason: "denied")
+        #expect(stats.usedBytes == nil)
+        #expect(stats.unavailableReason == "denied")
     }
 }
 

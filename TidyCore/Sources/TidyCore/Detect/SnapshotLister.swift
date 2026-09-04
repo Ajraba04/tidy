@@ -24,10 +24,9 @@ public struct LocalSnapshot: Sendable, Identifiable, Equatable {
 
 public enum SnapshotLister: Sendable {
     public static func listLocalSnapshots(volumePath: String = "/") async -> [LocalSnapshot] {
-        guard let tmutilPath = ToolLocator.locate("tmutil") else { return [] }
-        guard let output = try? await ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: tmutilPath),
-            arguments: ["listlocalsnapshots", volumePath]
+        guard let tmutilPath = await ToolLocator.locateAsync("tmutil") else { return [] }
+        guard let output = try? await ProcessRunner.runLocalSnapshots(
+            tmutilURL: URL(fileURLWithPath: tmutilPath), volumePath: volumePath
         ), output.succeeded else {
             return []
         }
@@ -39,37 +38,11 @@ public enum SnapshotLister: Sendable {
             .map { LocalSnapshot(identifier: $0) }
     }
 
-    /// A synchronous existence check for use inside `CleanItem.locate`
-    /// closures, which cannot be `async`. Safe as a same-thread,
-    /// non-detached `run()`-then-`waitUntilExit()` sequence: the pattern
-    /// that turned out to be unreliable was specifically calling
-    /// `waitUntilExit()` from a *different* thread/task than `run()`
-    /// (`ProcessRunner`'s original design); this never does that, and
-    /// `tmutil listlocalsnapshots`'s output is small enough that reading it
-    /// after `waitUntilExit()` returns can't hit the large-output pipe
-    /// deadlock either.
+    /// Deferred synchronous catalog route. T08.4 owns converting the exact
+    /// `CleanCatalog+System` caller to async orchestration. Returning false is
+    /// unavailable evidence, not a fabricated empty successful discovery.
+    @available(*, deprecated, message: "T08.4 must use async listLocalSnapshots()")
     static func hasLocalSnapshotsSync(volumePath: String = "/") -> Bool {
-        guard let tmutilPath = ToolLocator.locate("tmutil") else { return false }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tmutilPath)
-        process.arguments = ["listlocalsnapshots", volumePath]
-        process.environment = ProcessRunner.minimalEnvironment
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else { return false }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let text = String(data: data, encoding: .utf8) ?? ""
-        return text.contains("com.apple.TimeMachine")
+        false
     }
 }

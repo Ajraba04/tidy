@@ -11,14 +11,12 @@ struct ToolLocatorTests {
         #expect(ToolLocator.isAvailable("ls"))
     }
 
-    @Test("resolves git through xcrun --find")
-    func resolvesGitThroughXcrun() {
-        // Every Mac with Xcode or the Command Line Tools installed can
-        // resolve git this way; this machine has Xcode installed.
-        let path = ToolLocator.locate("git")
+    @Test("resolves an Xcode-owned tool through bounded async xcrun --find")
+    func resolvesXcodeToolThroughAsyncXcrun() async {
+        let path = await ToolLocator.locateAsync("swiftc")
         #expect(path != nil)
         if let path {
-            #expect(path.hasSuffix("/git"))
+            #expect(path.hasSuffix("/swiftc"))
         }
     }
 
@@ -26,6 +24,11 @@ struct ToolLocatorTests {
     func returnsNilForUnknownTool() {
         #expect(ToolLocator.locate("this-tool-does-not-exist-anywhere-xyz") == nil)
         #expect(!ToolLocator.isAvailable("this-tool-does-not-exist-anywhere-xyz"))
+    }
+
+    @Test("async lookup returns nil for undeclared tool names")
+    func asyncUnknownToolIsUnavailable() async {
+        #expect(await ToolLocator.locateAsync("this-tool-does-not-exist-anywhere-xyz") == nil)
     }
 
     @Test("only searches the fixed directories, never an arbitrary PATH")

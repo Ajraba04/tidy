@@ -1,8 +1,30 @@
 import Darwin
 import Foundation
 
-/// Refuses to authorize deletion of a path unless it survives every check
-/// below. There is no delete code anywhere in TidyCore that skips this.
+enum ProtectedRelation: Equatable { case disjoint, insideProtected, containsProtected }
+
+extension PathGuard {
+    static func relation(candidate: String, protectedRoot: String) throws -> ProtectedRelation {
+        func components(_ path: String) throws -> [Substring] {
+            guard path.hasPrefix("/"), !path.utf8.contains(0) else {
+                throw GuardedFileError.invalidComponent
+            }
+            if path == "/" { return [] }
+            let parts = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+            guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+                throw GuardedFileError.invalidComponent
+            }
+            return parts
+        }
+        let candidateParts = try components(candidate)
+        let protectedParts = try components(protectedRoot)
+        if candidateParts.starts(with: protectedParts) { return .insideProtected }
+        if protectedParts.starts(with: candidateParts) { return .containsProtected }
+        return .disjoint
+    }
+}
+
+/// Legacy display/planning path-validation errors, not execution authority.
 public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible {
     case empty
     case notAbsolute(path: String)
@@ -32,7 +54,9 @@ public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible 
     }
 }
 
-/// Canonicalizes and validates candidate paths before any deletion.
+/// Canonicalizes and validates legacy display/planning paths, not effects.
+/// A successful check or lexical fallback never creates execution authority;
+/// guarded filesystem mechanisms validate no-follow descriptor identities.
 ///
 /// Ports the shell script's `protected()` + the unsafe-path guard inside
 /// `nuke()`, plus one hardening rule the script didn't need: every candidate
