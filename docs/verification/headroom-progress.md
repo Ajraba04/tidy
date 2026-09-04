@@ -39,6 +39,10 @@ T07.3b profile, transfer and selective-reset workflows are independently adversa
 
 T07.4 hostile production-bound regression is independently adversarial-review Approved at `2bfc605`. The exact hostile document traverses the real disk-backed store analyze/issue/commit/reopen/export pipeline, preserves the complete local config and preference graph, leaves imported profiles inactive, keeps safe unknowns inert and sensitive unknowns redacted, and remains rejected at the real coordinator, capability and engine quarantine boundaries with zero command/custom calls. Focused2/2, persistence25/25, coordinator28/28 and quarantine4/4 pass. Two aggregate 471-test runs each retained one unrelated bounded-process active-job interference failure; that exact test passes1/1 isolated, so aggregate full GREEN is deliberately unclaimed. Literal authority-ledger/accepted-adapter proof remains dependency-bound to T22.4.
 
+## Merge checkpoint — 2026-09-04
+
+`CAJ/developer-headroom` was merged to `main` with a no-fast-forward merge; the merged tree is byte-identical to the tested branch tip `25e1f4d`. Verification at that tree: `swift test`, 623 tests in 63 suites passed, exit 0, and an unsigned Debug arm64 `xcodebuild build` of the app succeeded. This closes packages A–C (T01–T10) at implementation/test level only; the physical acceptance matrix below is unchanged and remains open. No push, tag, release or package publication has occurred.
+
 ## Work-package status
 
 | Package | Status | Evidence / remaining gate |
@@ -50,9 +54,9 @@ T07.4 hostile production-bound regression is independently adversarial-review Ap
 | T05 UI fixture host/migration | A.1/A.2F/A.2P accepted; A.3 atomic app cutover independently Approved throughd82ba82. App29, focusedcore80, complete partitioned package coverage and unsigned arm64 build pass. | Evidence: T05-A1-foundation-verification.md, T05-A2F-foundation-verification.md, T05-A2P-process-acceptance.md and T05-A3-atomic-app-cutover.md. Native B UI/dialog and first accepted adapter effect remain open; this is not full T05 acceptance. |
 | T06 Policy/defaults | T06.1 pure core Approved through `83087b4`; T06.2 typed persistence Approved through `40118ce`; T06.3 revision handoff Approved through `98cf0ba`. Final T06.3 core39/2, app-model37/37, ordinary362/46, bounded21/1, A2P3/1 and unsigned arm64 build pass. | See T06-entry-review.md, T06-policy-customization-entry.md, T06-1-policy-core-verification.md, T06-2-policy-persistence.md and T06-3-policy-revision-handoff.md. Settings UI, profiles/transfer, scheduler/effect consumption and device evidence remain open; no full T06 product acceptance. |
 | T07 Settings/profiles/transfer | Entry contract Approved; T07.1a strict transfer, T07.1b pure profile/restriction, T07.2a durable store, T07.2b shared handoff, T07.3a registry Settings foundation, T07.3b profile/transfer/reset workflows and T07.4 hostile production regression independently Approved. All currently dependency-free T07 work is complete. | See T07-1a-strict-transfer.md, T07-1b-profiles-restrictions.md, T07-2a-durable-import-store.md, T07-2b-shared-profile-handoff.md, T07-3a-registry-settings-ui.md, T07-3b-profile-transfer-workflows.md and T07-4-hostile-production-regression.md. T07.3d data clearing, T22.3 reassociation, T22.4 accepted-adapter regression and physical gates remain open; no full T07 acceptance. |
-| T08 Low-impact scheduler | Pending | Shared worker/process budgets, cancellation |
-| T09 Incremental index | Pending | Event-publication races, parity and metadata savings |
-| T10 Headroom signals | Pending | Truthful unknown states, idle work, privacy manifest |
+| T08 Low-impact scheduler | Complete: scheduler core, policy handoff, bounded traversal, process budget and core orchestration independently approved. | T08-1a-work-scheduler-core.md, T08-1b-scheduler-policy-handoff.md, T08-2-bounded-traversal.md, T08-3-process-budget.md, T08-4-core-orchestration.md. Physical gates remain with T23. |
+| T09 Incremental index | Complete: incremental aggregate index approved at `25e1f4d`. | T09-incremental-index.md. Physical gates remain with T23. |
+| T10 Headroom signals | Complete: truthful signals, shared monitor, privacy manifest approved at `76d589b`. | T10-headroom-signals.md. Physical gates remain with T23. |
 | T11 Project inventory/activity | Pending | Ownership/protection, positive and negative fixtures |
 | T12 Ranking/overlap | Pending | Determinism, eligibility, marginal bytes |
 | T13 Build Prep | Pending | Per-volume target/cap/selection enforcement |
