@@ -106,42 +106,14 @@ private actor A2PBuild {
         let root = try a2pRoot()
         let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let names = """
-        Browsers/ChromiumCookieCleaner.swift Browsers/CookieDomainSuggester.swift
-        Catalog/CleanCatalog.swift Catalog/CleanCatalog+Android.swift Catalog/CleanCatalog+Browsers.swift
-        Catalog/CleanCatalog+DependencyCaches.swift Catalog/CleanCatalog+Extras.swift Catalog/CleanCatalog+Git.swift
-        Catalog/CleanCatalog+Helpers.swift Catalog/CleanCatalog+Memory.swift Catalog/CleanCatalog+SafeCaches.swift
-        Catalog/CleanCatalog+System.swift Catalog/CleanCatalog+Xcode.swift
-        Detect/ContainerSpaceInfo.swift Detect/GitRepoScanner.swift Detect/GitRootDiscovery.swift
-        Detect/LargestItemsScanner.swift Detect/LaunchAgentsSurvey.swift Detect/ProcessSurvey.swift
-        Detect/RestartReclaimSurvey.swift Detect/SimctlClient.swift Detect/SnapshotLister.swift
-        Detect/StaleNodeModulesScanner.swift Detect/ToolchainDetector.swift Detect/TranscriptPruneScanner.swift
-        Detect/UnclaimedSpaceScanner.swift
-        Engine/CleanEngine.swift Engine/DefaultCustomActionExecutors.swift
-        Engine/GitHousekeeper.swift Engine/MemoryReclaimer.swift Engine/RunLog.swift Engine/ScanEngine.swift
-        Engine/SimulatorPruner.swift Engine/SnapshotDeleter.swift
-        Exec/CleanupCommandRunner.swift Exec/ProcessRunner.swift Exec/ProcessSession.swift
-        Exec/ProcessIdentity.swift Exec/ProcessJobGate.swift Exec/ToolLocator.swift
-        Execution/CapabilityRegistry.swift Execution/ConfirmedPlan.swift Execution/DerivedDataEffectAdapter.swift
-        Execution/ExecutionCoordinator.swift
-        Execution/ExecutionPolicyBridge.swift Execution/GuardedFileDeleter.swift Execution/JournalPOSIXIO.swift
-        Execution/JournalStorage.swift Execution/MutationAdmissionStore.swift Execution/PolicyInvalidationBarrier.swift
-        Execution/ResourcePreflight.swift Execution/RunJournal.swift
-        Measure/ByteFormat.swift Measure/DiskStats.swift Measure/HomeSurvey.swift Measure/MemoryStats.swift
-        Measure/PathDisplay.swift Measure/SizeScanner.swift Measure/SwapStats.swift
-        Model/ActionDescriptor.swift Model/CleanAction.swift Model/CleanCategory.swift Model/CleanEnvironment.swift
-        Model/CleanItem.swift Model/CleanPlan.swift Model/PlanSelection.swift Model/ResourceIdentity.swift
-        Model/RunReport.swift Model/ScanReport.swift Model/TargetPath.swift Model/TidyConfig.swift
-        Model/Tier.swift Model/ToolchainID.swift
-        Policy/FeatureSettings.swift Policy/ScanSettings.swift Policy/CleanupSettings.swift
-        Policy/ExperienceSettings.swift Policy/PolicyDefaults.swift Policy/PolicyResolver.swift Policy/PolicyValidator.swift
-        Policy/SessionProfile.swift Policy/StrictJSON.swift Policy/SettingsEnvelope.swift
-        Policy/SettingsPublication.swift Policy/SettingsStore.swift Policy/SettingsTransfer.swift
-        Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
-        Scanning/BoundedTraversal.swift Scanning/ScanIndex.swift Scanning/ScanInvalidation.swift
-        Scanning/ScanSession.swift Scanning/WorkScheduler.swift
-        """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        var sources = names.map { package.appendingPathComponent("Sources/TidyCore/\($0)") }
+        let sourceRoot = package.appendingPathComponent("Sources/TidyCore")
+        guard let enumerator = FileManager.default.enumerator(at: sourceRoot,
+            includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
+            throw A2PError.missing
+        }
+        var sources = enumerator.compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "swift" }.sorted { $0.path < $1.path }
+        guard !sources.isEmpty else { throw A2PError.missing }
         sources.append(package.appendingPathComponent("Tests/TidyCoreTests/Fixtures/T05SettingsProcessDriver.swift"))
         var manifest: [String: String] = [:]
         for source in sources {
@@ -162,6 +134,7 @@ private actor A2PBuild {
         throw A2PError.invalid
         #endif
         let args = ["swiftc", "-parse-as-library", "-swift-version", "5", "-Onone", "-j", "2", "-target", target,
+                    "-module-cache-path", root.appendingPathComponent("module-cache").path,
                     "-module-name", "TidySettingsProcessFixture"] + sources.map(\.path) + ["-lsqlite3", "-o", output.path]
         try a2pWrite(try JSONEncoder().encode(args), root.appendingPathComponent("compiler-arguments.json"))
         let compiler = try await ProcessSession.launchForTesting(ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),

@@ -38,7 +38,13 @@ public enum SimctlClient: Sendable {
         ), output.succeeded, let data = output.standardOutput.data(using: .utf8) else {
             return []
         }
-        guard let response = try? JSONDecoder().decode(SimctlDeviceListResponse.self, from: data) else {
+        return decodeDevices(data)
+    }
+
+    /// Parses bounded output already captured by the read-only process runner.
+    /// Separating parsing lets CI use synthetic data without starting CoreSimulator.
+    static func decodeDevices(_ data: Data) -> [SimulatorDevice] {
+        guard data.count <= 1_048_576, let response = try? JSONDecoder().decode(SimctlDeviceListResponse.self, from: data) else {
             return []
         }
 
@@ -60,7 +66,11 @@ public enum SimctlClient: Sendable {
         ), output.succeeded, let data = output.standardOutput.data(using: .utf8) else {
             return []
         }
-        guard let response = try? JSONDecoder().decode(SimctlRuntimeListResponse.self, from: data) else {
+        return decodeRuntimes(data)
+    }
+
+    static func decodeRuntimes(_ data: Data) -> [SimulatorRuntime] {
+        guard data.count <= 1_048_576, let response = try? JSONDecoder().decode(SimctlRuntimeListResponse.self, from: data) else {
             return []
         }
         return response.runtimes
@@ -71,8 +81,12 @@ public enum SimctlClient: Sendable {
     public static func idleRuntimes() async -> [SimulatorRuntime] {
         async let devices = listDevices()
         async let runtimes = listRuntimes()
-        let usedRuntimeIDs = Set(await devices.map(\.runtimeIdentifier))
-        return await runtimes.filter { !usedRuntimeIDs.contains($0.identifier) }
+        return idleRuntimes(devices: await devices, runtimes: await runtimes)
+    }
+
+    static func idleRuntimes(devices: [SimulatorDevice], runtimes: [SimulatorRuntime]) -> [SimulatorRuntime] {
+        let usedRuntimeIDs = Set(devices.map(\.runtimeIdentifier))
+        return runtimes.filter { !usedRuntimeIDs.contains($0.identifier) }
     }
 
     /// Deferred synchronous catalog route. T08.4 owns converting the exact

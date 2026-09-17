@@ -8,11 +8,18 @@ on:
 jobs:
   release:
     runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      TIDY_RELEASE_VERSION: ${{ github.ref_name }}
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate artifact version
+        run: |
+          [[ "$TIDY_RELEASE_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || exit 1
 
       - name: Select Xcode
         run: |
@@ -20,21 +27,35 @@ jobs:
           sudo xcode-select -s "${LATEST_XCODE:-/Applications/Xcode.app}"
           xcodebuild -version
 
-      - name: swift test (TidyCore)
-        working-directory: TidyCore
-        run: swift test
+      - name: Install verified XcodeGen
+        run: |
+          bash scripts/verification/install-xcodegen.sh "$RUNNER_TEMP/tidy-tools"
+          echo "$RUNNER_TEMP/tidy-tools/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Required correctness, native UI and universal build gates
+        run: bash scripts/verification/verify.sh
+
+      - name: Archive verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-${{ github.sha }}
+          path: |
+            dist/verification/toolchain.txt
+            dist/verification/*.log
+            dist/verification/*.xcresult
+            dist/verification/*.sha256
+          if-no-files-found: error
 
       - name: Release build
         run: |
           xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
-            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO \
+            'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 
-      # Signing and notarization are opt-in: they only run if this repo's
-      # secrets are configured. Notarizing a legitimate utility doesn't
-      # endanger a Developer account, but the signature embeds the
-      # registered developer's name, so it stays opt-in rather than
-      # required. Either way, the app fully works. See
-      # docs/UNSIGNED_INSTALL.md.
+      # Signing and notarization remain opt-in through repository secrets.
+      # Their existing configuration is unchanged; functionality and safety
+      # acceptance are separate. See docs/UNSIGNED_INSTALL.md.
       #
       # `if:` conditions can't reference the secrets context directly, so
       # this step resolves it to a plain step output first.
@@ -98,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          ditto -c -k --keepParent "DerivedData/Build/Products/Release/Tidy.app" "dist/Tidy-${{ github.ref_name }}.zip"
+          ditto -c -k --keepParent "DerivedData/Build/Products/Release/Tidy.app" "dist/Tidy-$TIDY_RELEASE_VERSION.zip"
 
       - name: Build DMG
         run: |
@@ -109,7 +130,18 @@ jobs:
           cp -R "DerivedData/Build/Products/Release/Tidy.app" "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
           hdiutil create -volname "Tidy" -srcfolder "$STAGING" -fs HFS+ \
-            -format UDZO -ov "dist/Tidy-${{ github.ref_name }}.dmg"
+            -format UDZO -ov "dist/Tidy-$TIDY_RELEASE_VERSION.dmg"
+
+      - name: Record immutable artifact checksums and provenance
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 "Tidy-$TIDY_RELEASE_VERSION.zip" "Tidy-$TIDY_RELEASE_VERSION.dmg" > "Tidy-$TIDY_RELEASE_VERSION.sha256")
+          {
+            git rev-parse HEAD
+            xcodebuild -version
+            swift --version
+            lipo -archs DerivedData/Build/Products/Release/Tidy.app/Contents/MacOS/Tidy
+          } > "dist/Tidy-$TIDY_RELEASE_VERSION.provenance.txt"
 
       - name: Create GitHub Release
         env:
@@ -119,10 +151,12 @@ jobs:
           if [ "$TIDY_SIGNED" = "true" ]; then
             NOTES="Signed and notarized. Should launch with no Gatekeeper warning."
           else
-            NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway. The app is fully functional either way."
+            NOTES="**Unsigned build.** macOS will warn that it can't verify the developer on first launch. See [docs/UNSIGNED_INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/UNSIGNED_INSTALL.md) for how to open it anyway. Check the versioned capability and acceptance record before use."
           fi
-          gh release create "${{ github.ref_name }}" \
-            "dist/Tidy-${{ github.ref_name }}.dmg" \
-            "dist/Tidy-${{ github.ref_name }}.zip" \
-            --title "Tidy ${{ github.ref_name }}" \
+          gh release create "$TIDY_RELEASE_VERSION" \
+            "dist/Tidy-$TIDY_RELEASE_VERSION.dmg" \
+            "dist/Tidy-$TIDY_RELEASE_VERSION.zip" \
+            "dist/Tidy-$TIDY_RELEASE_VERSION.sha256" \
+            "dist/Tidy-$TIDY_RELEASE_VERSION.provenance.txt" \
+            --title "Tidy $TIDY_RELEASE_VERSION" \
             --notes "$NOTES"

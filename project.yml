@@ -39,6 +39,9 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: TidyUITestHost/TestHostApp.swift
+      - path: Tidy/Settings/AppConfigStore.swift
+      - path: Tidy/Settings/SettingsView.swift
+      - path: Tidy/Resources/Localizable.xcstrings
       - path: Tidy/Clean/CleanPlanView.swift
       - path: Tidy/Clean/PlanReviewRow.swift
       - path: Tidy/Clean/PlanSelectionModel.swift
@@ -58,9 +61,12 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: TidyAppModelTests/ConfirmationLifecycleTests.swift
-      - path: TidyAppModelTests/SharedSettingsWiringTests.swift
-      - path: TidyAppModelTests/RunReportPresentationTests.swift
+      - path: TidyAppModelTests
+      - path: Tidy/Settings/SettingsView.swift
+      - path: Tidy/Scan/ScanViewModel.swift
+      - path: Tidy/Headroom/HeadroomViewModel.swift
+      - path: Tidy/MenuBar/StatsRefresher.swift
+      - path: Tidy/Resources/Localizable.xcstrings
       - path: Tidy/Clean/PlanSelectionModel.swift
       - path: Tidy/Clean/CleanViewModel.swift
       - path: Tidy/Custom/CustomViewModel.swift
@@ -77,7 +83,31 @@ targets:
         TEST_HOST: ""
         BUNDLE_LOADER: ""
 
+  TidyNativeUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: TidyNativeUITests
+    dependencies:
+      - target: TidyUITestHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy.NativeUITests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: TidyUITestHost
+
 schemes:
+  TidyNativeUITests:
+    build:
+      targets:
+        TidyUITestHost: all
+        TidyNativeUITests: [test]
+    test:
+      targets:
+        - TidyNativeUITests
+
   TidyAppModelTests:
     build:
       targets:
