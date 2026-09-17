@@ -33,9 +33,12 @@ public extension SettingsPresentationRegistry {
             return .connected("Bounded optional completed-run history")
         }
         if ["feature.buildPrep", "feature.projects"].contains(raw)
-            || raw.hasPrefix("cleanup.") || raw == "scope.currentProject"
+            || raw == "scope.currentProject"
             || raw == "scope.pinnedProjects" {
             return .unavailable("R09 project inventory, ranking, and Build Prep are not implemented.")
+        }
+        if raw.hasPrefix("cleanup.") {
+            return .unavailable("R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.")
         }
         if raw == "feature.ecosystems" || raw.hasPrefix("ecosystem.")
             || raw.hasPrefix("item.") || raw == "browsers.keepCookieDomains" {

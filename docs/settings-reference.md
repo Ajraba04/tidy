@@ -153,19 +153,19 @@ Generated from the tested Tidy settings registry. MiB and GiB values use powers 
 |browsers.keepCookieDomains|[]|canonical domain list|restriction / invalidate|global, profile|Unavailable: R10 ecosystem adapter behavior is not implemented.|
 |scope.excludedRoots|[]|canonical absolute-path exclusions|restriction / invalidate|global, profile, project, run|Available: Explicit scan scope and scheduler policy|
 |scope.pinnedProjects|[]|project identity set|restriction / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.inactiveDays|60|integer 7...365|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.transcriptDays|45|integer 7...365|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.recentProtectionDays|7|integer 1...90|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.warmProjectCount|5|integer 0...50|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.minimumCandidateMiB|100|integer 1...102400|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.minimumItemMiB|1|integer 0...102400|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.retainRecentArtifacts|2|integer 0...100|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.costCeiling|low|low, medium, high|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.requestedBatchGiB|10|integer 1...100|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.requestedBatchItems|20|integer 1...100|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.hardBatchGiB|null / automatic|null or integer 1...100|restriction / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.hardBatchItems|null / automatic|null or integer 1...100|restriction / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
-|cleanup.manualInactiveAcknowledgementMinutes|10|integer 1...30|preference / invalidate|global, profile, project, run|Unavailable: R09 project inventory, ranking, and Build Prep are not implemented.|
+|cleanup.inactiveDays|60|integer 7...365|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.transcriptDays|45|integer 7...365|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.recentProtectionDays|7|integer 1...90|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.warmProjectCount|5|integer 0...50|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.minimumCandidateMiB|100|integer 1...102400|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.minimumItemMiB|1|integer 0...102400|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.retainRecentArtifacts|2|integer 0...100|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.costCeiling|low|low, medium, high|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.requestedBatchGiB|10|integer 1...100|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.requestedBatchItems|20|integer 1...100|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.hardBatchGiB|null / automatic|null or integer 1...100|restriction / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.hardBatchItems|null / automatic|null or integer 1...100|restriction / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
+|cleanup.manualInactiveAcknowledgementMinutes|10|integer 1...30|preference / invalidate|global, profile, project, run|Unavailable: R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.|
 |headroom.targetGiB|null / automatic|automatic or 1...1024 GiB within volume bounds|preference / invalidate|global, profile, project, run|Available: Measured-volume Headroom target resolution|
 |headroom.warningGiB|null / automatic|automatic or fixed below clear|preference / invalidate|global, profile, project, run|Available: Measured-volume Headroom target resolution|
 |headroom.clearGiB|null / automatic|automatic or fixed at or below capacity|preference / invalidate|global, profile, project, run|Available: Measured-volume Headroom target resolution|
