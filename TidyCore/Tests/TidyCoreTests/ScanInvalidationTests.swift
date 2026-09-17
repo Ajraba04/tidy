@@ -94,6 +94,27 @@ actor FakeScanEventStream: ScanEventStream {
 
 @Suite("T09 ScanInvalidation generation ledger")
 struct ScanInvalidationTests {
+    @Test func liveDeliveryQueueIsBoundedAndOverflowFailsClosed() async {
+        let box = FSEventsDeliveryBox()
+        for cursor in 1...100 {
+            box.deliver(ScanEventBatch(events: [ScanEvent(path: "/fixture/\(cursor)")],
+                cursor: UInt64(cursor), historyReliable: true))
+        }
+        #expect(box.pendingBatchCountForTesting() <= 64)
+        var sawUnreliable = false
+        for _ in 0..<box.pendingBatchCountForTesting() {
+            let batch = await box.next()
+            if !batch.historyReliable { sawUnreliable = true }
+            #expect(batch.events.count <= 4_096)
+        }
+        #expect(sawUnreliable)
+
+        let oversized = (0..<4_100).map { ScanEvent(path: "/fixture/e\($0)") }
+        box.deliver(ScanEventBatch(events: oversized, cursor: 101, historyReliable: true))
+        let bounded = await box.next()
+        #expect(bounded.events.count == 4_096)
+        #expect(!bounded.historyReliable)
+    }
     @Test("a deeply changed descendant bumps the root's generation even though the root path itself never appears in the event")
     func deeplyChangedDescendantBumpsRootGeneration() async throws {
         let source = FakeScanEventSource()

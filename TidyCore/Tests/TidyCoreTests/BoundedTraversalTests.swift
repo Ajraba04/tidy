@@ -297,6 +297,8 @@ private actor AdvancingTraversalHook: BoundedTraversalTestHook {
         switch event {
         case .batchCompleted:
             clock.advance(seconds: secondsPerBatch)
+        case .metadataVisited:
+            break
         case .descendantEnqueued(let path):
             descendantPaths.append(path)
         }

@@ -61,9 +61,14 @@ public protocol ScanEventSource: Sendable {
 /// event the OS has already accepted becomes visible through `next()` at or
 /// before the cursor it returns.
 public protocol ScanEventStream: Sendable {
+    func initialBatch() async -> ScanEventBatch?
     func next() async -> ScanEventBatch
     func flush() async -> UInt64
     func stop() async
+}
+
+public extension ScanEventStream {
+    func initialBatch() async -> ScanEventBatch? { nil }
 }
 
 public enum ScanInvalidationError: Error, Equatable, Sendable {
@@ -122,6 +127,7 @@ public actor ScanInvalidation {
         let newStream = await source.makeStream(roots: roots, resumeCursor: resumeCursor,
             persistedDeviceUUID: persistedDeviceUUID)
         stream = newStream
+        if let initial = await newStream.initialBatch() { apply(initial) }
         watchActive = true
         pumpTask = Task { [weak self] in await self?.pump(newStream) }
     }
@@ -260,7 +266,9 @@ public final class FSEventsScanEventSource: ScanEventSource, @unchecked Sendable
 /// Bridges the C callback (no captures allowed) to Swift async consumers.
 /// Every mutation is behind a lock because FSEvents calls back on its own
 /// dispatch queue while `next()`/`flush()` are called from actor tasks.
-private final class FSEventsDeliveryBox: @unchecked Sendable {
+final class FSEventsDeliveryBox: @unchecked Sendable {
+    private static let maximumPendingBatches = 64
+    private static let maximumEventsPerBatch = 4_096
     private let lock = NSLock()
     private var pending: [ScanEventBatch] = []
     private var waiter: CheckedContinuation<ScanEventBatch, Never>?
@@ -270,13 +278,23 @@ private final class FSEventsDeliveryBox: @unchecked Sendable {
     func deliver(_ batch: ScanEventBatch) {
         lock.lock()
         guard !stopped else { lock.unlock(); return }
-        lastCursor = max(lastCursor, batch.cursor)
+        let bounded = ScanEventBatch(
+            events: Array(batch.events.prefix(Self.maximumEventsPerBatch)),
+            cursor: batch.cursor,
+            historyReliable: batch.historyReliable
+                && batch.events.count <= Self.maximumEventsPerBatch)
+        lastCursor = max(lastCursor, bounded.cursor)
         if let waiter {
             self.waiter = nil
             lock.unlock()
-            waiter.resume(returning: batch)
+            waiter.resume(returning: bounded)
         } else {
-            pending.append(batch)
+            if pending.count >= Self.maximumPendingBatches {
+                pending = [ScanEventBatch(events: [], cursor: lastCursor,
+                    historyReliable: false)]
+            } else {
+                pending.append(bounded)
+            }
             lock.unlock()
         }
     }
@@ -312,6 +330,11 @@ private final class FSEventsDeliveryBox: @unchecked Sendable {
         return lastCursor
     }
 
+    func pendingBatchCountForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return pending.count
+    }
+
     /// Unblocks a pump parked in `next()` and makes every subsequent `next()` call resolve
     /// immediately with a neutral (no events, reliable) batch instead of parking forever. Task
     /// cancellation alone cannot do this — cancelling `pumpTask` only sets a flag the pump checks
@@ -332,6 +355,7 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
     private let box = FSEventsDeliveryBox()
     private let queue = DispatchQueue(label: "com.tidy.scanindex.fsevents")
     private var streamRef: FSEventStreamRef?
+    private var initial: ScanEventBatch?
 
     init(roots: [String], resumeCursor: UInt64?, persistedDeviceUUID: String?) {
         var reliable = resumeCursor != nil
@@ -363,7 +387,14 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
         // The pump's very first read reports the resolved reliability so a
         // caller that never sees a real event before its barrier still
         // learns the truth.
-        box.deliver(ScanEventBatch(events: [], cursor: resumeCursor ?? 0, historyReliable: reliable))
+        initial = ScanEventBatch(events: [],
+            cursor: resumeCursor ?? UInt64(FSEventsGetCurrentEventId()),
+            historyReliable: reliable)
+    }
+
+    func initialBatch() async -> ScanEventBatch? {
+        defer { initial = nil }
+        return initial
     }
 
     func next() async -> ScanEventBatch { await box.next() }
@@ -413,9 +444,11 @@ private func fsEventsScanCallback(
         | kFSEventStreamEventFlagUnmount | kFSEventStreamEventFlagMustScanSubDirs
         | kFSEventStreamEventFlagEventIdsWrapped)
     var events: [ScanEvent] = []
-    var reliable = true
+    let eventLimit = min(numEvents, 4_096)
+    events.reserveCapacity(eventLimit)
+    var reliable = numEvents <= eventLimit
     var maxID: UInt64 = 0
-    for index in 0..<numEvents {
+    for index in 0..<eventLimit {
         let flag = eventFlags[index]
         if flag & unreliableMask != 0 { reliable = false }
         if index < paths.count { events.append(ScanEvent(path: paths[index])) }

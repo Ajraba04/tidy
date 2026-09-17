@@ -26,6 +26,16 @@ internal enum SchedulerObservation: Equatable, Sendable {
     case unknown, nominal, constrained, critical
 }
 
+public enum SchedulerLiveObservation: Equatable, Sendable {
+    case unknown, nominal, constrained, critical
+}
+
+public enum SchedulerLiveObservationResult: Equatable, Sendable {
+    case applied
+    case rejectedStale(current: UInt64)
+    case unavailable
+}
+
 public struct WorkSchedulerLimits: Equatable, Sendable {
     let sessions: Int
     let queued: Int
@@ -792,7 +802,7 @@ internal actor SchedulerPolicyController {
         guard capability.controllerID == controllerID else { throw WorkSchedulerError.foreignController }
         return try await scheduler.beginDiscretionary(requirements)
     }
-    internal func resolvedPolicyForTesting(
+    internal func resolvedPolicy(
         using capability: SchedulerPolicyControllerCapability) -> EffectivePolicy? {
         guard capability.controllerID == controllerID else { return nil }; return operative?.policy
     }

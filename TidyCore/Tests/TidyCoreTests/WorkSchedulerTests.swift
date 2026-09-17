@@ -149,7 +149,7 @@ struct WorkSchedulerTests {
     @Test func realEnvelopeSelectsGlobalAndActiveProfileWithNeutralScopeInputs() async throws {
         let rig = try Rig.make(); let candidate = envelope(1, workers: 1, projectDays: 41)
         try await rig.install(candidate)
-        let resolved = try #require(await rig.controller.resolvedPolicyForTesting(using: rig.owner))
+        let resolved = try #require(await rig.controller.resolvedPolicy(using: rig.owner))
         #expect(resolved.walkWorkers == 1)
         #expect(resolved.fields[id("cleanup.inactiveDays")]?.value == .stored(.integer(55)))
         #expect(await rig.scheduler.snapshot().settingsRevision == 1)
