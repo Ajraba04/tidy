@@ -312,6 +312,7 @@ internal protocol BoundedTraversalSource: Sendable {
 
 internal enum BoundedTraversalTestEvent: Equatable, Sendable {
     case batchCompleted(Int, [String])
+    case metadataVisited([String])
     case descendantEnqueued(String)
 }
 
@@ -364,6 +365,15 @@ public actor BoundedTraversal {
         self.clock = .continuous
         self.source = RealFilesystemTraversalSource()
         self.testHook = nil
+    }
+
+    internal init(sessions: BridgeExplicitSessions, limits: TraversalLimits,
+                  testHook: any BoundedTraversalTestHook) {
+        self.sessions = sessions
+        self.limits = limits
+        self.clock = .continuous
+        self.source = RealFilesystemTraversalSource()
+        self.testHook = testHook
     }
 
     internal init(sessions: BridgeExplicitSessions, limits: TraversalLimits,
@@ -602,6 +612,9 @@ public actor BoundedTraversal {
             }
             state.metrics = batchMetrics
             await testHook?.receive(.batchCompleted(state.metrics.batches, work.map(\.path)))
+            await testHook?.receive(.metadataVisited(work.compactMap { item in
+                Self.isProtected(item.path, protectedRoots: protectedRoots) ? nil : item.path
+            }))
 
             // Cancellation is observed after each finite blocking batch and before any child
             // enters the retained queue. A cancelled batch never launches later enumeration.

@@ -42,6 +42,7 @@ public enum CoreOrchestrationError: Error, Equatable, Sendable {
     case invalidPolicySnapshot
     case foreignOrFinishedSession
     case stalePolicy
+    case invalidScopeAuthorization
 }
 
 /// Validated, non-authoritative input for one core scan or planning request. The policy values
@@ -203,14 +204,17 @@ public struct CoreScanHandle: Sendable {
     public let sessionID: UUID
     public let policyRevision: UInt64
     public let generation: UInt64
-    private let store: CoreScanResultStore
+    fileprivate let store: CoreScanResultStore
+    fileprivate let continuations: CoreScanContinuationStore
 
     fileprivate init(sessionID: UUID, policyRevision: UInt64, generation: UInt64,
-                     store: CoreScanResultStore) {
+                     store: CoreScanResultStore,
+                     continuations: CoreScanContinuationStore = CoreScanContinuationStore()) {
         self.sessionID = sessionID
         self.policyRevision = policyRevision
         self.generation = generation
         self.store = store
+        self.continuations = continuations
     }
 
     public func latestResult() async -> CoreScanResult? { await store.latest() }
@@ -238,16 +242,57 @@ internal struct CoreScanDependencies: Sendable {
     let processProbe: @Sendable (CoreOrchestrationContext, CleanEnvironment) async
         -> CoreScanProcessEvidence
     let testHook: (@Sendable (CoreScanTestPoint) async -> Void)?
+    let metadataVisit: (@Sendable (String) async -> Void)?
+
+    init(processProbe: @escaping @Sendable (CoreOrchestrationContext, CleanEnvironment) async
+            -> CoreScanProcessEvidence,
+         testHook: (@Sendable (CoreScanTestPoint) async -> Void)?,
+         metadataVisit: (@Sendable (String) async -> Void)? = nil) {
+        self.processProbe = processProbe
+        self.testHook = testHook
+        self.metadataVisit = metadataVisit
+    }
 
     static let live = CoreScanDependencies(processProbe: { context, environment in
         await CoreLiveProcessProbe.run(context: context, environment: environment)
-    }, testHook: nil)
+    }, testHook: nil, metadataVisit: nil)
+}
+
+private struct CoreMetadataVisitHook: BoundedTraversalTestHook {
+    let visit: @Sendable (String) async -> Void
+    func receive(_ event: BoundedTraversalTestEvent) async {
+        guard case .metadataVisited(let paths) = event else { return }
+        for path in paths { await visit(path) }
+    }
 }
 
 private actor CoreScanResultStore {
     private var value: CoreScanResult?
     func update(_ value: CoreScanResult) { self.value = value }
     func latest() -> CoreScanResult? { value }
+}
+
+private struct PendingCoreScanContinuation: Sendable {
+    let environment: CleanEnvironment
+    let authorization: AuthorizedScanScope
+    let context: CoreOrchestrationContext
+    let rootIndex: Int
+    let traversal: BoundedTraversal
+    let cursor: TraversalCursor
+    let completedAccumulator: CoreScanAccumulator
+    let dependencies: CoreScanDependencies
+    let indexCoordinator: ScanIndexCoordinator?
+}
+
+private actor CoreScanContinuationStore {
+    private var pending: PendingCoreScanContinuation?
+    func put(_ value: PendingCoreScanContinuation) { pending = value }
+    func take() -> PendingCoreScanContinuation? {
+        defer { pending = nil }
+        return pending
+    }
+    func clear() { pending = nil }
+    func isAvailable() -> Bool { pending != nil }
 }
 
 private struct CoreScanAccumulator: Sendable {
@@ -270,6 +315,7 @@ private struct CoreScanAccumulator: Sendable {
     var totalBytes: Int64 = 0
     var reasons: Set<TraversalCoverageReason> = []
     var includeItemsInSession = true
+    var indexStatus: ScanIndexStatus?
 
     mutating func absorb(_ result: TraversalResult, optionalMissing: Bool = false) {
         let (entries, entriesOverflow) = processedEntries.addingReportingOverflow(
@@ -282,6 +328,19 @@ private struct CoreScanAccumulator: Sendable {
         var pageReasons = result.coverage.reasons
         if optionalMissing { pageReasons.remove(.missing) }
         reasons.formUnion(pageReasons)
+    }
+
+    mutating func absorbCached(_ record: ScanAggregateRecord, root: String) {
+        let (entries, entriesOverflow) = processedEntries.addingReportingOverflow(
+            record.processedEntries)
+        processedEntries = entriesOverflow ? Int.max : entries
+        let (bytes, bytesOverflow) = totalBytes.addingReportingOverflow(record.totalBytes)
+        totalBytes = bytesOverflow ? Int64.max : bytes
+        if entriesOverflow || bytesOverflow { reasons.insert(.arithmeticOverflow) }
+        if record.totalBytes > 0 {
+            topLevelHomeRanking.append(RankedItem(path: root, bytes: record.totalBytes))
+        }
+        indexStatus = .cached(record)
     }
 
     func report() -> ScanReport {
@@ -424,6 +483,47 @@ private enum CoreLiveProcessProbe {
 }
 
 public extension ScanEngine {
+    static func start(environment: CleanEnvironment, authorization: AuthorizedScanScope,
+                      ownerID: UUID,
+                      registry: ScanSessionRegistry,
+                      sessions: BridgeExplicitSessions, session: WorkSession,
+                      traversalLimits: TraversalLimits? = nil,
+                      indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
+        try await start(environment: environment, authorization: authorization,
+            ownerID: ownerID,
+            registry: registry, sessions: sessions, session: session,
+            traversalLimits: traversalLimits, dependencies: .live,
+            indexCoordinator: indexCoordinator)
+    }
+
+    static func continueScan(from handle: CoreScanHandle,
+                             registry: ScanSessionRegistry) async throws -> CoreScanHandle {
+        guard let pending = await handle.continuations.take() else {
+            throw CoreOrchestrationError.invalidScopeAuthorization
+        }
+        do {
+            let current = try await pending.context.checkCurrent()
+            guard current.settingsRevision == handle.policyRevision else {
+                throw CoreOrchestrationError.stalePolicy
+            }
+            let sessionID = try await registry.begin(policyRevision: handle.policyRevision,
+                batchesPerSecond: pending.context.uiBatchesPerSecond,
+                initialSnapshot: pending.completedAccumulator.sessionSnapshot())
+            let store = CoreScanResultStore()
+            let next = CoreScanHandle(sessionID: sessionID,
+                policyRevision: handle.policyRevision, generation: handle.generation,
+                store: store, continuations: handle.continuations)
+            try await registry.startWork(sessionID: sessionID) { reporter in
+                await runScopedContinuation(pending: pending, reporter: reporter,
+                    store: store, continuations: handle.continuations)
+            }
+            return next
+        } catch {
+            await handle.continuations.clear()
+            throw error
+        }
+    }
+
     static func start(environment: CleanEnvironment, registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
@@ -435,6 +535,43 @@ public extension ScanEngine {
 }
 
 internal extension ScanEngine {
+    static func start(environment: CleanEnvironment, authorization: AuthorizedScanScope,
+                      ownerID: UUID,
+                      registry: ScanSessionRegistry,
+                      sessions: BridgeExplicitSessions, session: WorkSession,
+                      traversalLimits: TraversalLimits? = nil,
+                      dependencies: CoreScanDependencies,
+                      indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
+        try authorization.consumeForStart(ownerID: ownerID, environment: environment)
+        let provisional = try await CoreOrchestrationContext.make(sessions: sessions,
+            session: session, sessionID: UUID(), traversalLimits: traversalLimits)
+        guard authorization.policyRevision == provisional.policyRevision else {
+            throw CoreOrchestrationError.invalidScopeAuthorization
+        }
+        let sessionID = try await registry.begin(policyRevision: provisional.policyRevision,
+            batchesPerSecond: provisional.uiBatchesPerSecond)
+        let context = provisional.replacingSessionID(sessionID)
+        let store = CoreScanResultStore()
+        let continuations = CoreScanContinuationStore()
+        let handle = CoreScanHandle(sessionID: sessionID,
+            policyRevision: context.policyRevision, generation: context.generation, store: store,
+            continuations: continuations)
+        do {
+            try await registry.startWork(sessionID: sessionID) { reporter in
+                await runScopedRegistered(environment: environment, authorization: authorization,
+                    context: context, reporter: reporter, store: store,
+                    dependencies: dependencies, indexCoordinator: indexCoordinator,
+                    continuations: continuations)
+            }
+        } catch {
+            try? await registry.complete(sessionID: sessionID, terminal: .failed,
+                coverage: TraversalCoverage(isComplete: false, reasons: [.unreadable]),
+                snapshot: .init())
+            throw error
+        }
+        return handle
+    }
+
     static func start(environment: CleanEnvironment, registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
@@ -667,6 +804,147 @@ internal extension ScanEngine {
             coverage: coverage, snapshot: accumulator.sessionSnapshot())
     }
 
+    fileprivate static func runScopedRegistered(environment: CleanEnvironment,
+                                             authorization: AuthorizedScanScope,
+                                             context: CoreOrchestrationContext,
+                                             reporter: ScanSessionReporter,
+                                             store: CoreScanResultStore,
+                                             dependencies: CoreScanDependencies,
+                                             indexCoordinator: ScanIndexCoordinator?,
+                                             continuations: CoreScanContinuationStore) async
+      -> ScanSessionCompletion {
+        let accumulator = CoreScanAccumulator(environment: environment)
+        await dependencies.testHook?(.beforeFilesystem)
+        if await reporter.isCancelled() {
+            return await cancelledCompletion(accumulator, store: store)
+        }
+        return await runScopedPages(environment: environment, authorization: authorization,
+            context: context, rootIndex: 0, current: nil,
+            completedAccumulator: accumulator, reporter: reporter, store: store,
+            dependencies: dependencies, indexCoordinator: indexCoordinator,
+            continuations: continuations)
+    }
+
+    fileprivate static func runScopedContinuation(pending: PendingCoreScanContinuation,
+                                              reporter: ScanSessionReporter,
+                                              store: CoreScanResultStore,
+                                              continuations: CoreScanContinuationStore) async
+      -> ScanSessionCompletion {
+        await runScopedPages(environment: pending.environment,
+            authorization: pending.authorization, context: pending.context,
+            rootIndex: pending.rootIndex,
+            current: (pending.traversal, pending.cursor),
+            completedAccumulator: pending.completedAccumulator,
+            reporter: reporter, store: store, dependencies: pending.dependencies,
+            indexCoordinator: pending.indexCoordinator, continuations: continuations)
+    }
+
+    fileprivate static func runScopedPages(environment: CleanEnvironment,
+                                       authorization: AuthorizedScanScope,
+                                       context: CoreOrchestrationContext,
+                                       rootIndex: Int,
+                                       current: (BoundedTraversal, TraversalCursor)?,
+                                       completedAccumulator: CoreScanAccumulator,
+                                       reporter: ScanSessionReporter,
+                                       store: CoreScanResultStore,
+                                       dependencies: CoreScanDependencies,
+                                       indexCoordinator: ScanIndexCoordinator?,
+                                       continuations: CoreScanContinuationStore) async
+      -> ScanSessionCompletion {
+        var completed = completedAccumulator
+        let protected = Array(Set(environment.protectedRoots + authorization.excludedRoots))
+        let visitHook = dependencies.metadataVisit.map(CoreMetadataVisitHook.init(visit:))
+        for index in rootIndex..<authorization.roots.count {
+            let root = authorization.roots[index]
+            if await reporter.isCancelled() {
+                await continuations.clear()
+                return await cancelledCompletion(completed, store: store)
+            }
+            let traversal: BoundedTraversal
+            let result: TraversalResult
+            let indexContext: IndexRootContext?
+            if current == nil || index != rootIndex {
+                indexContext = await indexRootContext(root: root,
+                    coordinator: indexCoordinator, context: context)
+            } else {
+                indexContext = nil
+            }
+            if let indexContext, let indexCoordinator,
+               case .cached(let record) = await indexCoordinator.status(
+                    for: indexContext.key, root: root), record.isComplete {
+                completed.absorbCached(record, root: root)
+                completed.topLevelHomeRanking = Array(completed.topLevelHomeRanking
+                    .sorted(by: rankedBefore).prefix(8))
+                guard await publishProgress(accumulator: &completed, context: context,
+                                            reporter: reporter, store: store) else {
+                    await continuations.clear()
+                    return await cancelledCompletion(completed, store: store)
+                }
+                continue
+            }
+            if index == rootIndex, let current {
+                traversal = current.0
+                result = await traversal.continue(from: current.1,
+                    session: context.session, sessionID: context.sessionID,
+                    generation: context.generation)
+            } else if let visitHook {
+                traversal = BoundedTraversal(sessions: context.sessions,
+                    limits: context.traversalLimits, testHook: visitHook)
+                result = await traversal.start(root: root, session: context.session,
+                    sessionID: context.sessionID, generation: context.generation,
+                    options: TraversalOptions(protectedRoots: protected,
+                        minimumFileBytes: largeFileThreshold, collectChildTotals: false,
+                        recordSelection: .all))
+            } else {
+                traversal = BoundedTraversal(sessions: context.sessions,
+                    limits: context.traversalLimits)
+                result = await traversal.start(root: root, session: context.session,
+                    sessionID: context.sessionID, generation: context.generation,
+                    options: TraversalOptions(protectedRoots: protected,
+                        minimumFileBytes: largeFileThreshold, collectChildTotals: false,
+                        recordSelection: .all))
+            }
+            var displayed = completed
+            displayed.absorb(result, optionalMissing: true)
+            if result.totalBytes > 0 {
+                displayed.topLevelHomeRanking.append(
+                    RankedItem(path: root, bytes: result.totalBytes))
+            }
+            displayed.filesOver1GB.append(contentsOf: result.topItems)
+            displayed.topLevelHomeRanking = Array(displayed.topLevelHomeRanking
+                .sorted(by: rankedBefore).prefix(8))
+            displayed.filesOver1GB = Array(displayed.filesOver1GB
+                .sorted(by: rankedBefore).prefix(8))
+            if let cursor = result.cursor {
+                await continuations.put(PendingCoreScanContinuation(
+                    environment: environment, authorization: authorization,
+                    context: context, rootIndex: index, traversal: traversal,
+                    cursor: cursor, completedAccumulator: completed,
+                    dependencies: dependencies, indexCoordinator: indexCoordinator))
+                return await continuablePartialCompletion(displayed, store: store)
+            }
+            if let indexContext {
+                displayed.indexStatus = await commitRootResult(result, root: root,
+                    indexContext: indexContext, coordinator: indexCoordinator)
+            }
+            completed = displayed
+            guard await publishProgress(accumulator: &completed, context: context,
+                                        reporter: reporter, store: store) else {
+                await continuations.clear()
+                return await cancelledCompletion(completed, store: store)
+            }
+        }
+        do { _ = try await context.checkCurrent() }
+        catch { completed.reasons.insert(.policyRevisionMismatch) }
+        await continuations.clear()
+        let coverage = TraversalCoverage(isComplete: completed.reasons.isEmpty,
+            reasons: completed.reasons)
+        await store.update(CoreScanResult(report: completed.report(), coverage: coverage,
+            continuationAvailable: false, indexStatus: completed.indexStatus))
+        return ScanSessionCompletion(terminal: coverage.isComplete ? .complete : .partial,
+            coverage: coverage, snapshot: completed.sessionSnapshot())
+    }
+
     private struct IndexRootContext: Sendable {
         let key: ScanIndexKey
         let volumeUUID: String
@@ -770,6 +1048,18 @@ internal extension ScanEngine {
             continuationAvailable: false))
         return ScanSessionCompletion(terminal: .partial,
             coverage: coverage,
+            snapshot: accumulator.sessionSnapshot())
+    }
+
+    private static func continuablePartialCompletion(_ accumulator: CoreScanAccumulator,
+                                                      store: CoreScanResultStore) async
+      -> ScanSessionCompletion {
+        var reasons = accumulator.reasons
+        reasons.insert(.sliceExpired)
+        let coverage = TraversalCoverage(isComplete: false, reasons: reasons)
+        await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
+            continuationAvailable: true, indexStatus: accumulator.indexStatus))
+        return ScanSessionCompletion(terminal: .partial, coverage: coverage,
             snapshot: accumulator.sessionSnapshot())
     }
 

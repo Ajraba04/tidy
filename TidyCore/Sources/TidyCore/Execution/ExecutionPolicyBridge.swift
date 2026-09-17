@@ -63,6 +63,13 @@ public struct BridgeExplicitSessions: Sendable {
     /// .availability` — a revision-zero/fresh-install envelope deliberately leaves availability
     /// `.unavailable` until a real settings save completes, so this never fabricates readiness.
     public func awaitInitialInstall() async { await bridge.drain() }
+
+    public func updateLiveObservation(epoch: UInt64, monotonicNanoseconds: UInt64,
+                                      observation: SchedulerLiveObservation) async
+      -> SchedulerLiveObservationResult {
+        await bridge.updateLiveObservation(epoch: epoch,
+            monotonicNanoseconds: monotonicNanoseconds, observation: observation)
+    }
 }
 
 @Observable @MainActor
@@ -106,6 +113,8 @@ public final class ExecutionPolicyBridge {
     private var pendingSchedulerInvalidations: Set<SettingsIntentID> = []
     private var pendingSchedulerTickets: [SettingsIntentID: SchedulerAdmissionTicket] = [:]
     private var pendingSchedulerHolds: [SettingsIntentID: SchedulerAdmissionHold] = [:]
+    private var liveObservationEpoch: UInt64 = 0
+    private var criticalResumeNotBefore: UInt64?
 
     private enum SchedulerPreparation {
         case invalidating(PreparedSchedulerPolicy)
@@ -982,6 +991,61 @@ public final class ExecutionPolicyBridge {
 
     fileprivate func explicitSessionSnapshot() async -> WorkSchedulerSnapshot {
         await scheduler.snapshot()
+    }
+
+    fileprivate func updateLiveObservation(epoch: UInt64, monotonicNanoseconds: UInt64,
+                                           observation: SchedulerLiveObservation) async
+      -> SchedulerLiveObservationResult {
+        guard epoch > liveObservationEpoch else {
+            return .rejectedStale(current: liveObservationEpoch)
+        }
+        guard let envelope = acknowledgedEnvelope, schedulerAdmissionPendingCount == 0 else {
+            return .unavailable
+        }
+        let raw: SchedulerObservation
+        switch observation {
+        case .unknown: raw = .unknown
+        case .nominal: raw = .nominal
+        case .constrained: raw = .constrained
+        case .critical: raw = .critical
+        }
+        let effective: SchedulerObservation
+        if raw == .critical {
+            let policy = await schedulerController.resolvedPolicy(
+                using: schedulerCapability)
+            let seconds: UInt64
+            if case .stored(.integer(let configured))? = policy?.fields[
+                SettingID(rawValue: "scan.resumeAfterCriticalSeconds")]?.value,
+               configured >= 0, let exact = UInt64(exactly: configured) {
+                seconds = exact
+            } else {
+                seconds = 120
+            }
+            let (delay, delayOverflow) = seconds.multipliedReportingOverflow(by: 1_000_000_000)
+            let (deadline, deadlineOverflow) = monotonicNanoseconds.addingReportingOverflow(delay)
+            guard !delayOverflow, !deadlineOverflow else { return .unavailable }
+            criticalResumeNotBefore = deadline
+            effective = .critical
+        } else if let deadline = criticalResumeNotBefore,
+                  monotonicNanoseconds < deadline {
+            effective = .critical
+        } else {
+            criticalResumeNotBefore = nil
+            effective = raw
+        }
+        let result = await schedulerController.updateObservation(epoch: epoch,
+            observation: effective, acknowledgedEnvelope: envelope,
+            using: schedulerCapability)
+        switch result {
+        case .applied:
+            liveObservationEpoch = epoch
+            return .applied
+        case .rejectedStale(let current):
+            liveObservationEpoch = max(liveObservationEpoch, current)
+            return .rejectedStale(current: current)
+        case .failedClosed:
+            return .unavailable
+        }
     }
 
     public func drain() async {

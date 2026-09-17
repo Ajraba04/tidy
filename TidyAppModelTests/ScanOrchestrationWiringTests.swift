@@ -20,6 +20,7 @@ private struct ScanWiringScratch {
     var configURL: URL { root.appendingPathComponent("config.json") }
     var journal: URL { root.appendingPathComponent("journal", isDirectory: true) }
     var documents: URL { home.appendingPathComponent("Documents", isDirectory: true) }
+    var cache: URL { home.appendingPathComponent("Library/Caches/typescript", isDirectory: true) }
 
     init() throws {
         root = try canonicalScratchBase()
@@ -28,7 +29,9 @@ private struct ScanWiringScratch {
             attributes: [.posixPermissions: 0o700])
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
         try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         try Data(repeating: 9, count: 32_768).write(to: documents.appendingPathComponent("fixture.bin"))
+        try Data(repeating: 8, count: 16_384).write(to: cache.appendingPathComponent("cache.bin"))
     }
 
     /// Installs a real, acknowledged (revision > 0) settings envelope before bootstrapping —
@@ -37,12 +40,15 @@ private struct ScanWiringScratch {
     /// deliberately leaves the T08.1b scheduler façade unavailable (see `ExecutionPolicyBridge`),
     /// so any fixture that wants a real, working scan must install policy first, exactly as a
     /// real user does the first time they save Settings.
-    @MainActor func services() async throws -> AppExecutionServices {
+    @MainActor func services(defaultScope: String = "quick") async throws -> AppExecutionServices {
         let settings = SettingsStore(url: configURL)
         _ = await settings.load()
         let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
+        let scope = SettingID(rawValue: "scan.defaultScope")
         _ = try await settings.update(expectedRevision: 0,
-            change: .preferences(.init(global: .init(fields: [rate: .integer(4)]))))
+            change: .preferences(.init(global: .init(fields: [
+                rate: .integer(4), scope: .choice(defaultScope)
+            ]))))
         let services = await AppExecutionServices.bootstrap(
             paths: AppStoragePaths(home: home, settings: configURL, journal: journal),
             settings: settings, observe: { _ in })
@@ -78,7 +84,7 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         guard case .complete(let report) = model.phase else {
             XCTFail("Expected a completed scan, got \(model.phase)"); return
         }
-        XCTAssertTrue(report.topLevelHomeRanking.contains { $0.path == scratch.documents.path },
+        XCTAssertTrue(report.topLevelHomeRanking.contains { $0.path == scratch.cache.path },
             "The legacy no-op path cannot ever produce a non-empty ranking.")
     }
 
@@ -285,5 +291,19 @@ final class ScanOrchestrationWiringTests: XCTestCase {
             XCTFail("Expected completion"); return
         }
         XCTAssertFalse(report.topLevelHomeRanking.isEmpty)
+    }
+
+    func testSelectedProjectsWithoutRootsDoesNotTraverseDocuments() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let services = try await scratch.services(defaultScope: "selectedProjects")
+        let model = ScanViewModel(services: services)
+        await model.runScan()
+        try await waitUntil { if case .complete = model.phase { return true }; return false }
+        guard case .complete(let report) = model.phase else {
+            XCTFail("Expected empty selected-project scan to complete"); return
+        }
+        XCTAssertFalse(report.topLevelHomeRanking.contains {
+            $0.path == scratch.documents.path || $0.path == scratch.cache.path
+        })
     }
 }

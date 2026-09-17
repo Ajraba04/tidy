@@ -8,6 +8,7 @@ final class ScanViewModel {
     enum Phase {
         case idle
         case running
+        case runningPartial(CoreScanResult)
         case partial(CoreScanResult)
         case paused
         case cancelled
@@ -17,6 +18,7 @@ final class ScanViewModel {
 
     private(set) var phase: Phase = .idle
     private let services: AppExecutionServices
+    private let ownerID = UUID()
 
     /// Only a session/subscription ID and the cumulative bounded presentation the subscription
     /// delivers are stored here — never the registry or façade themselves.
@@ -38,12 +40,26 @@ final class ScanViewModel {
     }
 
     func runScan() async {
+        await start(request: .policyDefault)
+    }
+
+    func runFullHomeScan() async {
+        do {
+            let consent = try services.issueFullHomeScanConsent(ownerID: ownerID)
+            await start(request: .fullHome(consent))
+        } catch {
+            phase = .failed(String(describing: error))
+        }
+    }
+
+    private func start(request: AppScanRequest) async {
         detachSubscription()
         phase = .running
         let environment = services.configStore.config.makePolicyEnvironment(
             homeDirectory: services.paths.home.path, detectedTools: [])
         do {
-            let handle = try await services.beginScan(environment: environment)
+            let handle = try await services.beginScan(environment: environment,
+                request: request, ownerID: ownerID)
             attach(sessionID: handle.sessionID)
         } catch CoreOrchestrationError.policyPaused {
             phase = .paused
@@ -57,8 +73,19 @@ final class ScanViewModel {
     /// Targets the active session by ID only — this never touches the T04 process gate or a
     /// mutator, and it remains available through the global/menu owner after this window closes.
     func cancelScan() async {
-        guard let sessionID else { return }
-        try? await services.scanRegistry.cancel(sessionID: sessionID)
+        guard sessionID != nil else { return }
+        await services.cancelActiveScan()
+    }
+
+    func continueScan() async {
+        detachSubscription()
+        phase = .running
+        do {
+            let handle = try await services.continueActiveScan()
+            attach(sessionID: handle.sessionID)
+        } catch {
+            phase = .failed(String(describing: error))
+        }
     }
 
     /// Detaches only this window's subscription. The session — and any other subscriber — is
@@ -94,7 +121,7 @@ final class ScanViewModel {
         switch event.kind {
         case .progress:
             if let result = await services.latestScanResult(sessionID: sessionID) {
-                phase = .partial(result)
+                phase = .runningPartial(result)
             }
         case .terminal(let terminal):
             switch terminal {
