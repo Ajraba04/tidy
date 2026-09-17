@@ -1,20 +1,11 @@
 import Darwin
 import Foundation
 
-/// The sole accepted production effect adapter. Bound at compile time to
-/// exactly one catalog item (`safe.xcode.derived-data`) and one action
-/// (`.deleteContents`); it refuses to touch anything else even if a caller
-/// mistakenly hands it a different item's target. `ExecutionCoordinator` is
-/// the only production caller: this type never registers itself anywhere,
-/// and `CleanEngine.execute` remains unconditional denial.
-///
-/// Deletes the reviewed contents of the target directory (children of the
-/// anchored root), never the root itself, matching `.deleteContents`
-/// semantics used elsewhere in the catalog. All mutation goes through
-/// `DirectoryAnchor`/`ReviewedTree`/`AnchoredFileOperations`
-/// (`GuardedFileDeleter.swift`): no-follow anchored descriptors, an
-/// identity-checked manifest captured immediately before mutation, and a
-/// checked identity re-verification on every single removal.
+/// Quarantined DerivedData effect boundary. Production has no supported Xcode
+/// producer-exclusion provider, so the coordinator-facing entry point always
+/// denies. The internal reviewed entry point is the exact R02/R03 contract and
+/// is exercised only with disposable fixture leases until a real producer
+/// primitive is documented and separately accepted.
 enum DerivedDataEffectAdapter {
     static let acceptedItemID = "safe.xcode.derived-data"
     static let acceptedRelativeSuffix = "Library/Developer/Xcode/DerivedData"
@@ -23,6 +14,7 @@ enum DerivedDataEffectAdapter {
         case wrongItem
         case wrongTarget
         case notAFilesystemTarget
+        case productionProofUnavailable
     }
 
     struct Effect {
@@ -36,44 +28,77 @@ enum DerivedDataEffectAdapter {
         let freeSpaceAfterBytes: Int64?
     }
 
-    /// Runs the guarded deletion for one already-reviewed, already
-    /// capability-checked target. Never called with a target this adapter
-    /// did not itself validate: the two identity checks below are a second,
-    /// independent gate behind `CapabilityRegistry`, not a substitute for it.
+    /// Existing production call shape is retained as an explicit denial so a
+    /// stale coordinator binary cannot fall back to fresh-tree authorization.
     static func execute(itemID: String, action: CleanAction, target: TargetPath) throws -> Effect {
         guard itemID == acceptedItemID else { throw AdapterError.wrongItem }
         guard case .deleteContents = action else { throw AdapterError.wrongItem }
         guard target.isFilesystemPath else { throw AdapterError.notAFilesystemTarget }
         guard target.path.hasSuffix(acceptedRelativeSuffix) else { throw AdapterError.wrongTarget }
+        throw AdapterError.productionProofUnavailable
+    }
 
-        let anchor = try DirectoryAnchor.open(path: target.path)
-        let tree = try ReviewedTree.capture(anchor: anchor, excluding: [])
+    /// Consumes only a review-time tree. This function never walks a fresh
+    /// execution-time tree and never expands the reviewed manifest.
+    static func executeReviewed(seal: ReviewedFileResource,
+                                association: ResourceAssociationEvidence,
+                                currentProtectedRoots: [String],
+                                leaseProvider: any ProducerExclusionLeaseProviding) throws -> Effect {
+        guard seal.identity.canonicalPath.hasSuffix(acceptedRelativeSuffix) else {
+            throw AdapterError.wrongTarget
+        }
+        let resource = ResourceIdentity.filesystem(seal.identity)
+        try ResourceAuthorityValidator.validateAssociation(association,
+            resource: resource, adapterID: AppleDerivedDataInventory.adapterID,
+            adapterVersion: AppleDerivedDataInventory.contractVersion, now: Date())
+        let anchor = try ResourcePreflight.openValidated(
+            seal, currentProtectedRoots: currentProtectedRoots)
 
         var outcomes: [TargetEffectOutcome] = []
-        let before = Self.freeBytes(atDirectory: target.path)
+        let before = Self.freeBytes(atDirectory: seal.identity.canonicalPath)
         var volumeUnreadable = false
+
+        // Acquisition is deliberately the final preparatory step. The lease
+        // is strongly retained across every unlink and validates positive,
+        // complete producer evidence no older than five seconds.
+        let lease = try leaseProvider.acquireLease(for: resource)
+        let effectInstant = ContinuousClock.now
+        let effectNow = Date()
+        try ResourceAuthorityValidator.validateAssociation(association,
+            resource: resource, adapterID: AppleDerivedDataInventory.adapterID,
+            adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow)
+        try ResourceAuthorityValidator.validateRuntime(lease.proof,
+            association: association, resource: resource,
+            adapterID: AppleDerivedDataInventory.adapterID,
+            adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow,
+            monotonicAcquiredAt: lease.acquiredAt,
+            monotonicDeadline: lease.deadline,
+            monotonicNow: effectInstant)
 
         // Batches preserve the manifest's global preorder (parents before
         // children) across their boundaries, so replaying batches in
         // reverse order and each batch's entries in reverse order removes
         // every child before the parent that contains it without having to
         // re-walk the tree.
-        for batch in tree.batches.reversed() {
-            if !volumeUnreadable, Self.freeBytes(atDirectory: target.path) == nil {
-                volumeUnreadable = true
+        let effect = withExtendedLifetime(lease) { () -> Effect in
+            for batch in seal.tree.batches.reversed() {
+                if !volumeUnreadable, Self.freeBytes(atDirectory: seal.identity.canonicalPath) == nil {
+                    volumeUnreadable = true
+                }
+                guard !volumeUnreadable else {
+                    outcomes.append(contentsOf: batch.entries.map(Self.withheldOutcome))
+                    continue
+                }
+                for entry in batch.entries.reversed() {
+                    outcomes.append(AnchoredFileOperations.unlinkReviewedLeaf(
+                        anchor: anchor, reviewed: entry,
+                        excludedRelativePaths: Set(seal.tree.excludedRelativePaths)))
+                }
             }
-            guard !volumeUnreadable else {
-                outcomes.append(contentsOf: batch.entries.map(Self.withheldOutcome))
-                continue
-            }
-            for entry in batch.entries.reversed() {
-                outcomes.append(AnchoredFileOperations.unlinkReviewedLeaf(
-                    anchor: anchor, reviewed: entry, excludedRelativePaths: []))
-            }
+            let after = Self.freeBytes(atDirectory: seal.identity.canonicalPath)
+            return Effect(outcomes: outcomes, freeSpaceBeforeBytes: before, freeSpaceAfterBytes: after)
         }
-
-        let after = Self.freeBytes(atDirectory: target.path)
-        return Effect(outcomes: outcomes, freeSpaceBeforeBytes: before, freeSpaceAfterBytes: after)
+        return effect
     }
 
     private static func withheldOutcome(_ entry: ReviewedLeaf) -> TargetEffectOutcome {

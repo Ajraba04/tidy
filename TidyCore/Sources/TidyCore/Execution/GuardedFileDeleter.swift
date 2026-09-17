@@ -9,7 +9,7 @@ enum GuardedFileError: Error, Equatable {
     case systemCall(Int32)
 }
 
-struct NodeSnapshot: Equatable, Sendable {
+struct NodeSnapshot: Codable, Equatable, Sendable {
     let device: UInt64
     let inode: UInt64
     let generation: UInt64?
@@ -51,11 +51,11 @@ private extension NodeSnapshot {
 /// Read-only descriptor ownership, never coordinator or catalog authority.
 /// Keeping these descriptors does NOT prevent external namespace replacement.
 final class DirectoryAnchor {
-    fileprivate let path: String
+    let path: String
     private let components: [String]
     private let descriptors: [Int32]
-    fileprivate let originalChain: [NodeSnapshot]
-    fileprivate let volumeID: UUID
+    let originalChain: [NodeSnapshot]
+    let volumeID: UUID
     private let mountID: [Int32]
     private let mountPath: String
     fileprivate var rootFD: Int32 { descriptors.last! }
@@ -163,7 +163,7 @@ final class DirectoryAnchor {
         return try body(parent, names.last!, chain)
     }
 
-    fileprivate static func relativeComponents(_ path: String) throws -> [String] {
+    static func relativeComponents(_ path: String) throws -> [String] {
         let names = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard !path.utf8.contains(0), names.allSatisfy({
             !$0.isEmpty && $0 != "." && $0 != ".." && $0.utf8.count <= Int(NAME_MAX)
@@ -205,17 +205,17 @@ final class DirectoryAnchor {
     }
 }
 
-struct ReviewedLeaf: Equatable, Sendable {
+struct ReviewedLeaf: Codable, Equatable, Sendable {
     let relativePath: String
     let parentChain: [NodeSnapshot]
     let snapshot: NodeSnapshot
 }
-struct ReviewedBatch: Sendable {
+struct ReviewedBatch: Codable, Sendable {
     let id: UUID
     let entries: [ReviewedLeaf]
     let encodedBytes: Int
 }
-struct ReviewedManifestHeader: Equatable, Sendable {
+struct ReviewedManifestHeader: Codable, Equatable, Sendable {
     let schemaVersion: UInt32
     let rootVolumeID: UUID
     let canonicalRootPath: String
@@ -252,15 +252,31 @@ struct ReviewedTree: Sendable {
         var entries: [ReviewedLeaf] = []
         var batchID = UUID()
         var batchBytes = 24 // UUID bytes plus UInt64 entry count.
+        var totalNodes = 0
+        var totalBatchBytes = 0
         func append(_ entry: ReviewedLeaf) throws {
             let size = try ManifestEncoding.leaf(entry).count
             guard size <= maxBytesPerBatch - 24 else { throw GuardedFileError.manifestLimit }
             if entries.count == maxNodesPerBatch || size > maxBytesPerBatch - batchBytes {
+                guard batches.count < ReviewedManifestArchive.maximumBatchCount else {
+                    throw GuardedFileError.manifestLimit
+                }
                 batches.append(ReviewedBatch(id: batchID, entries: entries, encodedBytes: batchBytes))
                 entries = []; batchID = UUID(); batchBytes = 24
             }
+            let overhead = entries.isEmpty ? 24 : 0
+            let (withOverhead, overheadOverflow) = totalBatchBytes.addingReportingOverflow(overhead)
+            let (nextBytes, byteOverflow) = withOverhead.addingReportingOverflow(size)
+            let (nextNodes, nodeOverflow) = totalNodes.addingReportingOverflow(1)
+            guard !overheadOverflow, !byteOverflow, !nodeOverflow,
+                  nextBytes <= ReviewedManifestArchive.maximumCanonicalBytes,
+                  nextNodes <= ReviewedManifestArchive.maximumNodeCount else {
+                throw GuardedFileError.manifestLimit
+            }
             entries.append(entry)
             batchBytes += size
+            totalBatchBytes = nextBytes
+            totalNodes = nextNodes
         }
         func walk(_ fd: Int32, prefix: String, parents: [NodeSnapshot]) throws {
             let before = try DirectoryAnchor.readSnapshot(fd)
@@ -306,7 +322,12 @@ struct ReviewedTree: Sendable {
             guard try DirectoryAnchor.readSnapshot(fd) == before else { throw GuardedFileError.identityChanged }
         }
         try walk(anchor.rootFD, prefix: "", parents: header.rootParentChain + [root])
-        if !entries.isEmpty { batches.append(ReviewedBatch(id: batchID, entries: entries, encodedBytes: batchBytes)) }
+        if !entries.isEmpty {
+            guard batches.count < ReviewedManifestArchive.maximumBatchCount else {
+                throw GuardedFileError.manifestLimit
+            }
+            batches.append(ReviewedBatch(id: batchID, entries: entries, encodedBytes: batchBytes))
+        }
         try anchor.validateNamespace()
         guard try DirectoryAnchor.readSnapshot(anchor.rootFD) == root else { throw GuardedFileError.identityChanged }
         // Reject a mixed snapshot if an earlier leaf changed while later names
