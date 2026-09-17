@@ -91,6 +91,31 @@ struct ScanScopeTests {
         await #expect(throws: ScanScopeAuthorizationError.expiredConsent) {
             _ = try await rig.run(authorization: expired, visits: ScanMetadataVisitRecorder())
         }
+
+        let consent = try rig.scopeAuthority.issueFullHomeConsent(ownerID: rig.ownerID)
+        let expiringFullHome = try rig.scopeAuthority.authorizeFullHome(
+            consent: consent, ownerID: rig.ownerID)
+        clock.advance(nanoseconds: 11)
+        await #expect(throws: ScanScopeAuthorizationError.expiredConsent) {
+            _ = try await rig.run(authorization: expiringFullHome,
+                visits: ScanMetadataVisitRecorder())
+        }
+    }
+
+    @Test("root replacement after authorization is rejected before traversal")
+    @MainActor
+    func rootReplacementInvalidatesGrant() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let authorization = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        try FileManager.default.removeItem(at: cache)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        await #expect(throws: ScanScopeAuthorizationError.invalidRoot) {
+            _ = try await rig.run(authorization: authorization,
+                visits: ScanMetadataVisitRecorder())
+        }
     }
 
     @Test("full-home traversal unions mandatory protected descendants")

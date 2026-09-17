@@ -65,6 +65,7 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
         let homeDirectory: String
         let policyRevision: UInt64
         let expiresAt: UInt64
+        let rootIdentities: [String: ScanRootIdentity]
         var consumed: Bool
     }
     private let lock = NSLock()
@@ -76,11 +77,12 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
     }
 
     func register(id: UUID, authorityID: UUID, ownerID: UUID, homeDirectory: String,
-                  policyRevision: UInt64, expiresAt: UInt64) {
+                  policyRevision: UInt64, expiresAt: UInt64,
+                  rootIdentities: [String: ScanRootIdentity]) {
         lock.lock(); defer { lock.unlock() }
         grants[id] = Grant(authorityID: authorityID, ownerID: ownerID,
             homeDirectory: homeDirectory, policyRevision: policyRevision,
-            expiresAt: expiresAt, consumed: false)
+            expiresAt: expiresAt, rootIdentities: rootIdentities, consumed: false)
     }
 
     func consume(id: UUID, authorityID: UUID, ownerID: UUID, homeDirectory: String,
@@ -98,6 +100,12 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
         guard nowNanoseconds() < grant.expiresAt else {
             grants.removeValue(forKey: id)
             throw ScanScopeAuthorizationError.expiredConsent
+        }
+        guard grant.rootIdentities.allSatisfy({ path, identity in
+            ScanRootIdentity.resolve(path: path) == identity
+        }) else {
+            grants.removeValue(forKey: id)
+            throw ScanScopeAuthorizationError.invalidRoot
         }
         grant.consumed = true
         grants[id] = grant
@@ -202,7 +210,7 @@ public final class ScanScopeAuthority {
         issued.consumed = true
         consents[consent.id] = issued
         return try authorization(mode: .fullHome, roots: [homeDirectory],
-            ownerID: ownerID, snapshot: snapshot)
+            ownerID: ownerID, expiresAt: issued.expiresAt, snapshot: snapshot)
     }
 
     private struct PolicySnapshot {
@@ -274,11 +282,15 @@ public final class ScanScopeAuthority {
     }
 
     private func selectedProjectRoots(_ rawRoots: [String]) throws -> [String] {
+        let fileManager = FileManager.default
         var roots: [String] = []
         for raw in rawRoots {
             let canonical = PathGuard.canonicalize(raw)
+            var isDirectory: ObjCBool = false
             guard canonical != homeDirectory,
-                  PathGuard.isEqualOrDescendant(canonical, of: homeDirectory) else {
+                  PathGuard.isEqualOrDescendant(canonical, of: homeDirectory),
+                  fileManager.fileExists(atPath: canonical, isDirectory: &isDirectory),
+                  isDirectory.boolValue else {
                 throw ScanScopeAuthorizationError.invalidRoot
             }
             roots.append(canonical)
@@ -287,18 +299,33 @@ public final class ScanScopeAuthority {
     }
 
     private func authorization(mode: ScanScopeMode, roots: [String], ownerID: UUID,
+                               expiresAt explicitExpiry: UInt64? = nil,
                                snapshot: PolicySnapshot) throws -> AuthorizedScanScope {
         let exclusions = snapshot.policy.exclusions.map(PathGuard.canonicalize).sorted()
         let narrowed = roots.filter { root in
             !exclusions.contains { PathGuard.isEqualOrDescendant(root, of: $0) }
         }
         let now = nowNanoseconds()
-        let (expiry, overflow) = now.addingReportingOverflow(consentLifetimeNanoseconds)
-        guard !overflow else { throw ScanScopeAuthorizationError.invalidPolicy }
+        let expiry: UInt64
+        if let explicitExpiry {
+            expiry = explicitExpiry
+        } else {
+            let (computed, overflow) = now.addingReportingOverflow(consentLifetimeNanoseconds)
+            guard !overflow else { throw ScanScopeAuthorizationError.invalidPolicy }
+            expiry = computed
+        }
+        guard now < expiry else { throw ScanScopeAuthorizationError.expiredConsent }
+        var rootIdentities: [String: ScanRootIdentity] = [:]
+        for root in narrowed {
+            guard let identity = ScanRootIdentity.resolve(path: root) else {
+                throw ScanScopeAuthorizationError.invalidRoot
+            }
+            rootIdentities[root] = identity
+        }
         let grantID = UUID()
         grantLedger.register(id: grantID, authorityID: id, ownerID: ownerID,
             homeDirectory: homeDirectory, policyRevision: snapshot.envelope.revision,
-            expiresAt: expiry)
+            expiresAt: expiry, rootIdentities: rootIdentities)
         return AuthorizedScanScope(mode: mode, roots: narrowed, excludedRoots: exclusions,
             policyRevision: snapshot.envelope.revision, authorityID: id,
             grantID: grantID, ownerID: ownerID, homeDirectory: homeDirectory,
