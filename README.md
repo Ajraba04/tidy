@@ -1,187 +1,70 @@
 # Tidy
 
-A native macOS menu bar app for reclaiming disk space: regeneratable
-developer tool caches, browser caches, Xcode and simulator data, git object
-cleanup, and more. It's organized into Scan, Safe, Normal, Deep, and Custom
-modes, with a plan you review before anything is deleted.
+Tidy is a native macOS menu bar developer headroom utility for inspecting disk and workload pressure and reviewing narrowly scoped cleanup actions. It targets macOS 14 or later, Apple Silicon and Intel, with English UI.
 
-It also has a small, deliberately conservative set of memory and swap
-actions. See [Memory and swap](#memory-and-swap) for what they can and
-cannot do, which is mostly a story about what macOS does not allow.
+**Development status: remediation in progress; not release-ready.** All catalog mutations, including Xcode DerivedData, are currently quarantined in the compiled capability registry. Safe, Normal, Deep and Custom reviews show unavailable actions with reasons. Tool discovery, a saved preset, a settings import or a confirmation cannot enable them. The approved cleanup program remains incomplete; these restrictions do not replace its promised implementation or acceptance gates.
 
-Requires macOS 14 (Sonoma) or later.
+The [acceptance record](docs/verification/headroom-acceptance.md) separates implemented changes, test evidence, missing production contracts and runtime/hardware gates. There is no newly approved release from this remediation.
 
-## Why
+## Scope and modes
 
-Developer machines fill up with caches, derived data, simulator artifacts,
-and dependency downloads that are all individually safe to delete and
-collectively enormous. Tidy finds them, shows you what it found and how
-much space it would free, and only deletes after you say so.
+| Surface | Intended scope | Current boundary |
+| --- | --- | --- |
+| Scan | Explicit read-only catalog/project scans; full-home scans only with separate one-run consent | Scope, lifetime, pressure and incremental-index remediation is in progress. A partial result is not a complete inventory. |
+| Headroom | Disk availability, memory pressure, swap activity, thermal and power signals | Measurements can be unavailable; missing values must not be reported as zero. Target readiness requires measured selected-volume identity/capacity. |
+| Safe | Regeneratable developer caches, logs, DerivedData and simulator caches | Inventory/review only; mutation unavailable pending each adapter's acceptance. |
+| Normal | Additional browser/cache, Trash, project-output, dependency, transcript and Git workflows | Promised adapter work remains incomplete and mutations are denied. |
+| Deep | Explicitly reviewed actions with redownload or local-history consequences | Mutations denied, including simulator deletion, snapshots and Git housekeeping. |
+| Custom | Individual catalog selection and named presets | Presets preserve preferences; they never confer effect authority. |
+| Build Prep / Pressure Rescue / optional assistance | Project-aware ranking, target-limited preparation, manual graceful relief and separately authorized assistance | Full production workflows remain incomplete. Initial unattended mutation allowlist is empty. |
 
-## Modes
-
-- **Scan** is read-only. It ranks the largest items in your home directory
-  and `~/Library`, lists files over 1 GB, APFS local snapshots, idle
-  simulator runtimes, stale `node_modules`, LaunchAgents, and top memory
-  consumers. Nothing is deleted.
-- **Safe** covers regeneratable caches only: developer tool and
-  package-manager caches, logs, Xcode DerivedData and simulator caches.
-  Everything here rebuilds itself the next time you use the relevant tool.
-- **Normal** builds on Safe, adding browser caches, Chrome cookies (keeping
-  domains you choose), Trash, build output directories, stale
-  `node_modules`, old Claude Code session transcripts (your `memory/`
-  files are never touched), and conservative git housekeeping.
-- **Deep** builds on Normal, adding everything that costs a real
-  re-download or loses local history: full dependency caches, Android SDK
-  components, Xcode Archives, APFS local snapshot deletion, aggressive git
-  reflog expiry, and simulator deletion. Simulator deletion is opt-in and
-  per device: nothing is ever deleted by default.
-- **Custom** exposes every catalog item, individually checkable, with
-  savable named presets.
-
-Scan also reports two things it will never act on: space only a restart
-can return, and large directories no catalog item covers.
-
-Every mode works the same way: build a plan (locate + measure, zero
-writes) → review it → confirm → execute. There's no code path from a plan
-to a deletion that skips your confirmation.
+Neither a cache label nor its age proves it safe to delete. Future accepted mutations must bind reviewed resource identities and descendants, protections, complete owner evidence, supported quiescence, fresh policy and durable recovery. Unknown or shared ownership withholds effects. Models, databases, Docker volumes, repository deletion and generic duplicate deletion remain outside permitted destructive scope.
 
 ## Memory and swap
 
-Most "memory cleaners" on macOS are selling something that isn't real. Here
-is exactly what Tidy can do, and what it can't:
+macOS manages swap and physical memory. Tidy does not manipulate swap files, tune the kernel or promise a fixed amount of reclaimed memory. A measured swap page-out rate indicates activity; it is not a promise of disk space returned by quitting or restarting. A restart changes system state but its savings cannot be guaranteed in advance.
 
-- **Swap cannot be reclaimed while the Mac is booted.** macOS grows
-  swapfiles on demand and, on every version Tidy has observed, does not
-  return them until boot. Tidy has found no API, supported command, or
-  privilege level that changes this. So the only honest "free swap" action
-  is a restart, and that is literally what the restart item does. It ships
-  disabled and has to be enabled in Settings before it will even appear.
-  Headroom's swap card also reports a live page-out rate as a pressure
-  indicator -- it tells you paging is active right now, not how many bytes
-  a restart will hand back, and a falling rate is never shown as proof
-  swap has been (or can be) cleared without restarting.
-- **Purging inactive memory is real, and usually not a win.** `purge(8)`
-  evicts the file-backed page cache, moving pages from inactive to free.
-  Those pages were caching data the machine was about to want again, so the
-  number in Activity Monitor improves while real performance briefly gets
-  worse. Offered, never on by default, and labelled with that trade-off.
-- **Quitting an application is the one unambiguous win.** Its resident
-  memory returns the moment it exits. Tidy asks apps to quit the way the
-  Quit menu item does; an app with unsaved work can prompt or refuse, and
-  nothing is ever force-killed. Only applications you name in Settings are
-  eligible.
+Graceful application quit, purge and restart catalog entries are currently unavailable. A future supported graceful quit must identify the actual app instance and respect refusal or unsaved work; force-quit is forbidden. Disk bytes, RAM and swap activity are reported separately and must never be added into one savings total.
 
-Memory figures are measured before and after, and are reported separately
-from disk. They are never added into the "freed" total, because disk space
-and RAM are different resources and one combined number would be wrong
-about both.
+## Privacy and protections
 
-Scan's **"Only a restart can reclaim this"** panel reports what macOS is
-holding in swap and VM files, broken out per component. It has no button:
-those bytes belong to the kernel, and Tidy will not pretend otherwise.
+The runtime design prohibits internet requests, telemetry, remote updates, tool-triggered downloads and remote service contexts. TidyCore has no third-party runtime packages. Controlled app-and-child traffic acceptance is still open; source inspection or one Activity Monitor snapshot does not establish a universal zero-network result.
 
-## Coverage gaps
+Cookie keep-domains, project roots and device approval lists start empty. Settings and imported profiles do not grant cleanup authority. Protected cloud roots remain excluded. Safari cookie mutation is forbidden; Chrome cookie mutation is quarantined, and validated backup/WAL/restore acceptance remains unfinished. No cookie-write or automatic-restore functionality is claimed by this build.
 
-Scan reports **"Big, and not covered by Tidy"**: directories over 500 MB
-that no catalog item touches. Cleanup catalogs drift out of date as the
-tools around them grow new directories, and this makes that drift visible
-instead of silent. It reports only; nothing there can be deleted until
-somebody writes a real catalog item for it.
+Mandatory unresolved recovery records are independent of optional history. Never delete or reset journals to make cleanup admission succeed. Local diagnostic reports should contain capability/status information, not personal paths, environment values, command arguments, credentials or cookie contents.
 
-## Privacy
+## Building and verification
 
-**Zero network calls, ever.** No analytics, no crash reporting, no update
-checker, no remote dependencies. This isn't a claim you have to take on
-faith: `TidyCore` has no third-party dependencies (see
-[`TidyCore/Package.swift`](TidyCore/Package.swift)) and you can watch its
-network activity yourself in Activity Monitor or any traffic monitor while
-using the app. Updates are manual, via GitHub Releases.
-
-Specifically:
-
-- Cookie keep-domains, project roots, and the simulator delete-approval
-  list all ship **empty**. Nothing is assumed about your machine.
-- Suggestions (cookie domains found in your own browser, project roots
-  found on your own disk) are computed locally and only ever shown to you
-  to confirm. They're never sent anywhere.
-- iCloud-backed folders (`~/Library/CloudStorage`, `~/Library/Mobile
-  Documents`) are never scanned or touched.
-- Safari cookies are never touched, since its `binarycookies` store has no
-  safe per-domain delete. Chrome cookie deletion uses the SQLite3 C API
-  directly against a local database, with a validated backup taken before
-  any write and restored automatically if anything looks wrong afterward.
-
-## Installing
-
-Download the latest release from the
-[Releases page](https://github.com/ajraba04/tidy/releases).
-
-Whether a given release is code-signed and notarized depends on whether
-this repository has signing secrets configured. See
-[Privacy & signing](#privacy--signing) below. If you see a Gatekeeper
-warning when opening it, see
-[docs/UNSIGNED_INSTALL.md](docs/UNSIGNED_INSTALL.md). The app works
-identically either way.
-
-## Building from source
-
-Requires Xcode 15+.
-
-```bash
-git clone https://github.com/ajraba04/tidy.git
-cd tidy
-open Tidy.xcodeproj
-```
-
-Or from the command line:
+Open `Tidy.xcodeproj`, or build locally:
 
 ```bash
 xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Debug \
   -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
-open DerivedData/Build/Products/Debug/Tidy.app
 ```
 
-`TidyCore` (all the logic, zero UI) is a standalone Swift package you can
-build and test on its own:
+The project targets macOS 14+, Swift 5 language mode, and a Swift package tools version of 5.10. Exact toolchain versions used for verification are recorded with each result; older toolchains are not presumed verified.
+
+Run core tests with serialized process-global fixtures:
 
 ```bash
 cd TidyCore
-swift test
+swift test --jobs 2 --no-parallel
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout and how to
-add a catalog item.
+The repository-wide verifier includes generated-project membership, all model tests, a synthetic native UI target and both Release architectures:
 
-## Privacy & signing
+```bash
+bash scripts/verification/verify.sh
+```
 
-Signing and notarizing this app is optional and gated on repository
-secrets. Notarizing a legitimate utility doesn't endanger a Developer
-account, but the signature embeds the registered developer's name, so
-signing stays opt-in rather than required. An unsigned release is fully
-functional, just with an extra click to open the first time (see
-[docs/UNSIGNED_INSTALL.md](docs/UNSIGNED_INSTALL.md)).
+It requires Xcode and XcodeGen 2.46.0. See [CONTRIBUTING.md](CONTRIBUTING.md) for pinned tooling and the distinction between fixture tests and production acceptance.
 
-The app runs with Hardened Runtime enabled and App Sandbox disabled, since
-it needs to shell out to developer tools (`git`, `npm`, `xcrun`, ...) and
-read across your home directory, which App Sandbox would block.
+## Distribution and signing
 
-## How it's built
+The intended distribution is a manually installed ZIP/DMG; signing and notarization are optional. Current package installation/upgrade/uninstall acceptance remains open. Existing [GitHub releases](https://github.com/ajraba04/tidy/releases) are separate artifacts and do not acquire this branch's changes until an explicitly authorized release.
 
-- **Native SwiftUI**, `MenuBarExtra`, macOS 14+.
-- **`TidyCore`** is a local Swift package with zero third-party
-  dependencies: all the logic (catalog, detection, size scanning, the
-  clean engine, path safety, browser cookie handling) lives there, fully
-  unit-tested, independent of the UI.
-- **`PathGuard`** validates every deletion target twice (once when the
-  plan is built, once again immediately before the delete happens) and
-  refuses anything outside its declared root, inside a protected iCloud
-  path, or equal to `/` or your home directory.
-- Shelling out is deliberate and narrow: CLIs are used when a tool owns its
-  own index or database (`npm cache clean`, `git gc`, `simctl`), plain
-  `FileManager` otherwise. Tools are resolved via `xcrun --find` and a
-  fixed list of install locations, never your inherited `PATH`, never a
-  shell.
+For a verified, trusted unsigned artifact, use the documented per-app [Gatekeeper procedure](docs/UNSIGNED_INSTALL.md). Notarization is a malware check and developer-identity mechanism; it is not a proof that every app workflow is correct. Project settings request Hardened Runtime with App Sandbox disabled, but final packaged signatures and entitlements require separate inspection.
 
 ## License
 

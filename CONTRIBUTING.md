@@ -9,71 +9,34 @@ TidyCore/           all logic, zero UI, zero third-party dependencies
 project.yml         xcodegen source of truth for Tidy.xcodeproj
 ```
 
-`Tidy.xcodeproj` is generated from `project.yml` by
-[XcodeGen](https://github.com/yonaskolb/XcodeGen). If you edit
-`project.yml` (new source files usually don't require this: Xcode picks
-up new files under existing groups automatically when the project already
-references the containing folder), regenerate the project:
+`project.yml` is the source of truth. Regenerate after changing source membership and commit the project with it. The verifier generates a second disposable project and compares every source/resource build phase.
+
+Use the pinned XcodeGen release without changing system tooling:
 
 ```bash
-brew install xcodegen   # once
+bash scripts/verification/install-xcodegen.sh /tmp/tidy-tools
+export PATH="/tmp/tidy-tools/xcodegen/bin:$PATH"
 xcodegen generate
+python3 scripts/verification/check-project.py
 ```
-
-Commit the regenerated `Tidy.xcodeproj` alongside your `project.yml`
-change.
 
 ## Building and testing
 
-`TidyCore` is a plain Swift package. Iterate on it without opening Xcode:
+Run `bash scripts/verification/verify.sh` for source/privacy checks, serialized core tests, all model tests, synthetic native UI tests and an arm64/x86_64 Release build. Results and exact tool versions go to `dist/verification`; set `TIDY_VERIFICATION_OUTPUT` to a new empty directory for another run. Native UI testing needs a working logged-in macOS test session. A startup failure or zero selected tests is a failure, not acceptance.
 
-```bash
-cd TidyCore
-swift test
-```
+The three simulator response tests use synthetic JSON rather than starting the host CoreSimulator service. They prove parser behavior only; real service/adapter acceptance requires a provisioned disposable setup. Filesystem/effect tests use owned scratch witnesses. Compiler/SDK cache writes are reported separately from user-data effect isolation. Never exhaust the user's real disk or memory for a test.
 
-Open `Tidy.xcodeproj` in Xcode to work on the SwiftUI layer, or build from
-the command line:
+Fixture/model/build results do not establish physical performance, supported OS runtime, production app accessibility, human VoiceOver, controlled network traffic or installation acceptance. Keep those evidence gates explicit.
 
-```bash
-xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Debug \
-  -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
-```
+## Adding an adapter
 
-Requires macOS 14+ and Xcode 15+.
+1. Read the approved design and settings/adapter appendix under `docs/superpowers/specs`.
+2. Add bounded read-only inventory with exact identity, supported version, complete ownership and explicit unknown/unavailable states. Do not evaluate repository code, hooks or tool wrappers during discovery.
+3. Keep mutations denied in `CapabilityRegistry` until that individual adapter has accepted exact scope, reviewed descendants, producer exclusion, preflight, cancellation, durable lifecycle and positive recovery proofs. A `CustomActionExecutor`, tool-presence bit or generic path helper cannot create authority.
+4. Test both the positive accepted contract and hostile/changed/unknown cases on disposable fixtures. Preserve protections and outside witnesses. Raw `CleanEngine.execute` remains a denied legacy route; accepted effects must use the coordinator's sealed authority.
+5. Update tested registry/consumer documentation and the capability acceptance record. Do not count an unavailable promised workflow as complete.
 
-## Ground rules
-
-- **Zero network calls.** No analytics, no update checker, no remote Swift
-  packages. This is a stated privacy feature: if your change needs the
-  network, it probably belongs in a different project.
-- **No delete path skips the plan screen.** `TidyCore`'s `CleanEngine`
-  exposes `makePlan` (read-only) and `execute` (acts on exactly the plan
-  handed to it). Every new catalog item goes through both. There is no
-  shortcut for a "quick delete."
-- **`PathGuard` gates every deletion**, twice: once when the plan is built,
-  once again immediately before the delete happens. Don't add a code path
-  that touches disk without going through it.
-- **Nothing personal.** No hardcoded usernames, machine-specific paths, or
-  personal domain/device lists. Catalog defaults ship empty; CI fails the
-  build if `binjamshid`, `albayyan`, `claude.ai`, or a hardcoded
-  `/Users/<name>` path shows up in `TidyCore/Sources` or `Tidy/`.
-- **New catalog items need tests.** At minimum: `locate` resolves the
-  expected targets on a scratch home directory, and the target falls under
-  the item's declared root (see the existing `CleanCatalogTests` for the
-  pattern already run against every item).
-
-## Adding a catalog item
-
-1. Pick a tier (`.safe`, `.normal`, `.deep`) and an existing category in
-   `TidyCore/Sources/TidyCore/Catalog/`, or add a new one.
-2. For a plain path deletion, use the `fixedPathItem`/`globPrefixItem`/
-   `toolRunItem` helpers in `CleanCatalog+Helpers.swift`.
-3. For anything needing real logic (parsing a tool's output, multi-step
-   operations), implement it under `Engine/` or `Browsers/` and register it
-   as a `CustomActionExecutor` in `DefaultCustomActionExecutors.swift`.
-4. Add tests. If the item can delete something, add a test that proves it
-   only deletes what it's supposed to.
+No hardcoded personal paths, credentials, domains or device approvals belong in source. The personal-data gate tests seeded forbidden patterns and withholds matching values from CI logs. Runtime network access, telemetry, remote contexts and hidden cleanup remain forbidden. Changes to CI/action/tool pins require upstream review, updated exact version/digest, generated-project comparison and fresh full verification. Remote publication and signing changes require separate authority.
 
 ## Reporting issues
 
