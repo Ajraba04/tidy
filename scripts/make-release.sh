@@ -34,6 +34,14 @@ xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
   'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 
 APP_PATH="DerivedData/Build/Products/Release/Tidy.app"
+APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
+APP_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")
+if [[ "$VERSION" != "dev" && "${VERSION#v}" != "$APP_VERSION" ]]; then
+  echo "Artifact version does not match the built app version." >&2
+  exit 1
+fi
+[[ "$APP_BUILD" =~ ^[1-9][0-9]*$ ]] || exit 1
+lipo -verify_arch arm64 x86_64 "$APP_PATH/Contents/MacOS/Tidy"
 codesign -s - --force --deep "$APP_PATH"
 
 mkdir -p dist
