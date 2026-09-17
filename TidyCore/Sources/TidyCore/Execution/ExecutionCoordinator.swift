@@ -5,10 +5,18 @@ public actor ExecutionCoordinator {
     private struct Registration {
         let review: RegisteredReview
         let identities: [String: [ResourceIdentity]]
+        let reviewedFiles: [String: [ReviewedFileResource]]
+        let inventory: [String: [InventoryRecord]]
         let unavailableIdentityIDs: Set<String>
     }
     private enum State { case idle, running(runID: UUID) }
     private struct Rejection { let planID: UUID; let disposition: RunDisposition }
+    private struct CapturedReviewResources {
+        let identities: [String: [ResourceIdentity]]
+        let reviewedFiles: [String: [ReviewedFileResource]]
+        let inventory: [String: [InventoryRecord]]
+        let unavailable: Set<String>
+    }
     private let id: UUID
     private nonisolated let barrier: PolicyInvalidationBarrier
     private var environment: CleanEnvironment
@@ -37,24 +45,16 @@ public actor ExecutionCoordinator {
         guard Set(plan.reviewItems.map(\.id)).count == plan.reviewItems.count else {
             throw ConfirmationError.unavailableSelection
         }
-        var identities: [String: [ResourceIdentity]] = [:]
-        var unavailable: Set<String> = []
-        for row in plan.reviewItems {
-            var captured: [ResourceIdentity] = []
-            for target in row.targets {
-                if target.isFilesystemPath, let identity = try? ResourcePreflight.captureFile(at: target.path) {
-                    captured.append(.filesystem(identity))
-                } else { unavailable.insert(row.id) }
-            }
-            identities[row.id] = captured
-        }
+        let captured = Self.captureReviewResources(plan: plan, environment: snapshot)
         try requireAdmission()
         return try barrier.withCurrentPolicy(revision: revision) {
             let selection = PlanSelection(plan: plan, selectDefaults: selectDefaults)
-            guard unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
+            guard captured.unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
             let binding = ReviewBinding(planID: UUID(), planRevision: 1, policyRevision: revision, selectedIDs: selection.selectedIDs)
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
-            reviews[binding.planID] = Registration(review: review, identities: identities, unavailableIdentityIDs: unavailable)
+            reviews[binding.planID] = Registration(review: review, identities: captured.identities,
+                reviewedFiles: captured.reviewedFiles, inventory: captured.inventory,
+                unavailableIdentityIDs: captured.unavailable)
             return review
         }
     }
@@ -91,24 +91,16 @@ public actor ExecutionCoordinator {
         guard Set(plan.reviewItems.map(\.id)).count == plan.reviewItems.count else {
             throw ConfirmationError.unavailableSelection
         }
-        var identities: [String: [ResourceIdentity]] = [:]
-        var unavailable: Set<String> = []
-        for row in plan.reviewItems {
-            var captured: [ResourceIdentity] = []
-            for target in row.targets {
-                if target.isFilesystemPath, let identity = try? ResourcePreflight.captureFile(at: target.path) {
-                    captured.append(.filesystem(identity))
-                } else { unavailable.insert(row.id) }
-            }
-            identities[row.id] = captured
-        }
+        let captured = Self.captureReviewResources(plan: plan, environment: snapshot)
         try requireAdmission()
         return try barrier.withCurrentPolicy(revision: revision) {
             let selection = PlanSelection(plan: plan, selectDefaults: selectDefaults)
-            guard unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
+            guard captured.unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
             let binding = ReviewBinding(planID: UUID(), planRevision: 1, policyRevision: revision, selectedIDs: selection.selectedIDs)
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
-            reviews[binding.planID] = Registration(review: review, identities: identities, unavailableIdentityIDs: unavailable)
+            reviews[binding.planID] = Registration(review: review, identities: captured.identities,
+                reviewedFiles: captured.reviewedFiles, inventory: captured.inventory,
+                unavailableIdentityIDs: captured.unavailable)
             return review
         }
     }
@@ -131,6 +123,8 @@ public actor ExecutionCoordinator {
             let next = RegisteredReview(binding: binding, plan: old.plan, selection: selection)
             invalidateTokens(planID: planID, reason: .staleReview)
             reviews[planID] = Registration(review: next, identities: registration.identities,
+                                           reviewedFiles: registration.reviewedFiles,
+                                           inventory: registration.inventory,
                                            unavailableIdentityIDs: registration.unavailableIdentityIDs)
             return next
         }
@@ -301,6 +295,14 @@ public actor ExecutionCoordinator {
         rejectionOrder.removeAll { rejections[$0] == nil }
     }
 
+    /// Internal handoff for R03 persistence and focused authority tests. It
+    /// returns immutable identities only; digests cannot authorize mutation
+    /// without the coordinator-owned tree, association, and live lease.
+    func reviewedFilesystemIdentities(planID: UUID, itemID: String) -> [FileResourceIdentity] {
+        guard let files = reviews[planID]?.reviewedFiles[itemID] else { return [] }
+        return files.map(\.identity)
+    }
+
     public func mutationAdmission() -> MutationAdmission {
         if case .running = state { return .busy }
         guard let admissionStore else { return .storageUnavailable }
@@ -324,7 +326,60 @@ public actor ExecutionCoordinator {
                   !registration.unavailableIdentityIDs.contains(row.id) else {
                 throw ConfirmationError.unavailableSelection
             }
+            if row.id == DerivedDataEffectAdapter.acceptedItemID {
+                let reviewed = registration.reviewedFiles[row.id] ?? []
+                let records = registration.inventory[row.id] ?? []
+                guard reviewed.count == row.targets.count,
+                      records.count == row.targets.count,
+                      records.allSatisfy({ $0.capability == .exactResourceMutation }) else {
+                    throw ConfirmationError.unavailableSelection
+                }
+            }
         }
+    }
+
+    /// Captures authorization at review, never while executing. DerivedData
+    /// gets the exact bounded descendant manifest and protection digest even
+    /// though its production inventory remains read-only; R03 can persist the
+    /// already-reviewed bytes without re-walking a fresher tree.
+    private static func captureReviewResources(plan: CleanPlan,
+                                               environment: CleanEnvironment) -> CapturedReviewResources {
+        var identities: [String: [ResourceIdentity]] = [:]
+        var reviewedFiles: [String: [ReviewedFileResource]] = [:]
+        var inventory: [String: [InventoryRecord]] = [:]
+        var unavailable: Set<String> = []
+        for row in plan.reviewItems {
+            var rowIdentities: [ResourceIdentity] = []
+            var rowReviewed: [ReviewedFileResource] = []
+            var rowInventory: [InventoryRecord] = []
+            for target in row.targets {
+                guard target.isFilesystemPath else {
+                    unavailable.insert(row.id)
+                    continue
+                }
+                do {
+                    if row.id == DerivedDataEffectAdapter.acceptedItemID {
+                        let reviewed = try ResourcePreflight.captureReviewedDirectory(
+                            at: target.path, protectedRoots: environment.protectedRoots)
+                        let resource = ResourceIdentity.filesystem(reviewed.identity)
+                        rowIdentities.append(resource)
+                        rowReviewed.append(reviewed)
+                        rowInventory.append(AppleDerivedDataInventory.record(
+                            resource: resource, observedAt: plan.generatedAt))
+                    } else {
+                        rowIdentities.append(.filesystem(
+                            try ResourcePreflight.captureFile(at: target.path)))
+                    }
+                } catch {
+                    unavailable.insert(row.id)
+                }
+            }
+            identities[row.id] = rowIdentities
+            reviewedFiles[row.id] = rowReviewed
+            inventory[row.id] = rowInventory
+        }
+        return CapturedReviewResources(identities: identities,
+            reviewedFiles: reviewedFiles, inventory: inventory, unavailable: unavailable)
     }
 
     private func invalidateTokens(planID: UUID, reason: RunDisposition) {

@@ -21,9 +21,12 @@ public struct FileNodeIdentity: Hashable, Sendable {
     public let device: UInt64
     public let inode: UInt64
     public let generation: UInt64?
+    public let mode: UInt32
 }
 public struct ReviewedManifestIdentity: Hashable, Sendable {
+    public let schemaVersion: UInt32
     public let digest: Data
+    public let protectionDigest: Data
     public let batchIDs: [UUID]
     public let nodeCount: Int
     public let encodedBytes: Int
