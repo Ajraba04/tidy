@@ -10,20 +10,16 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!--
-		Disk space APIs: DiskStats.swift (.volumeTotalCapacityKey,
-		.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
-		.volumeUUIDStringKey), read for every volume Scan/Headroom shows. The
-		free/used figures are always displayed directly in the app UI
-		(StatsGaugeRow, HeadroomView, ScanView), never used off-device or to
-		gate a hidden decision, which is the documented fit for E174.1.
-		-->
+		<!-- DiskStats displays capacity/availability in the app: 85F4.1.
+        fstatfs uses for local-volume/identity checks and external file metadata
+        are separately inventoried in docs/verification/privacy-api-inventory.md;
+        this manifest is not a completed distribution privacy acceptance. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<string>E174.1</string>
+				<string>85F4.1</string>
 			</array>
 		</dict>
 		<!--

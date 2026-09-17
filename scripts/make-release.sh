@@ -12,6 +12,11 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null || echo dev)}"
 
+if [[ ! "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+  echo "Version must contain only letters, digits, dots, underscores or hyphens." >&2
+  exit 1
+fi
+
 FREE_KB=$(df -k / | awk 'NR==2{print $4}')
 if [ "$FREE_KB" -lt 5242880 ]; then
   echo "Less than 5 GB free on /: a Release build needs headroom. Free up space first." >&2
@@ -25,7 +30,8 @@ if command -v xcodegen >/dev/null 2>&1; then
 fi
 
 xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
-  -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
+  -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO \
+  'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 
 APP_PATH="DerivedData/Build/Products/Release/Tidy.app"
 codesign -s - --force --deep "$APP_PATH"
@@ -45,6 +51,7 @@ hdiutil create -volname "Tidy" -srcfolder "$STAGING" -fs HFS+ -format UDZO -ov "
 
 echo
 echo "Built unsigned $ZIP_PATH and $DMG_PATH"
-echo "This is ad-hoc signed (not notarized). To open it locally:"
-echo "  xattr -dr com.apple.quarantine \"$APP_PATH\""
-echo "or right-click the app in Finder and choose Open."
+(cd dist && shasum -a 256 "Tidy-$VERSION.zip" "Tidy-$VERSION.dmg" > "Tidy-$VERSION.sha256")
+echo "Ad-hoc signed, not notarized. Verify the artifact checksum before installing."
+echo "For a trusted artifact, use the per-app procedure in docs/UNSIGNED_INSTALL.md."
+echo "Building packages does not establish release acceptance; no publication was performed."
