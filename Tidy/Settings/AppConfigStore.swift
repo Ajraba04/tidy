@@ -27,21 +27,8 @@ final class AppConfigStore {
     var settingsRevision: UInt64 { displayed.revision }
     var profiles: [SavedProfile] { preferences.profiles }
     var hasPendingSettingsWrites: Bool { !pendingOrder.isEmpty }
-    var effectivePolicy: EffectivePolicy? {
-        var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
-        if let activeProfileID {
-            guard preferences.profiles.filter({ $0.id == activeProfileID }).count == 1,
-                  let profile = preferences.profiles.first(where: { $0.id == activeProfileID })
-            else { return nil }
-            layers[.profile] = profile.values
-        }
-        let inputs = PolicyInputs(layers: layers, selectedVolumeID: nil,
-            approvedVolumeIDs: [], capacityBytes: nil,
-            logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
-            lowPower: false, seriousThermal: false, critical: false,
-            mandatoryExclusions: [])
-        return try? PolicyResolver.resolve(inputs)
-    }
+    var effectivePolicy: EffectivePolicy? { resolvePolicy(displayed) }
+    var acknowledgedEffectivePolicy: EffectivePolicy? { resolvePolicy(acknowledged) }
 
     private let bridge: ExecutionPolicyBridge
     private var acknowledged: SettingsEnvelope
@@ -49,6 +36,11 @@ final class AppConfigStore {
     private var pendingOrder: [SettingsIntentID] = []
     private var pending: [SettingsIntentID: PendingTransform] = [:]
     private var observerToken: UUID?
+    private var acknowledgedPolicyObservers:
+        [UUID: @MainActor (UInt64, EffectivePolicy?) -> Void] = [:]
+    private var selectedVolumeID: UUID?
+    private var selectedVolumeCapacityBytes: Int64?
+    private var selectedVolumeObservedAt: Date?
 
     private enum PendingTransform {
         case legacy(LegacyPreferenceDelta)
@@ -153,18 +145,75 @@ final class AppConfigStore {
         await bridge.cancelImport(previewID: previewID)
     }
 
+    @discardableResult
+    func observeAcknowledgedPolicy(
+        _ observer: @escaping @MainActor (UInt64, EffectivePolicy?) -> Void
+    ) -> UUID {
+        let token = UUID()
+        acknowledgedPolicyObservers[token] = observer
+        observer(acknowledged.revision, acknowledgedEffectivePolicy)
+        return token
+    }
+
+    func removeAcknowledgedPolicyObserver(_ token: UUID) {
+        acknowledgedPolicyObservers.removeValue(forKey: token)
+    }
+
+    /// Accept only a measured UUID plus a positive capacity. A mount path is
+    /// display data and never becomes volume authority through this seam.
+    func updateSelectedVolume(identity: String?, capacityBytes: Int64?, observedAt: Date) {
+        guard selectedVolumeObservedAt.map({ observedAt >= $0 }) ?? true else { return }
+        selectedVolumeObservedAt = observedAt
+        guard let identity, let id = UUID(uuidString: identity),
+              let capacityBytes, capacityBytes > 0 else {
+            selectedVolumeID = nil
+            selectedVolumeCapacityBytes = nil
+            return
+        }
+        selectedVolumeID = id
+        selectedVolumeCapacityBytes = capacityBytes
+    }
+
     private func receive(_ outcome: SettingsIntentOutcome) {
         let id: SettingsIntentID
         switch outcome {
         case .saved(let value, _), .conflict(let value), .invalid(let value),
              .failed(let value, _): id = value
         }
-        if case .saved(_, let exact) = outcome { acknowledged = exact }
+        var didSave = false
+        if case .saved(_, let exact) = outcome {
+            acknowledged = exact
+            didSave = true
+        }
         if pending[id] != nil {
             pending[id] = nil
             pendingOrder.removeAll { $0 == id }
         }
         replayVisibleState()
+        if didSave {
+            let revision = acknowledged.revision
+            let policy = acknowledgedEffectivePolicy
+            for observer in acknowledgedPolicyObservers.values { observer(revision, policy) }
+        }
+    }
+
+    private func resolvePolicy(_ envelope: SettingsEnvelope) -> EffectivePolicy? {
+        let projected = PolicyPreferences.project(legacy: envelope.config,
+            saved: envelope.preferences)
+        var layers: [PolicyLayer: PolicyValues] = [.global: projected.global]
+        if let activeProfileID = envelope.activeProfileID {
+            guard projected.profiles.filter({ $0.id == activeProfileID }).count == 1,
+                  let profile = projected.profiles.first(where: { $0.id == activeProfileID })
+            else { return nil }
+            layers[.profile] = profile.values
+        }
+        let approved: Set<UUID> = selectedVolumeID.map { Set([$0]) } ?? []
+        let inputs = PolicyInputs(layers: layers, selectedVolumeID: selectedVolumeID,
+            approvedVolumeIDs: approved, capacityBytes: selectedVolumeCapacityBytes,
+            logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
+            lowPower: false, seriousThermal: false, critical: false,
+            mandatoryExclusions: [])
+        return try? PolicyResolver.resolve(inputs)
     }
 
     private func replayVisibleState() {

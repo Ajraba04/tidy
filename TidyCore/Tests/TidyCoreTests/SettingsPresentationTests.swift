@@ -162,4 +162,39 @@ struct SettingsPresentationTests {
         #expect(SettingsPresentationRegistry.accessibilityIdentifier(for: id)
                 == "settings.row.item.safe.cache.swiftpm-cache.inactiveDays")
     }
+
+    @Test("every registry row has an explicit truthful production-consumer contract")
+    func everyRowHasConsumerContract() throws {
+        let settings = try SettingsPresentationRegistry.all(volumeIDs: [volumeID])
+        #expect(settings.allSatisfy {
+            let support = SettingsPresentationRegistry.consumerSupport(for: $0.definition)
+            return !support.summary.isEmpty
+        })
+        let headroom = try #require(settings.first {
+            $0.definition.id.rawValue == "feature.headroom"
+        })
+        #expect(SettingsPresentationRegistry.consumerSupport(for: headroom.definition)
+                == .connected("SystemMonitor and Headroom presentation"))
+        let buildPrep = try #require(settings.first {
+            $0.definition.id.rawValue == "feature.buildPrep"
+        })
+        #expect(SettingsPresentationRegistry.consumerSupport(for: buildPrep.definition)
+                == .unavailable("R09 project inventory, ranking, and Build Prep are not implemented."))
+        let notification = try #require(settings.first {
+            $0.definition.id.rawValue == "notifications.cooldownMinutes"
+        })
+        #expect(SettingsPresentationRegistry.consumerSupport(for: notification.definition)
+                == .unavailable("R11 notifications and assistance are not implemented."))
+    }
+
+    @Test("committed settings reference is byte-for-byte generated from registry metadata")
+    func committedReferenceMatchesRenderer() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let committed = try String(contentsOf:
+            repository.appendingPathComponent("docs/settings-reference.md"), encoding: .utf8)
+        let generated = try SettingsReferenceRenderer.render()
+        #expect(committed == generated)
+    }
 }

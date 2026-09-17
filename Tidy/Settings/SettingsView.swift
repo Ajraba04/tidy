@@ -144,15 +144,7 @@ struct SettingsSurfaceModel {
         return settings.enumerated().map { index, setting in
             let definition = setting.definition
             let kind = control(for: definition)
-            let availability: SettingsRowAvailability
-            if definition.resolution == .authority {
-                availability = .deferred("Requires a separately accepted local-authority workflow.")
-            } else if !definition.layers.contains(.global) {
-                availability = .unavailable("This setting is not editable at the global layer.")
-            } else if kind == .readOnly {
-                availability = .unavailable(
-                    "This value needs a bounded editor that is deferred from T07.3a.")
-            } else { availability = .editable }
+            let availability = availability(for: definition, control: kind)
             let copy = resolvedCopy(for: setting, bundle: bundle)
             let effective = effectivePolicy.fields[definition.id]
             let consequence = copy.consequence
@@ -208,7 +200,8 @@ struct SettingsSurfaceModel {
         guard let definition = SettingsPresentationRegistry.renderedUniverse(volumeIDs: [])
             .first(where: { $0.id == id }),
               definition.resolution != .authority,
-              definition.layers.contains(.global), control(for: definition) != .readOnly
+              definition.layers.contains(.global), control(for: definition) != .readOnly,
+              SettingsPresentationRegistry.consumerSupport(for: definition).isConnected
         else { return nil }
         var candidate = store.preferences.global
         candidate.fields[id] = value
@@ -222,14 +215,7 @@ struct SettingsSurfaceModel {
                          effectivePolicy: EffectivePolicy?) -> SettingsSurfaceRow {
         let definition = setting.definition
         let kind = control(for: definition)
-        let availability: SettingsRowAvailability
-        if definition.resolution == .authority {
-            availability = .deferred("Requires a separately accepted local-authority workflow.")
-        } else if !definition.layers.contains(.global) {
-            availability = .unavailable("This setting is not editable at the global layer.")
-        } else if kind == .readOnly {
-            availability = .unavailable("This value needs a bounded editor that is deferred from T07.3a.")
-        } else { availability = .editable }
+        let availability = Self.availability(for: definition, control: kind)
         let copy = Self.resolvedCopy(for: setting, bundle: bundle)
         let consequence = copy.consequence
         let applicability = copy.applicability
@@ -279,6 +265,22 @@ struct SettingsSurfaceModel {
                 .dropLast(("." + suffix).count))
         case .volumeOverride:
             return String(setting.definition.id.rawValue.dropFirst("headroom.volumeOverrides.".count))
+        }
+    }
+
+    private static func availability(for definition: SettingDefinition,
+                                     control: SettingsControlKind) -> SettingsRowAvailability {
+        switch SettingsPresentationRegistry.consumerSupport(for: definition) {
+        case .unavailable(let reason):
+            return definition.resolution == .authority ? .deferred(reason) : .unavailable(reason)
+        case .connected:
+            if !definition.layers.contains(.global) {
+                return .unavailable("This setting is not editable at the global layer.")
+            }
+            if control == .readOnly {
+                return .unavailable("This setting needs a bounded editor that is not implemented.")
+            }
+            return .editable
         }
     }
 }
@@ -1543,7 +1545,9 @@ struct SettingsView: View {
     @State private var showsAdvanced = false
     var body: some View {
         let model = SettingsSurfaceModel(store: store)
-        let rows = model.rows(query: query, showsAdvanced: showsAdvanced,
+        let persistedAdvanced = resolvedUIAdvancedSettings(store.acknowledgedEffectivePolicy)
+        let revealsAdvanced = showsAdvanced || persistedAdvanced
+        let rows = model.rows(query: query, showsAdvanced: revealsAdvanced,
                               section: selectedSection)
         VStack(alignment: .leading, spacing: 12) {
             Picker("Settings section", selection: $selectedSection) {
@@ -1553,7 +1557,11 @@ struct SettingsView: View {
                 }
             }.pickerStyle(.segmented)
             TextField("Search settings", text: $query).accessibilityIdentifier("settings.search")
-            Toggle("Show Advanced", isOn: $showsAdvanced)
+            Toggle("Show Advanced", isOn: Binding(get: { revealsAdvanced }, set: { value in
+                showsAdvanced = value
+                _ = model.submit(id: SettingID(rawValue: "ui.advancedSettings"),
+                    value: .bool(value))
+            }))
                 .accessibilityIdentifier("settings.showAdvanced")
             RegistrySettingsSurface(rows: rows) { id, value in
                 _ = model.submit(id: id, value: value)

@@ -3,6 +3,10 @@ import Foundation
 /// Live disk space for one volume, read via `URLResourceValues` instead
 /// of a spawned `df`.
 public struct DiskStats: Sendable, Equatable {
+    public enum Error: Swift.Error, Equatable, Sendable {
+        case missingResourceValue(URLResourceKey)
+        case invalidResourceValue(URLResourceKey)
+    }
     public let totalBytes: Int64
     /// Strictly available space (`.volumeAvailableCapacityKey`).
     public let availableBytes: Int64
@@ -28,12 +32,32 @@ public struct DiskStats: Sendable, Equatable {
             .volumeUUIDStringKey
         ]
         let values = try volumeURL.resourceValues(forKeys: keys)
-        return DiskStats(
-            totalBytes: Int64(values.volumeTotalCapacity ?? 0),
-            availableBytes: Int64(values.volumeAvailableCapacity ?? 0),
-            availableForImportantUsageBytes: values.volumeAvailableCapacityForImportantUsage ?? 0,
-            volumeIdentifier: values.volumeUUIDString
-        )
+        return try validating(totalCapacity: values.volumeTotalCapacity,
+            availableCapacity: values.volumeAvailableCapacity,
+            importantUsageCapacity: values.volumeAvailableCapacityForImportantUsage,
+            volumeIdentifier: values.volumeUUIDString)
+    }
+
+    public static func validating(totalCapacity: Int?, availableCapacity: Int?,
+                                  importantUsageCapacity: Int64?,
+                                  volumeIdentifier: String?) throws -> DiskStats {
+        guard let totalCapacity else { throw Error.missingResourceValue(.volumeTotalCapacityKey) }
+        guard let availableCapacity else { throw Error.missingResourceValue(.volumeAvailableCapacityKey) }
+        guard let importantUsageCapacity else {
+            throw Error.missingResourceValue(.volumeAvailableCapacityForImportantUsageKey)
+        }
+        let total = Int64(totalCapacity)
+        let available = Int64(availableCapacity)
+        guard total > 0 else { throw Error.invalidResourceValue(.volumeTotalCapacityKey) }
+        guard available >= 0, available <= total else {
+            throw Error.invalidResourceValue(.volumeAvailableCapacityKey)
+        }
+        guard importantUsageCapacity >= 0, importantUsageCapacity <= total else {
+            throw Error.invalidResourceValue(.volumeAvailableCapacityForImportantUsageKey)
+        }
+        return DiskStats(totalBytes: total, availableBytes: available,
+            availableForImportantUsageBytes: importantUsageCapacity,
+            volumeIdentifier: volumeIdentifier)
     }
 
     public init(totalBytes: Int64, availableBytes: Int64,
