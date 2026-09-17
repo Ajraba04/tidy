@@ -49,10 +49,10 @@ and [kFSEventStreamCreateFlagWatchRoot](https://developer.apple.com/documentatio
 ## Fresh focused evidence
 
 - `swift test --scratch-path /tmp/tidy-r06-build --jobs 2 --filter ScanScopeTests`
-  passed 6 tests. The fixtures assert zero actual traversal-source metadata visits for an empty
+  passed 7 tests. The fixtures assert zero actual traversal-source metadata visits for an empty
   selected-project scope, exact Quick-root visits with unrelated Documents/credential-cache
-  witnesses untouched, mandatory protected-descendant exclusion, grant owner/expiry/replay at
-  engine start, and bounded Continue convergence.
+  witnesses untouched, mandatory protected-descendant exclusion, grant owner/expiry/replay and
+  root-identity replacement at engine start, and bounded Continue convergence.
 - `swift test --scratch-path /tmp/tidy-r06-build --jobs 2 --filter
   'ScanObservationTests|ScanInvalidationTests|ScanIndexTests'` passed 37 tests in 3 suites. This
   includes monotonic critical cooldown/stale epoch rejection, constrained one-worker admission,
