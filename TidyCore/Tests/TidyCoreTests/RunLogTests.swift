@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import TidyCore
@@ -42,5 +43,125 @@ struct RunLogTests {
     func readAllReturnsEmptyForMissingFile() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("RunLogTests-missing-\(UUID().uuidString).jsonl")
         #expect(RunLog.readAll(from: url).isEmpty)
+    }
+}
+
+@Suite("Optional completed-run history")
+struct OptionalRunHistoryTests {
+    private func report(finishedAt: Date, titleBytes: Int = 1) -> RunReport {
+        RunReport(tier: .safe,
+            results: [ItemResult(id: UUID().uuidString,
+                title: String(repeating: "x", count: titleBytes), freedBytes: 1,
+                succeeded: true)],
+            startedAt: finishedAt.addingTimeInterval(-1), finishedAt: finishedAt,
+            freeSpaceBeforeBytes: 10, freeSpaceAfterBytes: 11)
+    }
+
+    @Test("history off removes optional reports without touching mandatory recovery bytes")
+    func historyOffIsIndependentOfRecovery() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let history = root.appendingPathComponent("runs.jsonl")
+        let store = try OptionalRunHistoryStore(directory: root)
+        let recovery = root.appendingPathComponent("execution.pending")
+        let witness = Data("unresolved-recovery-witness".utf8)
+        try witness.write(to: recovery)
+        _ = try await store.record(report(finishedAt: Date()),
+            policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), now: Date())
+
+        let outcome = try await store.reconcile(
+            policy: .init(enabled: false, retentionDays: 30, maxMiB: 1), now: Date())
+        #expect(outcome == .disabled)
+        #expect(!FileManager.default.fileExists(atPath: history.path))
+        #expect(try Data(contentsOf: recovery) == witness)
+    }
+
+    @Test("age and byte limits independently retain only eligible newest reports")
+    func ageAndByteLimitsAreIndependent() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let url = root.appendingPathComponent("runs.jsonl")
+        let store = try OptionalRunHistoryStore(directory: root)
+        let now = Date(timeIntervalSince1970: 4_000_000)
+        let policy = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 1)
+        _ = try await store.record(
+            report(finishedAt: now.addingTimeInterval(-31 * 86_400)),
+            policy: policy, now: now.addingTimeInterval(-31 * 86_400))
+        _ = try await store.record(report(finishedAt: now, titleBytes: 700_000),
+            policy: policy, now: now)
+        _ = try await store.record(
+            report(finishedAt: now.addingTimeInterval(1), titleBytes: 700_000),
+            policy: policy, now: now.addingTimeInterval(1))
+
+        let retained = try await store.read(policy: policy)
+        #expect(retained.count == 1)
+        #expect(retained[0].finishedAt == now.addingTimeInterval(1))
+        #expect(try Data(contentsOf: url).count <= 1_048_576)
+    }
+
+    @Test("malformed optional history is preserved instead of reported as a successful rewrite")
+    func malformedHistoryPreservesBytes() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let url = root.appendingPathComponent("runs.jsonl")
+        let store = try OptionalRunHistoryStore(directory: root)
+        let bytes = Data("{malformed\n".utf8)
+        try bytes.write(to: url)
+        await #expect(throws: OptionalRunHistoryStore.Error.malformed) {
+            _ = try await store.record(report(finishedAt: Date()),
+                policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), now: Date())
+        }
+        #expect(try Data(contentsOf: url) == bytes)
+    }
+
+    @Test("symlink FIFO directory and oversized history are rejected without touching witnesses")
+    func unsafeStorageIsRejectedWithoutMutation() async throws {
+        let policy = OptionalRunHistoryPolicy(enabled: false, retentionDays: 30, maxMiB: 1)
+        for kind in ["symlink", "fifo", "directory", "oversized"] {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("OptionalHistory-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+            let history = root.appendingPathComponent("runs.jsonl")
+            let witness = root.appendingPathComponent("recovery.witness")
+            let witnessBytes = Data("mandatory-recovery".utf8)
+            try witnessBytes.write(to: witness)
+            switch kind {
+            case "symlink":
+                try FileManager.default.createSymbolicLink(at: history,
+                    withDestinationURL: witness)
+            case "fifo":
+                #expect(mkfifo(history.path, 0o600) == 0)
+            case "directory":
+                try FileManager.default.createDirectory(at: history,
+                    withIntermediateDirectories: false)
+            default:
+                try Data(repeating: 0x61, count: 1_048_577).write(to: history)
+            }
+            let store = try OptionalRunHistoryStore(directory: root)
+            do {
+                _ = try await store.reconcile(policy: policy, now: Date())
+                Issue.record("unsafe \(kind) history was accepted")
+            } catch let error as OptionalRunHistoryStore.Error {
+                #expect(error == (kind == "oversized" ? .oversized : .unsafeStorage))
+            }
+            #expect(try Data(contentsOf: witness) == witnessBytes)
+            if kind == "symlink" {
+                #expect(try FileManager.default.destinationOfSymbolicLink(
+                    atPath: history.path) == witness.path)
+            } else {
+                #expect(FileManager.default.fileExists(atPath: history.path))
+            }
+        }
     }
 }

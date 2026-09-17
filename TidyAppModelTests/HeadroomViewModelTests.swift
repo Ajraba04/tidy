@@ -37,13 +37,16 @@ private struct ImmediateScheduling: MonitorScheduling {
 @MainActor
 final class HeadroomViewModelTests: XCTestCase {
     private func makeMonitor() -> SystemMonitor {
-        SystemMonitor(configuration: .disabled, probe: FixedProbe(),
+        SystemMonitor(configuration: .init(featureEnabled: true, backgroundEnabled: false,
+            suppressHiddenSampling: false, visibleIntervalSeconds: 5,
+            hiddenIntervalSeconds: 60, historyEnabled: false, historyHours: 0),
+            probe: FixedProbe(),
             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
     }
 
-    func testCardOrderFallsBackToDefaultsWhenPolicyGivesNone() {
+    func testCardOrderPreservesAnIntentionallyEmptyPolicySubset() {
         let model = HeadroomViewModel(monitor: makeMonitor(), cardOrder: [])
-        XCTAssertEqual(model.cardOrder, HeadroomViewModel.defaultCardOrder)
+        XCTAssertEqual(model.cardOrder, [])
     }
 
     func testCardOrderHonorsAnExplicitOrdering() {
@@ -57,7 +60,7 @@ final class HeadroomViewModelTests: XCTestCase {
         let model = HeadroomViewModel(monitor: monitor, cardOrder: [])
         XCTAssertNil(model.snapshot)
 
-        model.onAppear(policy: nil)
+        model.onAppear()
 
         try await waitUntil { model.snapshot != nil }
         XCTAssertNotNil(model.snapshot?.memory)
@@ -66,7 +69,7 @@ final class HeadroomViewModelTests: XCTestCase {
     func testReadinessReflectsAvailableBytesAgainstTarget() async throws {
         let monitor = makeMonitor()
         let model = HeadroomViewModel(monitor: monitor, cardOrder: [])
-        model.onAppear(policy: nil)
+        model.onAppear()
         try await waitUntil { model.snapshot != nil }
 
         // FixedProbe reports 30 strictly-available bytes.
@@ -79,12 +82,29 @@ final class HeadroomViewModelTests: XCTestCase {
         }
     }
 
-    func testOnDisappearNeverCrashesEvenWithoutAPriorOnAppear() {
+    func testOnDisappearIsIdempotentEvenWithoutAPriorOnAppear() async {
         let model = HeadroomViewModel(monitor: makeMonitor(), cardOrder: [])
         model.onDisappear()
-        // No assertion beyond "did not crash": disappearing without a prior
-        // appear (e.g. a window that failed to load) must be a safe no-op,
-        // since `setWindowVisible` guards on an actual state change.
+        model.onDisappear()
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        let leaseCount = await model.monitorSceneLeaseCountForTesting()
+        XCTAssertEqual(leaseCount, 0)
+    }
+
+    func testTwoVisibleModelsReleaseTheirOwnSceneLeasesIndependently() async throws {
+        let monitor = makeMonitor()
+        let first = HeadroomViewModel(monitor: monitor, cardOrder: [])
+        let second = HeadroomViewModel(monitor: monitor, cardOrder: [])
+        first.onAppear(); first.onAppear(); second.onAppear()
+        try await waitUntil { await monitor.activeSceneLeaseCountForTesting() == 2 }
+        first.onDisappear(); first.onDisappear()
+        try await waitUntil { await monitor.activeSceneLeaseCountForTesting() == 1 }
+        let firstTimerState = await monitor.isTimerRunningForTesting()
+        XCTAssertTrue(firstTimerState)
+        second.onDisappear()
+        try await waitUntil { await monitor.activeSceneLeaseCountForTesting() == 0 }
+        let finalTimerState = await monitor.isTimerRunningForTesting()
+        XCTAssertFalse(finalTimerState)
     }
 
     /// The regression test for the "each open/close leaks a subscriber"
@@ -122,7 +142,7 @@ final class HeadroomViewModelTests: XCTestCase {
         XCTAssertNil(headroomModels)
         XCTAssertNil(refreshers)
 
-        survivor.onAppear(policy: nil)
+        survivor.onAppear()
         try await waitUntil { survivor.snapshot != nil }
         XCTAssertNotNil(survivor.snapshot?.memory)
         let finalCount = await monitor.subscriberCountForTesting()
@@ -135,6 +155,16 @@ final class HeadroomViewModelTests: XCTestCase {
 
     func testResolvedUICardOrderFallsBackWithoutAPolicy() {
         XCTAssertEqual(resolvedUICardOrder(nil), HeadroomViewModel.defaultCardOrder)
+    }
+
+    func testResolvedUICardOrderPreservesExplicitEmptySubset() {
+        let id = SettingID(rawValue: "ui.cards")
+        let policy = EffectivePolicy(fields: [id: EffectiveField(
+            value: .stored(.strings([])), sources: [.layer(.global)], reason: .replaced)],
+            allowedFeatures: ["headroom"], walkWorkers: 1, readOnlyProcesses: 1,
+            scanAdmission: .userRequestedOnly, manualBatchBytes: 1, manualBatchItems: 1,
+            exclusions: [])
+        XCTAssertEqual(resolvedUICardOrder(policy), [])
     }
 
     /// Polls a `@MainActor` condition on a short, bounded schedule instead

@@ -151,6 +151,11 @@ public struct SystemClockScheduling: MonitorScheduling {
     }
 }
 
+public struct MonitorLease: Hashable, Sendable {
+    public let id: UUID
+    public init(id: UUID = UUID()) { self.id = id }
+}
+
 /// The optional, timestamped, per-volume/system observation described by
 /// the T10 contract. `SystemMonitor` owns the ONE decision of whether a
 /// repeating background sample loop may exist at all; every other consumer
@@ -158,6 +163,7 @@ public struct SystemClockScheduling: MonitorScheduling {
 /// snapshot or observes the published stream, and never starts its own
 /// timer.
 public actor SystemMonitor {
+    public static let featureDisabledReason = "Headroom is disabled in Settings."
     public struct Configuration: Sendable, Equatable {
         /// Mirrors `feature.headroom` from `EffectivePolicy`. When `false`,
         /// no sampling of any kind happens, visible or hidden.
@@ -232,6 +238,7 @@ public actor SystemMonitor {
     private var subscribers: [UUID: AsyncStream<SystemSnapshot>.Continuation] = [:]
 
     private var configuration: Configuration
+    private var configurationRevision: UInt64
     private var volumes: [URL]
     private let probe: SystemProbing
     private let pressureObserving: MemoryPressureObserving
@@ -239,21 +246,28 @@ public actor SystemMonitor {
     private let instrumentation: MonitorInstrumentation
     private let clock: @Sendable () -> Date
 
-    private var isWindowVisible = false
+    private var sceneLeases: Set<MonitorLease> = []
+    private var sceneLeaseGenerations: [MonitorLease: UInt64] = [:]
+    private var explicitWorkLeases: Set<MonitorLease> = []
     private var timerTask: Task<Void, Never>?
     private var pressureSubscription: MemoryPressureSubscription?
+    private var pressureSubscriptionGeneration: UInt64 = 0
     private(set) var history: SignalHistory
     private var lastPageOutCounter: (boot: BootIdentity, count: UInt64, pageSizeBytes: UInt64, at: Date)?
     private var latestPressureLevel: MemoryPressureLevel?
+    private var latestSnapshot: SystemSnapshot?
+    private var broadcastCount: UInt64 = 0
 
     public init(configuration: Configuration = .disabled,
+                configurationRevision: UInt64 = 0,
                 volumes: [URL] = [URL(fileURLWithPath: "/")],
                 probe: SystemProbing = LiveSystemProbe(),
                 pressureObserving: MemoryPressureObserving = LiveMemoryPressureObserving(),
                 scheduling: MonitorScheduling = SystemClockScheduling(),
                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
-                clock: @escaping @Sendable () -> Date = Date.init) {
+                clock: @escaping @Sendable () -> Date = { Date() }) {
         self.configuration = configuration
+        self.configurationRevision = configurationRevision
         self.volumes = volumes
         self.probe = probe
         self.pressureObserving = pressureObserving
@@ -279,7 +293,24 @@ public actor SystemMonitor {
     /// Applies a freshly-resolved `EffectivePolicy` (or `.disabled`). Safe
     /// to call repeatedly, including every time settings change.
     public func applyConfiguration(_ newConfiguration: Configuration) {
+        apply(newConfiguration)
+    }
+
+    @discardableResult
+    public func applyConfiguration(_ newConfiguration: Configuration,
+                                   acknowledgedRevision: UInt64) -> Bool {
+        guard acknowledgedRevision >= configurationRevision else { return false }
+        configurationRevision = acknowledgedRevision
+        apply(newConfiguration)
+        return true
+    }
+
+    private func apply(_ newConfiguration: Configuration) {
         configuration = newConfiguration
+        if !newConfiguration.featureEnabled {
+            latestSnapshot = nil
+            latestPressureLevel = nil
+        }
         if !newConfiguration.historyEnabled {
             history = SignalHistory(maxEntries: 0, maxAgeSeconds: 0)
         } else {
@@ -293,25 +324,62 @@ public actor SystemMonitor {
         self.volumes = volumes
     }
 
-    /// Call from the window's appear/disappear, never from a timer of the
-    /// caller's own -- this is the one signal that flips between the
-    /// visible and hidden sampling cadence.
-    public func setWindowVisible(_ visible: Bool) {
-        guard isWindowVisible != visible else { return }
-        isWindowVisible = visible
+    public func acquireSceneLease(_ lease: MonitorLease) {
+        guard sceneLeases.insert(lease).inserted else { return }
         reschedule()
     }
 
-    /// An explicit, one-shot measurement. Always allowed regardless of the
-    /// repeating-loop configuration: opening the Headroom window or pulling
-    /// to refresh is an explicit request, not the background sampling this
-    /// contract bounds. Broadcasts to every live subscriber.
+    public func releaseSceneLease(_ lease: MonitorLease) {
+        guard sceneLeases.remove(lease) != nil else { return }
+        reschedule()
+    }
+
+    public func updateSceneLease(_ lease: MonitorLease, visible: Bool,
+                                 generation: UInt64) {
+        guard generation >= (sceneLeaseGenerations[lease] ?? 0) else { return }
+        sceneLeaseGenerations[lease] = generation
+        let changed: Bool
+        if visible { changed = sceneLeases.insert(lease).inserted }
+        else { changed = sceneLeases.remove(lease) != nil }
+        guard changed else { return }
+        reschedule()
+    }
+
+    @discardableResult
+    public func requestSnapshot(forScene lease: MonitorLease,
+                                generation: UInt64) async -> SystemSnapshot? {
+        guard sceneLeaseGenerations[lease] == generation,
+              sceneLeases.contains(lease) else { return nil }
+        return await requestSnapshot()
+    }
+
+    public func acquireExplicitWorkLease(_ lease: MonitorLease) {
+        guard explicitWorkLeases.insert(lease).inserted else { return }
+        reschedule()
+    }
+
+    public func releaseExplicitWorkLease(_ lease: MonitorLease) {
+        guard explicitWorkLeases.remove(lease) != nil else { return }
+        reschedule()
+    }
+
+    /// An explicit, one-shot measurement that still honors the master
+    /// feature restriction. Opening Headroom is not background consent, and
+    /// disabling Headroom makes this return unavailable without probing.
     @discardableResult
     public func requestSnapshot() async -> SystemSnapshot {
-        let snapshot = await measure()
-        for continuation in subscribers.values {
-            continuation.yield(snapshot)
+        guard configuration.featureEnabled else {
+            let snapshot = SystemSnapshot(observedAt: clock(), bootIdentity: nil,
+                volumes: [], memory: nil, memoryUnavailableReason: Self.featureDisabledReason,
+                swap: nil, swapUnavailableReason: Self.featureDisabledReason,
+                pageOutRatePerSecond: nil, memoryPressureLevel: nil, thermalState: nil,
+                isLowPowerModeEnabled: nil, unavailableReason: Self.featureDisabledReason)
+            broadcast(snapshot)
+            return snapshot
         }
+        let snapshot = await measure()
+        latestSnapshot = snapshot
+        broadcast(snapshot)
         return snapshot
     }
 
@@ -354,6 +422,12 @@ public actor SystemMonitor {
         timerTask != nil
     }
 
+    public func activeSceneLeaseCountForTesting() -> Int { sceneLeases.count }
+    public func activeExplicitWorkLeaseCountForTesting() -> Int { explicitWorkLeases.count }
+    public func appliedConfigurationRevisionForTesting() -> UInt64 { configurationRevision }
+    public func latestPressureLevelForTesting() -> MemoryPressureLevel? { latestPressureLevel }
+    public func broadcastCountForTesting() -> UInt64 { broadcastCount }
+
     /// Test-only visibility into how many live subscriptions are currently
     /// registered, so a leak (or a successful teardown) is directly
     /// assertable rather than inferred from side effects. `public` for the
@@ -368,10 +442,14 @@ public actor SystemMonitor {
         timerTask = nil
         pressureSubscription?.cancel()
         pressureSubscription = nil
+        pressureSubscriptionGeneration &+= 1
         for continuation in subscribers.values {
             continuation.finish()
         }
         subscribers.removeAll()
+        sceneLeases.removeAll()
+        sceneLeaseGenerations.removeAll()
+        explicitWorkLeases.removeAll()
     }
 
     private static func historyCapacity(forHours hours: Int) -> Int {
@@ -382,7 +460,7 @@ public actor SystemMonitor {
     }
 
     /// Starts, restarts, or tears down the repeating loop based on the
-    /// current `configuration`/`isWindowVisible`. Called after every
+    /// current configuration and activity leases. Called after every
     /// configuration or visibility change; safe to call when nothing needs
     /// to change.
     ///
@@ -395,8 +473,10 @@ public actor SystemMonitor {
     /// Tests should assert "scheduled at least once" / "cancelled at least
     /// once", not that the two counters stay in lockstep.
     private func reschedule() {
+        let foregroundOrExplicit = !sceneLeases.isEmpty || !explicitWorkLeases.isEmpty
         let shouldRun = configuration.featureEnabled &&
-            (isWindowVisible || (configuration.backgroundEnabled && !configuration.suppressHiddenSampling))
+            (foregroundOrExplicit ||
+             (configuration.backgroundEnabled && !configuration.suppressHiddenSampling))
 
         timerTask?.cancel()
         let wasRunning = timerTask != nil
@@ -408,17 +488,21 @@ public actor SystemMonitor {
             }
             pressureSubscription?.cancel()
             pressureSubscription = nil
+            pressureSubscriptionGeneration &+= 1
             return
         }
 
         if pressureSubscription == nil {
+            pressureSubscriptionGeneration &+= 1
+            let generation = pressureSubscriptionGeneration
             pressureSubscription = pressureObserving.start { [weak self] level in
                 guard let self else { return }
-                Task { await self.updatePressureLevel(level) }
+                Task { await self.updatePressureLevel(level, generation: generation) }
             }
         }
 
-        let interval = isWindowVisible ? configuration.visibleIntervalSeconds : configuration.hiddenIntervalSeconds
+        let interval = foregroundOrExplicit
+            ? configuration.visibleIntervalSeconds : configuration.hiddenIntervalSeconds
         instrumentation.timerScheduled()
         // Sleeps BEFORE the first probe rather than after: `setWindowVisible`/
         // `applyConfiguration` (called from onAppear) already pair with one
@@ -429,15 +513,42 @@ public actor SystemMonitor {
         timerTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                try? await self.scheduling.sleep(seconds: interval)
+                do { try await self.scheduling.sleep(seconds: interval) }
+                catch { break }
                 guard !Task.isCancelled else { break }
                 _ = await self.requestSnapshot()
             }
         }
     }
 
-    private func updatePressureLevel(_ level: MemoryPressureLevel) {
+    private func updatePressureLevel(_ level: MemoryPressureLevel, generation: UInt64) {
+        guard generation == pressureSubscriptionGeneration,
+              pressureSubscription != nil, configuration.featureEnabled else { return }
         latestPressureLevel = level
+        let snapshot: SystemSnapshot
+        if let cached = latestSnapshot {
+            snapshot = SystemSnapshot(observedAt: cached.observedAt,
+                bootIdentity: cached.bootIdentity, volumes: cached.volumes,
+                memory: cached.memory, memoryUnavailableReason: cached.memoryUnavailableReason,
+                swap: cached.swap, swapUnavailableReason: cached.swapUnavailableReason,
+                pageOutRatePerSecond: cached.pageOutRatePerSecond,
+                memoryPressureLevel: level, thermalState: cached.thermalState,
+                isLowPowerModeEnabled: cached.isLowPowerModeEnabled,
+                unavailableReason: cached.unavailableReason)
+        } else {
+            snapshot = SystemSnapshot(observedAt: clock(), bootIdentity: nil, volumes: [],
+                memory: nil, memoryUnavailableReason: "Awaiting scheduled measurement",
+                swap: nil, swapUnavailableReason: "Awaiting scheduled measurement",
+                pageOutRatePerSecond: nil, memoryPressureLevel: level, thermalState: nil,
+                isLowPowerModeEnabled: nil)
+        }
+        latestSnapshot = snapshot
+        broadcast(snapshot)
+    }
+
+    private func broadcast(_ snapshot: SystemSnapshot) {
+        broadcastCount &+= 1
+        for continuation in subscribers.values { continuation.yield(snapshot) }
     }
 
     private func measure() async -> SystemSnapshot {

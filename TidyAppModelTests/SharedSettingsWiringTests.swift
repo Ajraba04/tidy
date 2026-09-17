@@ -2067,6 +2067,89 @@ private final class A3RealIO: JournalPOSIXIO, @unchecked Sendable {
 
 @MainActor
 final class SharedSettingsWiringTests: XCTestCase {
+    @MainActor func testAcknowledgedPolicyObserverPublishesOnlyDurableRevisions() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            var revisions: [UInt64] = []
+            var headroomEnabled: [Bool] = []
+            let token = services.configStore.observeAcknowledgedPolicy { revision, policy in
+                revisions.append(revision)
+                headroomEnabled.append(policy?.allowedFeatures.contains("headroom") == true)
+            }
+            defer { services.configStore.removeAcknowledgedPolicyObserver(token) }
+            XCTAssertEqual(revisions, [0])
+            XCTAssertEqual(headroomEnabled, [true])
+
+            guard case .accepted(_, let outcome) = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false))
+            else { return XCTFail("settings edit rejected") }
+            try await io.probe.waitFor("config.1")
+            XCTAssertEqual(revisions, [0], "optimistic state is not an acknowledged policy")
+            io.probe.release("config.1")
+            guard case .saved = await outcome.value else { return XCTFail("settings edit not saved") }
+            XCTAssertEqual(revisions, [0, 1])
+            XCTAssertEqual(headroomEnabled, [true, false])
+        }
+    }
+
+    @MainActor func testMeasuredVolumeIdentityAndCapacityResolveHeadroomWithoutPathApproval() async throws {
+        try await run { _, services, _ in
+            let store = services.configStore
+            let volumeID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+            store.updateSelectedVolume(identity: volumeID.uuidString,
+                capacityBytes: 100 * 1_073_741_824,
+                observedAt: Date(timeIntervalSince1970: 20))
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           10 * 1_073_741_824)
+
+            store.updateSelectedVolume(identity: "/path/is/not/authority",
+                capacityBytes: 100 * 1_073_741_824,
+                observedAt: Date(timeIntervalSince1970: 21))
+            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy))
+
+            store.updateSelectedVolume(identity: volumeID.uuidString,
+                capacityBytes: 200 * 1_073_741_824,
+                observedAt: Date(timeIntervalSince1970: 19))
+            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                         "an older observation cannot replace the newer unavailable state")
+        }
+    }
+
+    @MainActor func testVisibleHeadroomAppliesAcknowledgedFeatureDisableImmediately() async throws {
+        try await run { _, services, _ in
+            let model = HeadroomViewModel(monitor: services.systemMonitor,
+                cardOrder: resolvedUICardOrder(services.configStore.acknowledgedEffectivePolicy))
+            model.onAppear()
+            var deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if await services.systemMonitor.isTimerRunningForTesting() { break }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let runningBeforeDisable = await services.systemMonitor.isTimerRunningForTesting()
+            XCTAssertTrue(runningBeforeDisable)
+
+            guard case .accepted(_, let completion) = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false)),
+                  case .saved = await completion.value else {
+                return XCTFail("feature disable was not acknowledged")
+            }
+            deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                let running = await services.systemMonitor.isTimerRunningForTesting()
+                if !running { break }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let runningAfterDisable = await services.systemMonitor.isTimerRunningForTesting()
+            XCTAssertFalse(runningAfterDisable)
+            model.refreshNow()
+            deadline = Date().addingTimeInterval(2)
+            while model.snapshot?.unavailableReason == nil, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            XCTAssertEqual(model.snapshot?.unavailableReason, SystemMonitor.featureDisabledReason)
+            model.onDisappear()
+        }
+    }
+
     private func run(stops: Set<String> = [], seed: Data? = nil,
                      fault: A3RealIO.Fault = .none,
                      _ body: (A3Scratch, AppExecutionServices, A3RealIO) async throws -> Void) async throws {
@@ -3796,8 +3879,18 @@ extension SharedSettingsWiringTests {
                 row.setting.definition.layers.contains(.global) && row.controlKind != .readOnly {
                 XCTAssertEqual(row.controlKind,
                                expectedSettingsControl(row.setting.definition))
-                guard case .editable = row.availability else {
-                    return XCTFail("supported global P/R row is not editable: \(row.id.rawValue)")
+                let support = SettingsPresentationRegistry.consumerSupport(
+                    for: row.setting.definition)
+                if support.isConnected {
+                    guard case .editable = row.availability else {
+                        return XCTFail("connected global P/R row is not editable: \(row.id.rawValue)")
+                    }
+                } else {
+                    guard case .unavailable = row.availability else {
+                        return XCTFail("unimplemented row is not visibly unavailable: \(row.id.rawValue)")
+                    }
+                    XCTAssertNil(model.submit(id: row.id,
+                        value: row.setting.definition.defaultValue))
                 }
             }
             for row in all {
@@ -3823,8 +3916,8 @@ extension SharedSettingsWiringTests {
             let second = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
             let edits: [(String, SettingValue)] = [
                 ("feature.headroom", .bool(false)),
-                ("cleanup.inactiveDays", .integer(61)),
-                ("cleanup.hardBatchGiB", .integer(20)),
+                ("scan.preset", .choice("balanced")),
+                ("monitor.visibleIntervalSeconds", .integer(6)),
                 ("ui.units", .choice("decimal"))
             ]
 
@@ -3848,6 +3941,15 @@ extension SharedSettingsWiringTests {
                 XCTAssertEqual(second.rows(query: raw, showsAdvanced: false)
                     .first { $0.id == id }?.storedValue, value)
             }
+
+            let unavailableID = SettingID(rawValue: "feature.buildPrep")
+            let unavailable = try XCTUnwrap(first.rows(query: unavailableID.rawValue,
+                showsAdvanced: false).first { $0.id == unavailableID })
+            guard case .unavailable(let reason) = unavailable.availability else {
+                return XCTFail("Build Prep must be visibly unavailable")
+            }
+            XCTAssertTrue(reason.contains("R09"))
+            XCTAssertNil(first.submit(id: unavailableID, value: .bool(true)))
         }
     }
 

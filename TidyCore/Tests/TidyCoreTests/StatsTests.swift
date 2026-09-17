@@ -1,8 +1,25 @@
+import Foundation
 import Testing
 @testable import TidyCore
 
 @Suite("DiskStats")
 struct DiskStatsTests {
+    @Test("missing production resource values are unavailable instead of fabricated zero")
+    func missingResourceValuesAreUnavailable() {
+        #expect(throws: DiskStats.Error.missingResourceValue(.volumeTotalCapacityKey)) {
+            _ = try DiskStats.validating(totalCapacity: nil, availableCapacity: 20,
+                importantUsageCapacity: 30, volumeIdentifier: "fixture")
+        }
+        #expect(throws: DiskStats.Error.missingResourceValue(.volumeAvailableCapacityKey)) {
+            _ = try DiskStats.validating(totalCapacity: 100, availableCapacity: nil,
+                importantUsageCapacity: 30, volumeIdentifier: "fixture")
+        }
+        #expect(throws: DiskStats.Error.missingResourceValue(.volumeAvailableCapacityForImportantUsageKey)) {
+            _ = try DiskStats.validating(totalCapacity: 100, availableCapacity: 20,
+                importantUsageCapacity: nil, volumeIdentifier: "fixture")
+        }
+    }
+
     @Test("reports sane figures for the root volume")
     func reportsSaneFiguresForRoot() throws {
         let stats = try DiskStats.current()
@@ -72,6 +89,17 @@ struct PathDisplayTests {
 
 @Suite("ByteFormat")
 struct ByteFormatTests {
+    @Test("binary and decimal styles use their matching unit labels")
+    func binaryAndDecimalStylesUseMatchingLabels() {
+        let binary = ByteFormat.human(1_073_741_824, units: .binary,
+                                      locale: Locale(identifier: "en_US_POSIX"))
+        let decimal = ByteFormat.human(1_000_000_000, units: .decimal,
+                                       locale: Locale(identifier: "en_US_POSIX"))
+        #expect(binary.contains("GiB"))
+        #expect(decimal.contains("GB"))
+        #expect(!decimal.contains("GiB"))
+    }
+
     @Test("never returns an empty string")
     func neverReturnsEmptyString() {
         #expect(!ByteFormat.human(0).isEmpty)

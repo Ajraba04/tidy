@@ -18,10 +18,12 @@ final class StatsRefresher {
     private(set) var snapshot: SystemSnapshot?
 
     private let monitor: SystemMonitor
+    private let sceneLease = MonitorLease()
+    private var sceneGeneration: UInt64 = 0
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
     // cancel() is thread-safe, so the unsafe opt-out is sound here.
-    nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var observationTask: Task<Void, Never>?
 
     init(monitor: SystemMonitor) {
         self.monitor = monitor
@@ -47,15 +49,22 @@ final class StatsRefresher {
 
     deinit {
         observationTask?.cancel()
+        let monitor = monitor
+        let sceneLease = sceneLease
+        Task { await monitor.updateSceneLease(sceneLease, visible: false,
+            generation: .max) }
     }
 
     /// The popover became visible: switch to the visible sampling cadence
     /// and take one immediate reading.
     func onPopoverAppear() {
         let monitor = monitor
+        let sceneLease = sceneLease
+        sceneGeneration &+= 1
+        let generation = sceneGeneration
         Task {
-            await monitor.setWindowVisible(true)
-            await monitor.requestSnapshot()
+            await monitor.updateSceneLease(sceneLease, visible: true, generation: generation)
+            await monitor.requestSnapshot(forScene: sceneLease, generation: generation)
         }
     }
 
@@ -65,15 +74,11 @@ final class StatsRefresher {
     /// slows it.
     func onPopoverDisappear() {
         let monitor = monitor
-        Task { await monitor.setWindowVisible(false) }
+        let sceneLease = sceneLease
+        sceneGeneration &+= 1
+        let generation = sceneGeneration
+        Task { await monitor.updateSceneLease(sceneLease, visible: false,
+            generation: generation) }
     }
 
-    /// Re-reads the effective policy's monitoring settings. Cheap and
-    /// idempotent, so callers can call it on every popover appearance
-    /// rather than standing up a separate settings-change subscription.
-    func applyPolicy(_ policy: EffectivePolicy?) {
-        let monitor = monitor
-        let configuration = SystemMonitor.Configuration.resolve(policy)
-        Task { await monitor.applyConfiguration(configuration) }
-    }
 }

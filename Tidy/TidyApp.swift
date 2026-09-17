@@ -69,6 +69,11 @@ struct TidyApp: App {
                             .foregroundStyle(.red)
                             .padding()
                     }
+                    if let message = services.historyPersistenceError {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal)
+                    }
                     SettingsView()
                         .environment(services.configStore)
                 }
