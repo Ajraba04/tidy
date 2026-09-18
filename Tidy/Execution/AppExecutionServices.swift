@@ -19,10 +19,75 @@ enum ScanAvailabilityError: Error, Equatable {
     case policyNotInstalled
 }
 
+enum AppScanRequest: Sendable {
+    case policyDefault
+    case fullHome(FullHomeScanConsent)
+}
+
+enum AppScanLifecycleEvent: Equatable, Sendable {
+    case startReserved
+    case cleanupDetached(UUID)
+}
+
+private struct AppScanObservationResources: Sendable {
+    let id: UUID
+    let lease: MonitorLease
+    let task: Task<Void, Never>
+}
+
+private final class AppScanGenerationResources: @unchecked Sendable {
+    let id = UUID()
+    let session: WorkSession
+    let index: ScanIndexCoordinator?
+    let observation: AppScanObservationResources
+    var cleanupClaimed = false
+
+    init(session: WorkSession, index: ScanIndexCoordinator?,
+         observation: AppScanObservationResources) {
+        self.session = session
+        self.index = index
+        self.observation = observation
+    }
+}
+
+func schedulerLiveObservation(from snapshot: SystemSnapshot) -> SchedulerLiveObservation {
+    if snapshot.unavailableReason != nil { return .unknown }
+    if snapshot.memoryPressureLevel == .critical || snapshot.thermalState == .critical {
+        return .critical
+    }
+    if snapshot.memoryPressureLevel == .warning || snapshot.thermalState == .serious
+        || snapshot.isLowPowerModeEnabled == true {
+        return .constrained
+    }
+    if snapshot.memoryPressureLevel == .normal, snapshot.thermalState != nil,
+       snapshot.isLowPowerModeEnabled == false {
+        return .nominal
+    }
+    return .unknown
+}
+
 private struct AppBootstrapWorkerResult: Sendable {
     let load: SettingsLoadResult
     let coordinator: ExecutionCoordinator
     let journalAdmission: MutationAdmission
+}
+
+/// Synchronous, Sendable lifetime state shared by the service and its
+/// escaping monitor callbacks. Closing it in ordinary `deinit` prevents a
+/// still-registered callback from starting new work while main-actor observer
+/// removal is queued.
+private final class AppMonitoringLifetime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = true
+
+    var isActive: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return active
+    }
+
+    func dispose() {
+        lock.lock(); active = false; lock.unlock()
+    }
 }
 
 @Observable @MainActor
@@ -36,27 +101,52 @@ final class AppExecutionServices {
     let configStore: AppConfigStore
     let engine: CleanEngine
     let runLogURL: URL
+    let optionalRunHistory: OptionalRunHistoryStore?
+    private(set) var historyPersistenceError: String?
     /// The app's one T10 headroom monitor, constructed once at bootstrap.
     /// Every window that shows disk/memory/swap/thermal/power signals
     /// (menu bar popover, Headroom window) observes this shared instance
     /// rather than owning a probe or a timer of its own.
     let systemMonitor: SystemMonitor
+    /// These three fields are accessed from ordinary nonisolated `deinit`.
+    /// The task and UUID are Sendable; the lifetime is internally locked.
+    @ObservationIgnored private let monitoringLifetime = AppMonitoringLifetime()
+    @ObservationIgnored nonisolated(unsafe) private var monitorPolicyObserverToken: UUID?
+    @ObservationIgnored nonisolated(unsafe) private var monitorVolumeObservationTask:
+        Task<Void, Never>?
 
     /// The app's one T08.2 session registry, constructed once at bootstrap. It starts no work;
     /// `beginScan` is the only route that registers and launches a session against it.
     let scanRegistry = ScanSessionRegistry()
+    /// Opaque scope grants and expiring full-home consent are shared across every scene.
+    @ObservationIgnored private lazy var scanScopeAuthority = ScanScopeAuthority(bridge: policyBridge,
+        homeDirectory: paths.home.path)
+    @ObservationIgnored private let scanLifecycleHook:
+        (@Sendable (AppScanLifecycleEvent) async -> Void)?
+    @ObservationIgnored private var acceptedScanObservationID: UUID?
+    @ObservationIgnored private var scanTransition:
+        (id: UUID, task: Task<CoreScanHandle, Error>)?
+    @ObservationIgnored private var scanCleanup: (id: UUID, task: Task<Void, Never>)?
+    private var scanObservationEpoch: UInt64 = 0
     /// The active scan's session ID, if any, kept here (not on a per-window view model) so the
     /// menu-bar/global Cancel affordance survives that window closing.
     private(set) var activeScanSessionID: UUID?
     private var activeScanHandle: CoreScanHandle?
+    private var retainedScanHandles: [UUID: CoreScanHandle] = [:]
+    private var retainedScanHandleOrder: [UUID] = []
+    private var activeScanResources: AppScanGenerationResources?
+    private var retainedScanIndex: (cacheMiB: Int64, expiryHours: Int64,
+                                    coordinator: ScanIndexCoordinator)?
 
     private init(paths: AppStoragePaths, settings: SettingsStore,
-                 worker: AppBootstrapWorkerResult) {
+                 worker: AppBootstrapWorkerResult,
+                 scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)?) {
         self.paths = paths
         self.settings = settings
         self.settingsLoad = worker.load
         self.initialJournalAdmission = worker.journalAdmission
         self.coordinator = worker.coordinator
+        self.scanLifecycleHook = scanLifecycleHook
         let envelope = worker.load.envelope ?? SettingsEnvelope(schemaVersion: 2, revision: 0,
             config: TidyConfig(schemaVersion: 2))
         self.policyBridge = ExecutionPolicyBridge(coordinator: worker.coordinator,
@@ -64,10 +154,83 @@ final class AppExecutionServices {
             detectedTools: [])
         self.configStore = AppConfigStore(loaded: envelope, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
-        self.runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
+        let runLogURL = paths.journal.deletingLastPathComponent().appendingPathComponent("runs.jsonl")
+        self.runLogURL = runLogURL
+        self.optionalRunHistory = try? OptionalRunHistoryStore(
+            directory: runLogURL.deletingLastPathComponent())
         self.systemMonitor = SystemMonitor(
             configuration: .resolve(self.configStore.effectivePolicy),
+            configurationRevision: envelope.revision,
             volumes: [paths.home])
+        let monitor = self.systemMonitor
+        let configStore = self.configStore
+        let optionalRunHistory = self.optionalRunHistory
+        let monitoringLifetime = self.monitoringLifetime
+        self.monitorPolicyObserverToken = configStore.observeAcknowledgedPolicy { [weak self] revision, policy in
+            guard monitoringLifetime.isActive else { return }
+            let configuration = SystemMonitor.Configuration.resolve(policy)
+            let historyPolicy = OptionalRunHistoryPolicy.resolve(policy)
+            Task { @MainActor [weak self] in
+                guard monitoringLifetime.isActive else { return }
+                let applied = await monitor.applyConfiguration(configuration,
+                    acknowledgedRevision: revision)
+                guard monitoringLifetime.isActive, applied else { return }
+                if let optionalRunHistory {
+                    do {
+                        _ = try await optionalRunHistory.reconcile(policy: historyPolicy,
+                            acknowledgedRevision: revision)
+                        guard monitoringLifetime.isActive,
+                              self?.configStore.acknowledgedSettingsRevision == revision else { return }
+                        self?.historyPersistenceError = nil
+                    } catch {
+                        guard monitoringLifetime.isActive,
+                              self?.configStore.acknowledgedSettingsRevision == revision else { return }
+                        self?.historyPersistenceError =
+                            "Optional run history could not apply revision \(revision): \(error)"
+                    }
+                } else if monitoringLifetime.isActive {
+                    self?.historyPersistenceError = "Optional run history storage is unavailable."
+                }
+            }
+        }
+        self.monitorVolumeObservationTask = Task { @MainActor [weak configStore] in
+            let stream = await monitor.subscribe()
+            var observationEpoch: UInt64 = 0
+            for await snapshot in stream {
+                guard monitoringLifetime.isActive, let configStore,
+                      !Task.isCancelled else { break }
+                let (nextEpoch, overflow) = observationEpoch.addingReportingOverflow(1)
+                guard !overflow else { break }
+                observationEpoch = nextEpoch
+                let disk = snapshot.volumes.first?.disk
+                configStore.updateSelectedVolume(identity: disk?.volumeIdentifier,
+                    capacityBytes: disk?.totalBytes, observationEpoch: observationEpoch)
+            }
+        }
+    }
+
+    deinit {
+        // Close callbacks and cancel the Sendable task synchronously. Observer
+        // removal must execute on MainActor; capture values only, never `self`.
+        monitoringLifetime.dispose()
+        monitorVolumeObservationTask?.cancel()
+        guard let token = monitorPolicyObserverToken else { return }
+        let configStore = configStore
+        Task { @MainActor in
+            configStore.removeAcknowledgedPolicyObserver(token)
+        }
+    }
+
+    /// Ends only the long-lived R08 monitoring bindings owned by this service.
+    /// Scan observation and index lifetimes are separate generation resources.
+    func disposeMonitoring() {
+        monitoringLifetime.dispose()
+        monitorVolumeObservationTask?.cancel()
+        monitorVolumeObservationTask = nil
+        if let token = monitorPolicyObserverToken {
+            configStore.removeAcknowledgedPolicyObserver(token)
+            monitorPolicyObserverToken = nil
+        }
     }
 
     /// The sole T08.1b bounded explicit-session façade this app consumes. No alternate
@@ -86,21 +249,85 @@ final class AppExecutionServices {
     /// `ScanAvailabilityError.policyNotInstalled` rather than silently starting nothing. Unlike
     /// Clean review, Scan has no honest legacy shape to fall back to (the legacy path only
     /// returns empty rows), so a visible "not available yet" state is the only truthful option.
-    func beginScan(environment: CleanEnvironment) async throws -> CoreScanHandle {
+    func issueFullHomeScanConsent(ownerID: UUID) throws -> FullHomeScanConsent {
+        try scanScopeAuthority.issueFullHomeConsent(ownerID: ownerID)
+    }
+
+    func beginScan(environment: CleanEnvironment, request: AppScanRequest = .policyDefault,
+                   ownerID: UUID) async throws -> CoreScanHandle {
+        if let scanTransition { return try await resolveScanTransition(scanTransition) }
+        if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+        if let activeScanSessionID, let activeScanHandle,
+           activeScanHandle.sessionID == activeScanSessionID,
+           let activeState = try? await scanRegistry.state(sessionID: activeScanSessionID) {
+            if activeState.terminal == nil { return activeScanHandle }
+            if (await activeScanHandle.latestResult())?.continuationAvailable == true {
+                return activeScanHandle
+            }
+        }
+        if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+        let transitionID = UUID()
+        let task = Task { @MainActor [self] in
+            await scanLifecycleHook?(.startReserved)
+            return try await beginReservedScan(environment: environment, request: request,
+                ownerID: ownerID)
+        }
+        let transition = (id: transitionID, task: task)
+        scanTransition = transition
+        return try await resolveScanTransition(transition)
+    }
+
+    private func resolveScanTransition(
+        _ transition: (id: UUID, task: Task<CoreScanHandle, Error>)
+    ) async throws -> CoreScanHandle {
+        do {
+            let handle = try await transition.task.value
+            if scanTransition?.id == transition.id { scanTransition = nil }
+            return handle
+        } catch {
+            if scanTransition?.id == transition.id { scanTransition = nil }
+            throw error
+        }
+    }
+
+    private func beginReservedScan(environment: CleanEnvironment, request: AppScanRequest,
+                                   ownerID: UUID) async throws -> CoreScanHandle {
         await explicitSessions.awaitInitialInstall()
         guard await explicitSessions.snapshot().availability == .available else {
             throw ScanAvailabilityError.policyNotInstalled
         }
+        let authorization: AuthorizedScanScope
+        switch request {
+        case .policyDefault:
+            authorization = try scanScopeAuthority.authorizePolicyDefault(ownerID: ownerID)
+        case .fullHome(let consent):
+            authorization = try scanScopeAuthority.authorizeFullHome(
+                consent: consent, ownerID: ownerID)
+        }
         let session = try await explicitSessions.beginSession(
             requirements: try SchedulerRequirements(features: [.headroom]))
+        var observation: AppScanObservationResources?
+        var indexCoordinator: ScanIndexCoordinator?
         do {
-            let handle = try await ScanEngine.start(environment: environment, registry: scanRegistry,
-                sessions: explicitSessions, session: session)
+            observation = await startScanObservation()
+            indexCoordinator = try await makeScanIndexCoordinator(
+                authorization: authorization)
+            let handle = try await ScanEngine.start(environment: environment,
+                authorization: authorization, ownerID: ownerID, registry: scanRegistry,
+                sessions: explicitSessions, session: session,
+                indexCoordinator: indexCoordinator)
+            guard let observation else { throw CoreOrchestrationError.schedulerUnavailable }
+            let resources = AppScanGenerationResources(session: session,
+                index: indexCoordinator, observation: observation)
             activeScanSessionID = handle.sessionID
             activeScanHandle = handle
-            trackScanSessionLifetime(sessionID: handle.sessionID, session: session)
+            retainScanHandle(handle)
+            activeScanResources = resources
+            trackScanSessionLifetime(sessionID: handle.sessionID, resources: resources)
             return handle
         } catch {
+            await indexCoordinator?.stopWatching()
+            if let observation { await stopScanObservation(observation) }
             await explicitSessions.finish(session: session)
             throw error
         }
@@ -108,40 +335,215 @@ final class AppExecutionServices {
 
     /// The latest cumulative result for `sessionID`, if it is still the app's current scan.
     func latestScanResult(sessionID: UUID) async -> CoreScanResult? {
-        guard let activeScanHandle, activeScanHandle.sessionID == sessionID else { return nil }
-        return await activeScanHandle.latestResult()
+        if let activeScanHandle, activeScanHandle.sessionID == sessionID {
+            return await activeScanHandle.latestResult()
+        }
+        return await retainedScanHandles[sessionID]?.latestResult()
+    }
+
+    func continueActiveScan() async throws -> CoreScanHandle {
+        if let scanTransition { return try await resolveScanTransition(scanTransition) }
+        if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+        guard let activeScanHandle, let resources = activeScanResources,
+              (await activeScanHandle.latestResult())?.continuationAvailable == true else {
+            throw CoreOrchestrationError.invalidScopeAuthorization
+        }
+        let transitionID = UUID()
+        let task = Task { @MainActor [self] in
+            let handle = try await ScanEngine.continueScan(from: activeScanHandle,
+                registry: scanRegistry)
+            guard activeScanResources === resources, !resources.cleanupClaimed else {
+                throw CoreOrchestrationError.foreignOrFinishedSession
+            }
+            activeScanSessionID = handle.sessionID
+            self.activeScanHandle = handle
+            retainScanHandle(handle)
+            trackScanSessionLifetime(sessionID: handle.sessionID, resources: resources)
+            return handle
+        }
+        let transition = (id: transitionID, task: task)
+        scanTransition = transition
+        return try await resolveScanTransition(transition)
+    }
+
+    private func retainScanHandle(_ handle: CoreScanHandle) {
+        retainedScanHandles[handle.sessionID] = handle
+        retainedScanHandleOrder.append(handle.sessionID)
+        while retainedScanHandleOrder.count > 16 {
+            retainedScanHandles.removeValue(forKey: retainedScanHandleOrder.removeFirst())
+        }
     }
 
     /// Cancels the active scan by session ID only — this never signals, cancels, or releases a
     /// T04 mutator, and remains reachable from the global/menu owner after every window closes.
     func cancelActiveScan() async {
         guard let sessionID = activeScanSessionID else { return }
-        try? await scanRegistry.cancel(sessionID: sessionID)
+        if let state = try? await scanRegistry.state(sessionID: sessionID),
+           state.terminal != nil {
+            guard let resources = activeScanResources else { return }
+            await cleanupScanGeneration(resources, terminalSessionID: sessionID,
+                cancelSchedulerSession: true)
+        } else {
+            try? await scanRegistry.cancel(sessionID: sessionID)
+        }
     }
 
     /// Releases the scheduler-level session exactly once the registered work reaches a terminal
     /// state, independent of any UI subscriber. This is a dedicated internal subscription, not
     /// the one any `ScanViewModel` observes.
-    private func trackScanSessionLifetime(sessionID: UUID, session: WorkSession) {
+    private func trackScanSessionLifetime(sessionID: UUID,
+                                          resources: AppScanGenerationResources) {
         let registry = scanRegistry
-        let sessions = explicitSessions
         Task { [weak self] in
+            var terminal: ScanSessionTerminal?
             if let subscription = try? await registry.subscribe(sessionID: sessionID) {
-                for await event in subscription.stream where event.terminal != nil { break }
+                for await event in subscription.stream where event.terminal != nil {
+                    terminal = event.terminal
+                    break
+                }
             }
-            await sessions.finish(session: session)
-            guard let self, self.activeScanSessionID == sessionID else { return }
-            self.activeScanSessionID = nil
+            if terminal == .partial, let self,
+               self.activeScanResources === resources {
+                if self.activeScanSessionID != sessionID { return }
+                if (await self.activeScanHandle?.latestResult())?.continuationAvailable == true {
+                    return
+                }
+            }
+            guard let self else { return }
+            await self.cleanupScanGeneration(resources, terminalSessionID: sessionID,
+                cancelSchedulerSession: false)
         }
+    }
+
+    private func cleanupScanGeneration(_ resources: AppScanGenerationResources,
+                                       terminalSessionID: UUID,
+                                       cancelSchedulerSession: Bool) async {
+        guard !resources.cleanupClaimed else { return }
+        resources.cleanupClaimed = true
+        if activeScanResources === resources {
+            self.activeScanSessionID = nil
+            self.activeScanHandle = nil
+            self.activeScanResources = nil
+        }
+        let cleanupID = UUID()
+        let task = Task { @MainActor [self] in
+            if cancelSchedulerSession {
+                await explicitSessions.cancel(session: resources.session)
+            }
+            await explicitSessions.finish(session: resources.session)
+            await scanLifecycleHook?(.cleanupDetached(terminalSessionID))
+            await resources.index?.stopWatching()
+            await stopScanObservation(resources.observation)
+        }
+        let cleanup = (id: cleanupID, task: task)
+        scanCleanup = cleanup
+        await resolveScanCleanup(cleanup)
+    }
+
+    private func resolveScanCleanup(_ cleanup: (id: UUID, task: Task<Void, Never>)) async {
+        await cleanup.task.value
+        if scanCleanup?.id == cleanup.id { scanCleanup = nil }
+    }
+
+    private func makeScanIndexCoordinator(authorization: AuthorizedScanScope) async throws
+      -> ScanIndexCoordinator? {
+        guard !authorization.roots.isEmpty else { return nil }
+        let policy = configStore.acknowledgedEffectivePolicy
+        guard case .stored(.bool(true))? = policy?.fields[
+            SettingID(rawValue: "scan.cacheEnabled")]?.value else {
+            await retainedScanIndex?.coordinator.stopWatching()
+            retainedScanIndex = nil
+            return nil
+        }
+        guard case .stored(.integer(let cacheMiB))? = policy?.fields[
+            SettingID(rawValue: "scan.cacheMiB")]?.value,
+              case .stored(.integer(let expiryHours))? = policy?.fields[
+                SettingID(rawValue: "scan.cacheExpiryHours")]?.value,
+              cacheMiB > 0, expiryHours > 0 else { return nil }
+        let identities = authorization.roots.compactMap(ScanRootIdentity.resolve(path:))
+        guard identities.count == authorization.roots.count,
+              let volumeUUID = identities.first?.volumeUUID,
+              identities.allSatisfy({ $0.volumeUUID == volumeUUID }) else { return nil }
+        let (capBytes, capOverflow) = cacheMiB.multipliedReportingOverflow(by: 1_048_576)
+        let (expirySeconds, expiryOverflow) = expiryHours.multipliedReportingOverflow(by: 3_600)
+        guard !capOverflow, !expiryOverflow else { return nil }
+        if let retainedScanIndex,
+           retainedScanIndex.cacheMiB == cacheMiB,
+           retainedScanIndex.expiryHours == expiryHours {
+            await retainedScanIndex.coordinator.startWatching(
+                approvedRoots: authorization.roots, volumeUUID: volumeUUID)
+            return retainedScanIndex.coordinator
+        }
+        await retainedScanIndex?.coordinator.stopWatching()
+        let databaseURL = paths.journal.deletingLastPathComponent()
+            .appendingPathComponent("scan-index", isDirectory: true)
+            .appendingPathComponent("cache.sqlite")
+        let store: ScanIndexStore
+        do { store = try ScanIndexStore.openAppOwned(databaseURL: databaseURL) }
+        catch ScanIndexError.corrupted {
+            store = try ScanIndexStore.recoverAppOwned(databaseURL: databaseURL)
+        }
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: FSEventsScanEventSource()),
+            capBytes: capBytes, maximumAge: TimeInterval(expirySeconds))
+        await coordinator.startWatching(approvedRoots: authorization.roots,
+            volumeUUID: volumeUUID)
+        retainedScanIndex = (cacheMiB, expiryHours, coordinator)
+        return coordinator
+    }
+
+    private func startScanObservation() async -> AppScanObservationResources {
+        let id = UUID()
+        let lease = MonitorLease()
+        acceptedScanObservationID = id
+        await systemMonitor.acquireExplicitWorkLease(lease)
+        let stream = await systemMonitor.subscribe()
+        await applyScanObservation(await systemMonitor.requestSnapshot(), sourceID: id)
+        let task = Task { @MainActor [weak self] in
+            for await snapshot in stream {
+                guard let self, !Task.isCancelled else { break }
+                await self.applyScanObservation(snapshot, sourceID: id)
+            }
+        }
+        return AppScanObservationResources(id: id, lease: lease, task: task)
+    }
+
+    private func stopScanObservation(_ resources: AppScanObservationResources) async {
+        resources.task.cancel()
+        if acceptedScanObservationID == resources.id { acceptedScanObservationID = nil }
+        await systemMonitor.releaseExplicitWorkLease(resources.lease)
+    }
+
+    private func applyScanObservation(_ snapshot: SystemSnapshot, sourceID: UUID) async {
+        guard acceptedScanObservationID == sourceID else { return }
+        let observation = schedulerLiveObservation(from: snapshot)
+        let (next, overflow) = scanObservationEpoch.addingReportingOverflow(1)
+        guard !overflow else { return }
+        scanObservationEpoch = next
+        let monotonic = UInt64(max(0, ProcessInfo.processInfo.systemUptime) * 1_000_000_000)
+        _ = await explicitSessions.updateLiveObservation(epoch: next,
+            monotonicNanoseconds: monotonic, observation: observation)
+    }
+
+    func disposeScanResourcesForTesting() async {
+        if activeScanSessionID != nil { await cancelActiveScan() }
+        if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+        await retainedScanIndex?.coordinator.stopWatching()
+        retainedScanIndex = nil
+        retainedScanHandles.removeAll()
+        retainedScanHandleOrder.removeAll()
     }
 
     static func bootstrap(paths: AppStoragePaths) async -> AppExecutionServices {
         let settings = SettingsStore(url: paths.settings)
-        return await bootstrap(paths: paths, settings: settings, observe: { _ in })
+        return await bootstrap(paths: paths, settings: settings, observe: { _ in },
+            scanLifecycleHook: nil)
     }
 
     static func bootstrap(paths: AppStoragePaths, settings: SettingsStore,
-                          observe: @escaping @Sendable (AppBootstrapStage) -> Void) async
+                          observe: @escaping @Sendable (AppBootstrapStage) -> Void,
+                          scanLifecycleHook:
+                            (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil) async
         -> AppExecutionServices {
         let worker = await Task.detached {
             observe(.beforeSettingsLoad)
@@ -158,7 +560,8 @@ final class AppExecutionServices {
             return AppBootstrapWorkerResult(load: load, coordinator: coordinator,
                 journalAdmission: admission)
         }.value
-        return AppExecutionServices(paths: paths, settings: settings, worker: worker)
+        return AppExecutionServices(paths: paths, settings: settings, worker: worker,
+            scanLifecycleHook: scanLifecycleHook)
     }
 
     var isExecutionEnabled: Bool {
@@ -173,6 +576,27 @@ final class AppExecutionServices {
             return "Execution records could not be validated. Cleanup remains disabled."
         }
         return nil
+    }
+
+    func recordCompletedRun(_ report: RunReport) async {
+        let revision = configStore.acknowledgedSettingsRevision
+        do {
+            guard let optionalRunHistory else {
+                historyPersistenceError = "Optional run history storage is unavailable."
+                return
+            }
+            let policy = OptionalRunHistoryPolicy.resolve(configStore.acknowledgedEffectivePolicy)
+            let outcome = try await optionalRunHistory.record(report, policy: policy,
+                acknowledgedRevision: revision)
+            guard configStore.acknowledgedSettingsRevision == revision,
+                  outcome != .stalePolicy else { return }
+            historyPersistenceError = outcome == .entryExceedsLimit
+                ? "The completed run was larger than the optional history limit and was not stored."
+                : nil
+        } catch {
+            guard configStore.acknowledgedSettingsRevision == revision else { return }
+            historyPersistenceError = "Optional run history could not be updated: \(error)"
+        }
     }
 }
 
@@ -313,7 +737,7 @@ final class AppReviewSession {
                 // Policy may change at any await; coordinator validates both actual state and hint.
                 let revision = await services.coordinator.currentPolicyRevision()
                 let report = await services.coordinator.execute(token, currentPolicyRevision: revision)
-                RunLog.append(report, to: services.runLogURL)
+                await services.recordCompletedRun(report)
                 guard lifetime.isCurrent(request) else { return }
                 phase = .complete(report)
             } catch {
