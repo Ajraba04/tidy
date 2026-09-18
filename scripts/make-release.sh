@@ -41,7 +41,8 @@ if [[ "$VERSION" != "dev" && "${VERSION#v}" != "$APP_VERSION" ]]; then
   exit 1
 fi
 [[ "$APP_BUILD" =~ ^[1-9][0-9]*$ ]] || exit 1
-lipo -verify_arch arm64 x86_64 "$APP_PATH/Contents/MacOS/Tidy"
+lipo -verify_arch arm64 "$APP_PATH/Contents/MacOS/Tidy"
+lipo -verify_arch x86_64 "$APP_PATH/Contents/MacOS/Tidy"
 codesign -s - --force --deep "$APP_PATH"
 
 mkdir -p dist

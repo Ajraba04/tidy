@@ -20,7 +20,7 @@ python3 scripts/verification/check-personal-data.py
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 670 \
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 690 \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'selected-project scope with no acknowledged roots performs zero metadata visits' \
   --require-case 'manual Continue consumes bounded cursors and converges without scope expansion' \
@@ -44,7 +44,7 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 130 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 137 \
   --require-case 'testRealFSEventsHundredThousandUnchangedScanMatchesFreshAndReducesMetadataVisits' \
   --require-case 'testSelectedProjectsWithoutRootsDoesNotTraverseDocuments' \
   --require-case 'testContinuableTerminalPartialReleasesIdleResourcesAndGapChangeFailsClosed' \
@@ -67,6 +67,7 @@ xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release -jobs 2 \
   CODE_SIGNING_ALLOWED=NO 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
   2>&1 | tee "$EVIDENCE/release.log"
 APP="$EVIDENCE/release-build/Build/Products/Release/Tidy.app"
-lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/Tidy"
+lipo -verify_arch arm64 "$APP/Contents/MacOS/Tidy"
+lipo -verify_arch x86_64 "$APP/Contents/MacOS/Tidy"
 plutil -lint "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 shasum -a 256 "$APP/Contents/MacOS/Tidy" > "$EVIDENCE/executable.sha256"
