@@ -1,0 +1,67 @@
+# Final whole-branch review
+
+Date: 2026-09-18
+
+Reviewed range: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a..641233fd9c847ab337035bce559c37d7fe901772`
+
+Inputs: the approved audit remediation plan and original specifications; `.superpowers/sdd/final-review/index.md`; the bounded production, test, and build/documentation review patches; `docs/verification/remediation-integration.md`; and the R01, R02, R06/R07, R08, R12, and R14 verification/review records.
+
+## Verdict
+
+**Changes required before this branch is accepted as the requested partial remediation checkpoint.** R01's fixed compiled quarantine remains intact: every catalog mutation is denied, the dormant DerivedData primitive has no production lease provider, and this review found no network, daemon-autostart, raw-engine, preset, settings, or forged-ID route that enables an effect. The branch also preserves the correct top-level verdicts: current advertised application **NO-GO** and full Developer Headroom program **INCOMPLETE**.
+
+The blocking findings are in the read-only scan/index lifecycle delivered as R06/R07. They allow an unreliable FSEvents restart to reuse a stale aggregate, do not actually bound FSEvents path memory by bytes, and retain active observation/watch resources after a terminal partial result. These are implemented-contract defects rather than already-declared hardware, human, producer-proof, or distribution gaps. The partial checkpoint should not describe R06/R07 as implemented until they are corrected and covered by the named regressions below.
+
+The settings integration correction in `641233f` is coherent with the existing design. Awaiting the bridge's initial scheduler installation before returning editable services closes the observed bootstrap race without weakening admission, and caching the immutable `PolicyDefaults.rows` value removes repeated registry construction without changing definitions, queue limits, rejection behavior, or authority. Its focused evidence is appropriately limited; because it changes a Core input, a fresh aggregate is still required after all review fixes.
+
+## Findings
+
+### P1 — Unreliable FSEvents startup can collide with a persisted generation and reuse stale totals
+
+`ScanInvalidation.start` resets a new actor's generation ledger to zero, then represents missing history, a changed device UUID, startup failure, or another unreliable initial batch by incrementing each approved root (`TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift:111-132,201-221`). `ScanIndexCoordinator.status` later trusts a record whenever its persisted generation equals that process-local counter; it checks only watch activity, age, and equality, not `isHistoryReliable()` (`TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift:691-706`).
+
+This makes invalidation non-monotonic across process lifetimes. For example, a persisted complete record at generation 1 followed by a fresh coordinator and an unreliable initial handshake produces live generation 1 again and returns `.cached(record)`. The same problem is reachable without even incrementing: `FSEventsScanEventStream` starts as reliable whenever a cursor exists, but only compares device identity when a persisted device UUID is non-nil. A cursor with missing persisted device identity therefore admits cached reuse without establishing that the retained event history belongs to the current volume (`ScanInvalidation.swift:363-395`). `currentDeviceUUID` is optional at commit, so this is a production state the store can encode, not merely a corrupt fixture (`ScanIndex.swift:726-736`).
+
+The documented statement that device mismatch/history loss invalidates conservatively is therefore too strong. Make cache reads fail closed whenever startup history/device identity is unknown or unreliable, and ensure a fresh complete baseline establishes a new trustworthy epoch without relying on a counter value that can collide with persisted state. Add restart fixtures for (a) persisted generation 1 plus an unreliable initial batch, (b) cursor present plus nil persisted device UUID, (c) live device UUID unavailable, and (d) event-ID wrap. Each must perform a fresh complete walk before any later cache reuse.
+
+### P1 — The FSEvents queue is count-bounded after an unbounded string bridge and has no byte budget
+
+The production callback bridges the entire callback `NSArray` to `[String]` before computing `eventLimit = min(numEvents, 4_096)` (`TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift:438-468`). A callback larger than 4,096 therefore allocates and bridges every path before the count cap has any effect. `FSEventsDeliveryBox` then retains as many as 64 batches of 4,096 `String` paths, but neither the callback nor the pending queue has a UTF-8 byte limit (`ScanInvalidation.swift:271-300`). The current test asserts only batch/event counts and uses short fixture strings (`TidyCore/Tests/TidyCoreTests/ScanInvalidationTests.swift:104-124`).
+
+At the documented maximum, the queue can retain 262,144 paths. Long valid filesystem paths can put raw string payload alone above the 150 MiB scan physical-footprint target, before array, `String`, and event overhead; one oversized callback also has an unbounded transient bridge. This does not satisfy the approved requirement for bounded coalesced event buffers.
+
+Bridge only the bounded prefix, apply explicit per-path, per-batch, and total pending UTF-8 byte budgets, and collapse overflow to one unreliable-history marker without retaining the discarded paths. Add a long-path storm fixture that proves both the callback-facing conversion and the pending delivery box stay within the byte budget while forcing fail-closed invalidation.
+
+### P1 — A terminal partial scan leaves timers and FSEvents active while waiting indefinitely for manual Continue
+
+When the registry emits terminal `.partial`, `trackScanSessionLifetime` returns early if the handle has a continuation (`Tidy/Execution/AppExecutionServices.swift:394-415`). Consequently `cleanupScanGeneration` does not finish the scheduler session, stop the index watch, stop the scan-observation task, or release the `SystemMonitor` explicit-work lease (`AppExecutionServices.swift:418-437,495-525`). Closing the scan window only detaches its UI subscription. With background monitoring disabled, the retained explicit-work lease still keeps the visible-interval timer and pressure subscription active, and the index retains a live FSEvents stream, until the user eventually presses Continue or Cancel.
+
+This violates the binding zero-hidden-idle/no-unconsented-hidden-work contract and contradicts the R06 evidence claim that the lease is released at terminal/cancel and the FSEvents stream stops at terminal idle (`docs/verification/remediation-R06.md:34-43`). A dormant, single-use continuation/session token may remain so the same generation can resume, but terminal partial idle must have zero monitor timer, commands, scan I/O, and FSEvents delivery. If stopping the watch creates an observation gap, Continue must invalidate the affected index state and resume safely rather than preserving hidden activity.
+
+Add an app-model fixture that forces a continuable terminal partial, closes every scan window, and proves the scheduler owns no running work, the explicit monitor lease count and timer are zero, the observation subscriber/task is gone, and the FSEvents stream is stopped. Then prove Continue either resumes the dormant generation safely or fails closed after an event during the unwatched gap.
+
+### P2 — Scene-generation tombstones grow for every destroyed view model
+
+`SystemMonitor.updateSceneLease` always stores a generation, including the `.max` teardown update issued by both view-model deinitializers, but removing a visible lease does not remove its entry from `sceneLeaseGenerations` (`TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:251-253,341-349`; `Tidy/MenuBar/StatsRefresher.swift:50-55`; `Tidy/Headroom/HeadroomViewModel.swift:48-53`). The map is cleared only by stopping the entire app-owned monitor (`SystemMonitor.swift:450-462`). Repeatedly creating and destroying Headroom/menu view models therefore retains one UUID/generation tombstone per instance for the process lifetime.
+
+Keep the stale-task protection, but add an explicit terminal lease-disposal operation that records teardown ordering and then removes the generation entry once earlier tasks can no longer resurrect it. Extend the lifecycle test to create/deallocate many unique leases and assert both the active lease set and generation bookkeeping return to baseline.
+
+### P2 — CI's test-count floors do not require the remediation regressions that this branch added
+
+The shared verifier still requires only the pre-remediation floors of 623 Core tests and 119 model tests (`scripts/verification/verify.sh:19-37`). Current evidence reports 677 Core tests and 132 model tests. Thus all 54 added Core regressions or all 13 added model regressions could disappear while the test-count gate remains green. Project membership checks prove files are in build phases, but do not prove the new test cases still execute.
+
+Raise the expected floors to the accepted post-remediation counts after the final aggregate, or add an explicit manifest of required named remediation cases in addition to a conservative count floor. Keep the isolated process-cap fixture separate. The model gate must specifically make deletion or skipping of the real 100k, scoped-authorization, terminal-partial lifecycle, settings bootstrap/queue, and monitoring-disposal regressions fail CI.
+
+## Confirmed boundaries and evidence assessment
+
+- R01 containment remains valid. `CapabilityRegistry.denialReason` is unconditional, every selection is rechecked, and no production code can obtain `AppleDerivedDataInventory.productionLeaseProvider`. No finding above enables mutation.
+- R02 is a useful sealed-resource foundation, not production acceptance. Exact review manifests, protection binding, association validation, and internal lease lifetime checks do not replace supported Xcode producer ownership/exclusion proof. R03/R04 and R03C-dependent gates remain open.
+- R06's real 100k result is useful diagnostic evidence: 100,502 fresh metadata visits, zero cached visits, complete parity, and no catch-up retry on this M1 Max fixture. It does not cover the unreliable-restart collision, long-path byte pressure, terminal-partial idle, reference-hardware latency, or physical footprint findings above.
+- The fresh pre-`641233f` Core aggregate passed 677 tests. The first full model run executed 132 tests with two failures; `641233f` addresses both causes and focused reruns passed, including 20 fresh-process repetitions of the publication failure case. These focused passes do not replace fresh full Core and model aggregates after the Core registry change and final review corrections.
+- Synthetic native UI build-for-testing succeeded, but both runtime attempts failed during runner startup/AMFI validation before XCTest connected: zero passing assertions and one runner failure. This remains blocked evidence, not a product UI or accessibility pass.
+- R09-R11 are not delivered. R13 hardware, physical performance, network instrumentation, supported-OS, human VoiceOver, and production AX gates remain open. R14 is packaging/documentation preparation only; no final artifact, install/upgrade/uninstall, signature/entitlement, push, tag, upload, or publication acceptance follows.
+- The release verdict remains **NO-GO**, and the full program remains **INCOMPLETE**, regardless of the final disposition of this partial branch checkpoint.
+
+## Partial-checkpoint readiness
+
+The branch is **not ready yet** for the partial checkpoint because the three P1 findings contradict behavior that the integration record currently presents as implemented. Correct those findings, bound and clean up the P2 lifecycle/CI issues, rerun the affected focused regressions plus fresh full Core/model/build checks, and amend the R06/R07 evidence to describe the actual fixed semantics and retained open gates. The already-declared unavailable producer proof, native UI runner, R09-R11, hardware/human, and distribution gates should remain open and should not be repeated as implementation defects.
