@@ -39,3 +39,7 @@ The aggregate was found to intentionally skip `registeredScanUsesSharedProcessCa
 All 174 recorded package/source/test/settings-reference input hashes were unchanged from aggregate start through the isolated run. The relative-path hash inventory is `remediation-core-inputs.json`. This supersedes the prior module-lookup aggregate failure for these exact core inputs. Full model/native/Release and final branch review remain distinct gates.
 
 The model scheme now explicitly enables `TIDY_RUN_R07_100K=1`, so a complete model run must execute the bounded real-FSEvents/100k correctness gate. Focused unrelated model filters do not execute that test. No global temporary opt-in file is required by CI. Generated membership still matches all 7 target phases.
+
+## Direct fixture build and launch checkpoint
+
+The shared `resolvedUIAdvancedSettings` helper was defined in a production-only view-model source, causing a clean `TidyUITestHost` build to fail. Commit `e6eee36` moves the unchanged helper to SettingsView.swift, which both targets compile. A fresh fixture build from an isolated source snapshot passed (`/tmp/tidy-native-fixture-smoke-build-fixed.log`). Native application control launched the fixture and exposed its Safe and Settings surfaces. This limited direct-launch evidence does not replace either failed XCTest session. Native inspection also exposed incorrect Settings AX grouping/identifier inheritance; that issue remains under correction and is not counted as accepted accessibility.
