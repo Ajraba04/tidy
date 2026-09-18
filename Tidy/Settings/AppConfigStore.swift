@@ -41,7 +41,7 @@ final class AppConfigStore {
         [UUID: @MainActor (UInt64, EffectivePolicy?) -> Void] = [:]
     private var selectedVolumeID: UUID?
     private var selectedVolumeCapacityBytes: Int64?
-    private var selectedVolumeObservedAt: Date?
+    private var selectedVolumeObservationEpoch: UInt64?
 
     private enum PendingTransform {
         case legacy(LegacyPreferenceDelta)
@@ -160,11 +160,18 @@ final class AppConfigStore {
         acknowledgedPolicyObservers.removeValue(forKey: token)
     }
 
+    var acknowledgedPolicyObserverCountForTesting: Int {
+        acknowledgedPolicyObservers.count
+    }
+
     /// Accept only a measured UUID plus a positive capacity. A mount path is
     /// display data and never becomes volume authority through this seam.
-    func updateSelectedVolume(identity: String?, capacityBytes: Int64?, observedAt: Date) {
-        guard selectedVolumeObservedAt.map({ observedAt >= $0 }) ?? true else { return }
-        selectedVolumeObservedAt = observedAt
+    func updateSelectedVolume(identity: String?, capacityBytes: Int64?,
+                              observationEpoch: UInt64) {
+        guard selectedVolumeObservationEpoch.map({ observationEpoch > $0 }) ?? true else {
+            return
+        }
+        selectedVolumeObservationEpoch = observationEpoch
         guard let identity, let id = UUID(uuidString: identity),
               let capacityBytes, capacityBytes > 0 else {
             selectedVolumeID = nil
