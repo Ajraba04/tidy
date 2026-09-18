@@ -113,6 +113,8 @@ schemes:
       targets:
         TidyAppModelTests: all
     test:
+      environmentVariables:
+        TIDY_RUN_R07_100K: "1"
       targets:
         - TidyAppModelTests
   TidyUITestHost:
