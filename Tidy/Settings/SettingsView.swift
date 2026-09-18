@@ -1612,7 +1612,10 @@ private struct RegistrySettingRow: View {
         self.row = row; self.submit = submit
     }
     var body: some View {
-        layout.accessibilityIdentifier(row.accessibilityIdentifier)
+        layout
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(row.accessibilityIdentifier)
+            .accessibilityLabel(row.accessibilityLabel)
     }
     @ViewBuilder private var layout: some View {
         if SettingsVisualContract.layoutMode(for: typeSize) == .stacked {
@@ -1670,6 +1673,9 @@ private struct RegistrySettingRow: View {
                     SettingsVisualContract.unavailableRole)
         }
         .padding(.vertical, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityIdentifier("settings.metadata." + row.id.rawValue)
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityValue(SettingsAccessibility.value(for: row))
         .accessibilityHint(SettingsAccessibility.help(for: row))
