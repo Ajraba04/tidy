@@ -560,8 +560,12 @@ final class AppExecutionServices {
             return AppBootstrapWorkerResult(load: load, coordinator: coordinator,
                 journalAdmission: admission)
         }.value
-        return AppExecutionServices(paths: paths, settings: settings, worker: worker,
+        let services = AppExecutionServices(paths: paths, settings: settings, worker: worker,
             scanLifecycleHook: scanLifecycleHook)
+        // Do not publish an editable store while the loaded scheduler policy still owns its
+        // admission transition; an immediate settings edit must reach the persistence path.
+        await services.explicitSessions.awaitInitialInstall()
+        return services
     }
 
     var isExecutionEnabled: Bool {
