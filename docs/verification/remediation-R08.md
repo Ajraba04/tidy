@@ -94,3 +94,21 @@ Before implementation, the focused policy/settings/monitor baseline ran 172 test
 A controller review found that monitor configuration rejected stale settings, but queued history retention/completed-run writes still accepted an older policy. The history actor now requires an acknowledged revision on every mutating request, rejects older revisions without filesystem changes, and rejects conflicting policies with the same revision. The app passes its acknowledged revision and prevents stale completions from replacing newer history-error state.
 
 Test-first evidence: `/tmp/tidy-history-revision-red.log` failed because the revision-bound API did not exist; after the change, `swift test --package-path TidyCore --scratch-path /tmp/tidy-controller-baseline --jobs 2 --no-parallel --filter OptionalRunHistoryTests` passed **5 tests**, including delayed-on-after-off, delayed-off-after-on, conflicting same-revision, unsafe storage, retention and recovery-witness cases. Log: `/tmp/tidy-history-revision-green.log`. Final app/aggregate verification remains required after joint integration.
+
+## Post-review corrections
+
+The bounded R08 source review found three gaps and the follow-up resolves them without touching the shared R06 scan/index implementation:
+
+- The production dispatch memory-pressure source now subscribes to normal recovery as well as warning and critical. Tests assert the production mask and prove that a current subscription publishes critical then nominal immediately without another probe; stale replaced-subscription callbacks remain rejected.
+- Applying an acknowledged Headroom disable now publishes an explicit unavailable snapshot to existing subscribers before repeating work is canceled. The regression requires that publication without a manual refresh and proves the OS probe count does not change.
+- Optional history validates existing data against a fixed 50 MiB storage safety ceiling before applying a newly smaller retention cap. A file valid under 2 MiB is trimmed to its newest record under 1 MiB; disable combined with the lower cap removes only `runs.jsonl` and preserves a mandatory recovery witness. Symlink/FIFO/directory and sparse 50 MiB + 1 byte inputs remain rejected.
+
+Test-first evidence recorded the expected failures before each correction: the production mask omitted `.normal`, disable produced no replacement snapshot/broadcast, and both cap-transition fixtures threw `.oversized`. The final focused command was:
+
+```text
+swift test --package-path TidyCore \
+  --scratch-path /tmp/tidy-controller-baseline --jobs 2 --no-parallel \
+  --filter 'HeadroomSignalsTests|OptionalRunHistoryTests'
+```
+
+Result: **40 tests passed, 0 failures** (33 monitor/headroom and 7 optional-history tests). Existing compiler warnings outside the changed behavior remain; no app build, app-model suite, hardware, native UI, export-file, migration, package, or release gate was claimed by this correction.

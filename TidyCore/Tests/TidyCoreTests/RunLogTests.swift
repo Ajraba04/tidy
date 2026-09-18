@@ -132,6 +132,64 @@ struct OptionalRunHistoryTests {
         #expect(try Data(contentsOf: url).count <= 1_048_576)
     }
 
+    @Test("lowering the byte cap trims history that was valid under the preceding revision")
+    func lowerByteCapTrimsPreviouslyValidHistory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-CapTransition-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let url = root.appendingPathComponent("runs.jsonl")
+        let store = try OptionalRunHistoryStore(directory: root)
+        let larger = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 2)
+        let smaller = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 1)
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        _ = try await store.record(report(finishedAt: now, titleBytes: 600_000),
+            policy: larger, acknowledgedRevision: 1, now: now)
+        _ = try await store.record(report(finishedAt: now.addingTimeInterval(1),
+            titleBytes: 600_000), policy: larger, acknowledgedRevision: 1,
+            now: now.addingTimeInterval(1))
+        #expect(try Data(contentsOf: url).count > 1_048_576)
+
+        let outcome = try await store.reconcile(policy: smaller,
+            acknowledgedRevision: 2, now: now.addingTimeInterval(2))
+        let retained = try await store.read(policy: smaller)
+
+        #expect(outcome == .recorded(retainedCount: 1))
+        #expect(retained.map(\.finishedAt) == [now.addingTimeInterval(1)])
+        #expect(try Data(contentsOf: url).count <= 1_048_576)
+    }
+
+    @Test("disabling history removes a larger previously valid file and preserves recovery")
+    func disableAfterLargerCapPreservesRecovery() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-DisableTransition-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let history = root.appendingPathComponent("runs.jsonl")
+        let recovery = root.appendingPathComponent("execution.pending")
+        let recoveryBytes = Data("mandatory-recovery-witness".utf8)
+        try recoveryBytes.write(to: recovery)
+        let store = try OptionalRunHistoryStore(directory: root)
+        let larger = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 2)
+        let disabled = OptionalRunHistoryPolicy(enabled: false, retentionDays: 30, maxMiB: 1)
+        let now = Date(timeIntervalSince1970: 6_000_000)
+        _ = try await store.record(report(finishedAt: now, titleBytes: 600_000),
+            policy: larger, acknowledgedRevision: 1, now: now)
+        _ = try await store.record(report(finishedAt: now.addingTimeInterval(1),
+            titleBytes: 600_000), policy: larger, acknowledgedRevision: 1,
+            now: now.addingTimeInterval(1))
+        #expect(try Data(contentsOf: history).count > 1_048_576)
+
+        let outcome = try await store.reconcile(policy: disabled,
+            acknowledgedRevision: 2, now: now.addingTimeInterval(2))
+
+        #expect(outcome == .disabled)
+        #expect(!FileManager.default.fileExists(atPath: history.path))
+        #expect(try Data(contentsOf: recovery) == recoveryBytes)
+    }
+
     @Test("malformed optional history is preserved instead of reported as a successful rewrite")
     func malformedHistoryPreservesBytes() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -173,7 +231,10 @@ struct OptionalRunHistoryTests {
                 try FileManager.default.createDirectory(at: history,
                     withIntermediateDirectories: false)
             default:
-                try Data(repeating: 0x61, count: 1_048_577).write(to: history)
+                #expect(FileManager.default.createFile(atPath: history.path, contents: nil))
+                let handle = try FileHandle(forWritingTo: history)
+                try handle.truncate(atOffset: UInt64(50 * 1_048_576 + 1))
+                try handle.close()
             }
             let store = try OptionalRunHistoryStore(directory: root)
             do {

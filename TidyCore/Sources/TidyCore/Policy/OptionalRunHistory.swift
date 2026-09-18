@@ -35,6 +35,7 @@ public actor OptionalRunHistoryStore {
         case malformed, invalidPolicy, unsafeStorage, oversized, unavailable
     }
     private static let filename = "runs.jsonl"
+    private static let storageSafetyCeilingBytes = 50 * 1_048_576
     private let directory: URL
     private var acknowledgedPolicy: (revision: UInt64, policy: OptionalRunHistoryPolicy)?
 
@@ -58,7 +59,7 @@ public actor OptionalRunHistoryStore {
         let limits = try validatedLimits(policy)
         let entry = try encodedLine(report)
         guard entry.count <= limits.maxBytes else { return .entryExceedsLimit }
-        var retained = try load(maxBytes: limits.maxBytes).filter {
+        var retained = try load(maxBytes: Self.storageSafetyCeilingBytes).filter {
             now.timeIntervalSince($0.finishedAt) <= limits.maxAge
         }
         retained.append(report)
@@ -78,9 +79,10 @@ public actor OptionalRunHistoryStore {
         guard try admit(policy, revision: acknowledgedRevision) else { return .stalePolicy }
         let limits = try validatedLimits(policy)
         guard policy.enabled else {
-            try removeValidatedIfPresent(maxBytes: limits.maxBytes); return .disabled
+            try removeValidatedIfPresent(maxBytes: Self.storageSafetyCeilingBytes)
+            return .disabled
         }
-        var retained = try load(maxBytes: limits.maxBytes).filter {
+        var retained = try load(maxBytes: Self.storageSafetyCeilingBytes).filter {
             now.timeIntervalSince($0.finishedAt) <= limits.maxAge
         }
         var lines = try retained.map(encodedLine)
@@ -178,9 +180,12 @@ public actor OptionalRunHistoryStore {
     }
 
     private func publish(_ lines: [Data]) throws {
-        if lines.isEmpty { return try removeValidatedIfPresent(maxBytes: 50 * 1_048_576) }
+        if lines.isEmpty {
+            return try removeValidatedIfPresent(maxBytes: Self.storageSafetyCeilingBytes)
+        }
         let directoryFD = try openDirectory(); defer { Darwin.close(directoryFD) }
-        if let existing = try validatedFile(directoryFD, maxBytes: 50 * 1_048_576) {
+        if let existing = try validatedFile(directoryFD,
+                                             maxBytes: Self.storageSafetyCeilingBytes) {
             Darwin.close(existing.fd)
         }
         let temporary = ".runs-" + UUID().uuidString
