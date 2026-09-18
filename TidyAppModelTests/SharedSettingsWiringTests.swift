@@ -2160,7 +2160,8 @@ final class SharedSettingsWiringTests: XCTestCase {
         services = nil
         deadline = Date().addingTimeInterval(2)
         subscriberCount = await monitor.subscriberCountForTesting()
-        while (releasedServices != nil || subscriberCount != 0), Date() < deadline {
+        while (releasedServices != nil || subscriberCount != 0 ||
+               store.acknowledgedPolicyObserverCountForTesting != 1), Date() < deadline {
             try await Task.sleep(nanoseconds: 5_000_000)
             subscriberCount = await monitor.subscriberCountForTesting()
         }
@@ -2170,6 +2171,50 @@ final class SharedSettingsWiringTests: XCTestCase {
         XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 1)
         XCTAssertEqual(unrelatedObserverCalls, 1)
         try scratch.intact()
+    }
+
+    @MainActor func testExplicitMonitoringDisposalIsIdempotentAndStopsBinderCallbacks()
+        async throws {
+        try await run { _, services, _ in
+            let store = services.configStore
+            let monitor = services.systemMonitor
+            var unrelatedObserverCalls = 0
+            let unrelatedToken = store.observeAcknowledgedPolicy { _, _ in
+                unrelatedObserverCalls += 1
+            }
+            defer { store.removeAcknowledgedPolicyObserver(unrelatedToken) }
+
+            var deadline = Date().addingTimeInterval(2)
+            var subscriberCount = await monitor.subscriberCountForTesting()
+            while subscriberCount != 1, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+                subscriberCount = await monitor.subscriberCountForTesting()
+            }
+            XCTAssertEqual(subscriberCount, 1)
+            XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 2)
+
+            services.disposeMonitoring()
+            services.disposeMonitoring()
+            deadline = Date().addingTimeInterval(2)
+            subscriberCount = await monitor.subscriberCountForTesting()
+            while subscriberCount != 0, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+                subscriberCount = await monitor.subscriberCountForTesting()
+            }
+            XCTAssertEqual(subscriberCount, 0)
+            XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 1)
+            let monitorRevision = await monitor.appliedConfigurationRevisionForTesting()
+
+            guard case .accepted(_, let completion) = store.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false)),
+                  case .saved = await completion.value else {
+                return XCTFail("settings edit was not saved after monitoring disposal")
+            }
+            XCTAssertEqual(unrelatedObserverCalls, 2)
+            let appliedRevision = await monitor.appliedConfigurationRevisionForTesting()
+            XCTAssertEqual(appliedRevision, monitorRevision,
+                           "a disposed binder must not apply later acknowledged revisions")
+        }
     }
 
     @MainActor func testVisibleHeadroomAppliesAcknowledgedFeatureDisableImmediately() async throws {
