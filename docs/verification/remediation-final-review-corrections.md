@@ -132,3 +132,28 @@ post-correction aggregate.
   measured metadata-visit reduction on this 32 GiB M1 Max host. Reference-hardware latency,
   physical footprint, long-run idle cost, Intel/macOS 14, human accessibility, packaging, and
   distribution acceptance remain separate open gates.
+
+## Final aggregate follow-up — snapshot subscription ordering
+
+The first frozen full model aggregate executed 137 tests with one failing case: Headroom readiness
+remained blank because the scene controller's one-shot snapshot publication could win the race
+against the view model's asynchronous subscription registration. The immediate-scheduling fixture
+then produced no later broadcast.
+
+`SystemMonitor.subscribe()` now replays its actor-owned `latestSnapshot` into the new subscriber's
+one-element buffer. This does not probe, schedule a timer, or change the snapshot timestamp. It
+makes the stream's current-state behavior independent of whether subscription or the explicit
+scene request reaches the monitor actor first.
+
+Test-first evidence:
+
+- The deterministic snapshot-before-subscribe Core regression failed with a nil receipt before the
+  correction (`/tmp/tidy-final-headroom-replay-red.log`).
+- The regression and stale-scene ordering test passed **2/2** afterward
+  (`/tmp/tidy-final-headroom-replay-green.log`).
+- The complete `HeadroomViewModelTests` suite passed **11/11** with the original two-second
+  watchdog and exact 30-byte-versus-1-GiB readiness assertions unchanged
+  (`/tmp/tidy-final-headroom-model-green.log`).
+
+This Core change requires the coordinator's final aggregate to supersede the earlier 689-test Core
+checkpoint before final verification is accepted.

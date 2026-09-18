@@ -480,6 +480,11 @@ public actor SystemMonitor {
             guard let self else { return }
             Task { await self.removeSubscriber(id) }
         }
+        // `subscribe()` and a scene's first explicit snapshot request are launched from separate
+        // tasks. If publication wins that race, replay the actor-owned latest value into this
+        // subscriber's one-element buffer so the scene cannot remain blank until another timer or
+        // external signal happens to publish. This starts no probe, timer, or background work.
+        if let latestSnapshot { continuation.yield(latestSnapshot) }
         return stream
     }
 

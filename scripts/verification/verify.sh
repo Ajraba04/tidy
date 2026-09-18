@@ -30,6 +30,7 @@ python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --
   --require-case 'failed FSEvents startup stays uncacheable even after a complete fresh walk' \
   --require-case 'long callback paths are rejected before Swift bridging and pending bytes stay bounded' \
   --require-case 'suspension atomically rejects an event after expected-generation capture' \
+  --require-case 'a subscriber registering after publication replays the latest snapshot' \
   --require-case 'an event for an already visited file during manual-Continue idle fails closed'
 # This fixture observes a process-global gate and must run in a fresh test
 # process. Its opt-in flag is deliberately absent from the aggregate above.
