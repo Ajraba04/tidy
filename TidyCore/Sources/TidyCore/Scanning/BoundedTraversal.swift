@@ -54,7 +54,7 @@ public struct TraversalLimits: Equatable, Sendable {
     public let protectedRoots: Int
     public let sliceSeconds: Int
 
-    public init(batchEntries: Int = 64, queuedPaths: Int = 256, maxDepth: Int = 64,
+    public init(batchEntries: Int = 64, queuedPaths: Int = 4_096, maxDepth: Int = 64,
                 openDescriptors: Int = 8, hardLinkIdentities: Int = 4_096,
                 childAggregates: Int = 256, resultRecords: Int = 256, topN: Int = 16,
                 maxBreadth: Int = 1_024, maxPathBytes: Int = 4_096,
@@ -166,6 +166,9 @@ public struct TraversalRecord: Equatable, Sendable {
 
 public struct TraversalMetrics: Equatable, Sendable {
     public let processedEntries: Int
+    /// Actual traversal-source reads performed for unprotected paths. Cached aggregate reuse
+    /// contributes zero; this is deliberately distinct from logical `processedEntries`.
+    public let metadataVisits: Int
     public let batches: Int
     public let maximumQueuedPaths: Int
     public let maximumBatchEntries: Int
@@ -176,7 +179,7 @@ public struct TraversalMetrics: Equatable, Sendable {
     public let maximumResultRecords: Int
     public let maximumTopN: Int
 
-    static let zero = TraversalMetrics(processedEntries: 0, batches: 0,
+    static let zero = TraversalMetrics(processedEntries: 0, metadataVisits: 0, batches: 0,
         maximumQueuedPaths: 0, maximumBatchEntries: 0, maximumDepth: 0,
         maximumOpenDescriptors: 0, maximumHardLinkIdentities: 0,
         maximumChildAggregates: 0, maximumResultRecords: 0, maximumTopN: 0)
@@ -257,6 +260,7 @@ internal enum TraversalRootRead: Sendable {
 internal struct TraversalSourceChild: Sendable {
     let name: String
     let identity: TraversalSourceIdentity
+    let kind: TraversalRecordKind
 }
 
 internal struct TraversalSourceEntry: Sendable {
@@ -520,7 +524,8 @@ public actor BoundedTraversal {
             traversalGeneration: traversalGeneration, policyRevision: policyRevision,
             options: options,
             pending: [TraversalPending(path: root, relativePath: "", depth: 0,
-                                       expectedIdentity: rootIdentity)],
+                                       expectedIdentity: rootIdentity,
+                                       expectedKind: .directory)],
             totalBytes: 0, topItems: BoundedRankedHeap(limit: limits.topN),
             childBytes: [:], hardLinks: [], directoryObservations: [], reasons: [],
             metrics: .zero.recordingQueue(1))
@@ -577,7 +582,17 @@ public actor BoundedTraversal {
             }
 
             let resultCapacity = limits.resultRecords - pageRecords.count
-            let count = min(limits.batchEntries, state.pending.count, max(1, resultCapacity))
+            var count = min(limits.batchEntries, state.pending.count, max(1, resultCapacity))
+            // Expand at most one directory in a batch. This lets a full queue drain file reads
+            // before another broad directory adds descendants, keeping retained work bounded
+            // without abandoning the rest of a broad root.
+            if let directoryIndex = state.pending.prefix(count).firstIndex(where: {
+                $0.expectedKind == .directory
+            }) {
+                count = directoryIndex == state.pending.startIndex
+                    ? 1 : state.pending.distance(from: state.pending.startIndex,
+                                                  to: directoryIndex)
+            }
             let work = Array(state.pending.prefix(count))
             state.pending.removeFirst(count)
             let source = self.source
@@ -603,7 +618,11 @@ public actor BoundedTraversal {
                 return makeTerminal(state: state, reason: .unreadable, records: pageRecords)
             }
 
+            let metadataVisits = work.reduce(into: 0) { count, item in
+                if !Self.isProtected(item.path, protectedRoots: protectedRoots) { count += 1 }
+            }
             guard let batchMetrics = state.metrics.recordingBatch(count: reads.count,
+                metadataVisits: metadataVisits,
                 queued: state.pending.count + work.count,
                 depth: work.map(\.depth).max() ?? 0,
                 descriptors: reads.maximumDescriptorHighWater) else {
@@ -658,6 +677,17 @@ public actor BoundedTraversal {
                         guard state.directoryObservations.count < limits.queuedPaths else {
                             return makeTerminal(state: state, reason: .churn,
                                                 records: pageRecords)
+                        }
+                        // If this directory would overflow the retained queue, rotate its bounded
+                        // identity back to the tail. Previously this returned `.queueOverflow`
+                        // after only a handful of entries on wide trees. At least one earlier
+                        // directory has descendants ahead of the rotated item (root breadth is
+                        // capped below the queue bound), so those reads create capacity before
+                        // this directory is retried.
+                        if entry.children.count > limits.queuedPaths - state.pending.count {
+                            state.pending.append(item)
+                            state.metrics = state.metrics.recordingQueue(state.pending.count)
+                            continue
                         }
                         state.directoryObservations.append(
                             TraversalDirectoryObservation(path: item.path,
@@ -756,7 +786,8 @@ public actor BoundedTraversal {
                                 ? child.name : item.relativePath + "/" + child.name
                             pendingChildren.append(TraversalPending(path: childPath,
                                 relativePath: relative, depth: item.depth + 1,
-                                expectedIdentity: child.identity))
+                                expectedIdentity: child.identity,
+                                expectedKind: child.kind))
                         }
                         for (childIndex, pendingChild) in pendingChildren.enumerated() {
                             if await probe.isCancelled() {
@@ -902,6 +933,7 @@ public actor BoundedTraversal {
         for pending in state.pending {
             mix(pending.relativePath)
             mix(String(pending.depth))
+            mix(pending.expectedKind.rawValue)
             mix(String(pending.expectedIdentity.device))
             mix(String(pending.expectedIdentity.inode))
             mix(String(pending.expectedIdentity.generation))
@@ -935,6 +967,7 @@ private struct TraversalPending: Sendable {
     let relativePath: String
     let depth: Int
     let expectedIdentity: TraversalSourceIdentity
+    let expectedKind: TraversalRecordKind
 }
 
 private struct TraversalState: Sendable {
@@ -1037,11 +1070,14 @@ private extension Array where Element == TraversalSourceRead {
 }
 
 private extension TraversalMetrics {
-    func recordingBatch(count: Int, queued: Int, depth: Int,
+    func recordingBatch(count: Int, metadataVisits: Int, queued: Int, depth: Int,
                         descriptors: Int) -> TraversalMetrics? {
         let (nextBatches, overflow) = batches.addingReportingOverflow(1)
-        guard !overflow else { return nil }
-        return TraversalMetrics(processedEntries: processedEntries, batches: nextBatches,
+        let (nextMetadataVisits, visitOverflow) = self.metadataVisits.addingReportingOverflow(
+            metadataVisits)
+        guard !overflow, !visitOverflow else { return nil }
+        return TraversalMetrics(processedEntries: processedEntries,
+            metadataVisits: nextMetadataVisits, batches: nextBatches,
             maximumQueuedPaths: max(maximumQueuedPaths, queued),
             maximumBatchEntries: max(maximumBatchEntries, count),
             maximumDepth: max(maximumDepth, depth),
@@ -1079,6 +1115,7 @@ private extension TraversalMetrics {
                            maximumResultRecords: Int? = nil,
                            maximumTopN: Int? = nil) -> TraversalMetrics {
         TraversalMetrics(processedEntries: processedEntries ?? self.processedEntries,
+            metadataVisits: metadataVisits,
             batches: batches, maximumQueuedPaths: maximumQueuedPaths ?? self.maximumQueuedPaths,
             maximumBatchEntries: maximumBatchEntries, maximumDepth: maximumDepth,
             maximumOpenDescriptors: maximumOpenDescriptors,
@@ -1282,8 +1319,12 @@ internal struct RealFilesystemTraversalSource: BoundedTraversalSource {
                     linkCount: Int(metadata.st_nlink), children: [], terminalReason: .churn,
                     observedBreadth: names.count, openDescriptorHighWater: 1))
             }
+            let childType = childMetadata.st_mode & S_IFMT
+            let childKind: TraversalRecordKind = childType == S_IFDIR ? .directory
+                : (childType == S_IFREG ? .regularFile
+                    : (childType == S_IFLNK ? .symbolicLink : .other))
             children.append(TraversalSourceChild(name: name,
-                                                  identity: Self.identity(childMetadata)))
+                identity: Self.identity(childMetadata), kind: childKind))
         }
         var finalMetadata = stat()
         guard fstat(dirfd(directory), &finalMetadata) == 0 else {

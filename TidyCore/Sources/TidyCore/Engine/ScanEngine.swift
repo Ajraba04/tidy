@@ -118,7 +118,9 @@ public struct CoreOrchestrationContext: Sendable {
             limits: traversalLimits, sessions: sessions, session: session)
     }
 
-    func checkCurrent(allowPaused: Bool = false) async throws -> WorkSchedulerSnapshot {
+    func checkCurrent(allowPaused: Bool = false,
+                      allowLiveObservationChanges: Bool = false) async throws
+      -> WorkSchedulerSnapshot {
         guard await sessions.state(of: session) == .open else {
             throw CoreOrchestrationError.foreignOrFinishedSession
         }
@@ -126,10 +128,13 @@ public struct CoreOrchestrationContext: Sendable {
         guard snapshot.availability == .available,
               snapshot.settingsRevision == policyRevision,
               snapshot.generation == generation,
-              snapshot.observationEpoch == observationEpoch,
-              snapshot.effectiveReadOnlyProcesses == readOnlyProcessLimit,
               snapshot.effectiveSliceSeconds == sliceSeconds,
               snapshot.effectiveUIBatchesPerSecond == uiBatchesPerSecond else {
+            throw CoreOrchestrationError.stalePolicy
+        }
+        if !allowLiveObservationChanges,
+           (snapshot.observationEpoch != observationEpoch
+            || snapshot.effectiveReadOnlyProcesses != readOnlyProcessLimit) {
             throw CoreOrchestrationError.stalePolicy
         }
         if snapshot.admission == .paused, !allowPaused {
@@ -185,6 +190,9 @@ public struct CoreScanResult: Sendable {
     /// T08.4 cannot project T08.2's traversal-owned token through the accepted registry schema.
     /// A slice-expired result is therefore truthful partial state with unavailable continuation.
     public let continuationAvailable: Bool
+    /// Traversal-source metadata reads performed by this scan generation. Cached aggregate reuse
+    /// is zero even though `processedEntries` retains the cached logical count.
+    public let metadataVisits: Int
     /// T09 diagnostic-only aggregate/freshness read from the incremental index, when a caller
     /// supplied a `ScanIndexCoordinator` to `ScanEngine.start`. Never a target list and never
     /// consulted to decide what this scan measures — it is purely something the UI may display
@@ -192,10 +200,11 @@ public struct CoreScanResult: Sendable {
     public let indexStatus: ScanIndexStatus?
 
     init(report: ScanReport, coverage: TraversalCoverage, continuationAvailable: Bool,
-         indexStatus: ScanIndexStatus? = nil) {
+         metadataVisits: Int, indexStatus: ScanIndexStatus? = nil) {
         self.report = report
         self.coverage = coverage
         self.continuationAvailable = continuationAvailable
+        self.metadataVisits = metadataVisits
         self.indexStatus = indexStatus
     }
 }
@@ -312,6 +321,7 @@ private struct CoreScanAccumulator: Sendable {
         pagedOutUnavailableReason: "No measurement was recorded.")
     var unclaimedBySize: [RankedItem] = []
     var processedEntries = 0
+    var metadataVisits = 0
     var totalBytes: Int64 = 0
     var reasons: Set<TraversalCoverageReason> = []
     var includeItemsInSession = true
@@ -322,6 +332,10 @@ private struct CoreScanAccumulator: Sendable {
             result.metrics.processedEntries)
         processedEntries = entriesOverflow ? Int.max : entries
         if entriesOverflow { reasons.insert(.arithmeticOverflow) }
+        let (visits, visitsOverflow) = metadataVisits.addingReportingOverflow(
+            result.metrics.metadataVisits)
+        metadataVisits = visitsOverflow ? Int.max : visits
+        if visitsOverflow { reasons.insert(.arithmeticOverflow) }
         let (bytes, bytesOverflow) = totalBytes.addingReportingOverflow(result.totalBytes)
         totalBytes = bytesOverflow ? Int64.max : bytes
         if bytesOverflow { reasons.insert(.arithmeticOverflow) }
@@ -502,7 +516,8 @@ public extension ScanEngine {
             throw CoreOrchestrationError.invalidScopeAuthorization
         }
         do {
-            let current = try await pending.context.checkCurrent()
+            let current = try await pending.context.checkCurrent(
+                allowLiveObservationChanges: true)
             guard current.settingsRevision == handle.policyRevision else {
                 throw CoreOrchestrationError.stalePolicy
             }
@@ -524,6 +539,11 @@ public extension ScanEngine {
         }
     }
 
+}
+
+internal extension ScanEngine {
+    /// Compatibility seam for `@testable` orchestration/process-cap fixtures. Production callers
+    /// must use the public overload that consumes an `AuthorizedScanScope` at the start boundary.
     static func start(environment: CleanEnvironment, registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
@@ -532,9 +552,7 @@ public extension ScanEngine {
             session: session, traversalLimits: traversalLimits, dependencies: .live,
             indexCoordinator: indexCoordinator)
     }
-}
 
-internal extension ScanEngine {
     static func start(environment: CleanEnvironment, authorization: AuthorizedScanScope,
                       ownerID: UUID,
                       registry: ScanSessionRegistry,
@@ -799,7 +817,8 @@ internal extension ScanEngine {
         // library/stale-node_modules/launch-agents/restart-reclaim bytes that have nothing to do
         // with the home root's own aggregate.
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false, indexStatus: homeIndexStatus))
+            continuationAvailable: false, metadataVisits: accumulator.metadataVisits,
+            indexStatus: homeIndexStatus))
         return ScanSessionCompletion(terminal: coverage.isComplete ? .complete : .partial,
             coverage: coverage, snapshot: accumulator.sessionSnapshot())
     }
@@ -876,7 +895,8 @@ internal extension ScanEngine {
                 completed.topLevelHomeRanking = Array(completed.topLevelHomeRanking
                     .sorted(by: rankedBefore).prefix(8))
                 guard await publishProgress(accumulator: &completed, context: context,
-                                            reporter: reporter, store: store) else {
+                                            reporter: reporter, store: store,
+                                            allowLiveObservationChanges: true) else {
                     await continuations.clear()
                     return await cancelledCompletion(completed, store: store)
                 }
@@ -894,7 +914,7 @@ internal extension ScanEngine {
                     sessionID: context.sessionID, generation: context.generation,
                     options: TraversalOptions(protectedRoots: protected,
                         minimumFileBytes: largeFileThreshold, collectChildTotals: false,
-                        recordSelection: .all))
+                        recordSelection: .none))
             } else {
                 traversal = BoundedTraversal(sessions: context.sessions,
                     limits: context.traversalLimits)
@@ -902,7 +922,7 @@ internal extension ScanEngine {
                     sessionID: context.sessionID, generation: context.generation,
                     options: TraversalOptions(protectedRoots: protected,
                         minimumFileBytes: largeFileThreshold, collectChildTotals: false,
-                        recordSelection: .all))
+                        recordSelection: .none))
             }
             var displayed = completed
             displayed.absorb(result, optionalMissing: true)
@@ -929,18 +949,20 @@ internal extension ScanEngine {
             }
             completed = displayed
             guard await publishProgress(accumulator: &completed, context: context,
-                                        reporter: reporter, store: store) else {
+                                        reporter: reporter, store: store,
+                                        allowLiveObservationChanges: true) else {
                 await continuations.clear()
                 return await cancelledCompletion(completed, store: store)
             }
         }
-        do { _ = try await context.checkCurrent() }
+        do { _ = try await context.checkCurrent(allowLiveObservationChanges: true) }
         catch { completed.reasons.insert(.policyRevisionMismatch) }
         await continuations.clear()
         let coverage = TraversalCoverage(isComplete: completed.reasons.isEmpty,
             reasons: completed.reasons)
         await store.update(CoreScanResult(report: completed.report(), coverage: coverage,
-            continuationAvailable: false, indexStatus: completed.indexStatus))
+            continuationAvailable: false, metadataVisits: completed.metadataVisits,
+            indexStatus: completed.indexStatus))
         return ScanSessionCompletion(terminal: coverage.isComplete ? .complete : .partial,
             coverage: coverage, snapshot: completed.sessionSnapshot())
     }
@@ -1002,9 +1024,11 @@ internal extension ScanEngine {
     private static func publishProgress(accumulator: inout CoreScanAccumulator,
                                         context: CoreOrchestrationContext,
                                         reporter: ScanSessionReporter,
-                                        store: CoreScanResultStore) async -> Bool {
+                                        store: CoreScanResultStore,
+                                        allowLiveObservationChanges: Bool = false) async -> Bool {
         if await reporter.isCancelled() { return false }
-        do { _ = try await context.checkCurrent() }
+        do { _ = try await context.checkCurrent(
+            allowLiveObservationChanges: allowLiveObservationChanges) }
         catch { return false }
         var progressReasons = accumulator.reasons
         progressReasons.insert(.sliceExpired)
@@ -1021,7 +1045,7 @@ internal extension ScanEngine {
             return false
         }
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false))
+            continuationAvailable: false, metadataVisits: accumulator.metadataVisits))
         return true
     }
 
@@ -1032,7 +1056,7 @@ internal extension ScanEngine {
         reasons.insert(.cancelled)
         let coverage = TraversalCoverage(isComplete: false, reasons: reasons)
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false))
+            continuationAvailable: false, metadataVisits: accumulator.metadataVisits))
         return ScanSessionCompletion(terminal: .cancelled,
             coverage: coverage,
             snapshot: accumulator.sessionSnapshot())
@@ -1045,7 +1069,7 @@ internal extension ScanEngine {
         if reasons.isEmpty { reasons.insert(.sliceExpired) }
         let coverage = TraversalCoverage(isComplete: false, reasons: reasons)
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false))
+            continuationAvailable: false, metadataVisits: accumulator.metadataVisits))
         return ScanSessionCompletion(terminal: .partial,
             coverage: coverage,
             snapshot: accumulator.sessionSnapshot())
@@ -1058,7 +1082,8 @@ internal extension ScanEngine {
         reasons.insert(.sliceExpired)
         let coverage = TraversalCoverage(isComplete: false, reasons: reasons)
         await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: true, indexStatus: accumulator.indexStatus))
+            continuationAvailable: true, metadataVisits: accumulator.metadataVisits,
+            indexStatus: accumulator.indexStatus))
         return ScanSessionCompletion(terminal: .partial, coverage: coverage,
             snapshot: accumulator.sessionSnapshot())
     }

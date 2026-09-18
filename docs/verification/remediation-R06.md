@@ -1,6 +1,6 @@
 # R06/R07 scan, scheduler and index remediation evidence
 
-Date: 2026-09-17
+Date: 2026-09-18
 
 ## Implemented production behavior
 
@@ -21,9 +21,16 @@ Date: 2026-09-17
 - App scan ownership is global. A duplicate start attaches to the current generation, closing a
   view only detaches its subscription, and global Cancel retains ownership after every scan window
   closes. Running partial progress and terminal partial results are distinct UI states.
+- Start, Continue and terminal teardown use retained app-owned transition barriers. Simultaneous
+  windows share one reserved start, and a replacement generation cannot begin until the prior
+  generation has finished its own index and observation teardown. Terminal results remain in a
+  bounded 16-handle cache long enough for every subscribed window to consume the terminal event.
 - Bounded traversal cursors are retained by the core scan handle. Manual Continue consumes each
   cursor once, preserves the original scope/revision/generation and converges over later bounded
   pages without restarting completed roots or expanding scope.
+- Wide traversal applies bounded queue backpressure instead of terminating with `queueOverflow`.
+  The production queue retains at most 4,096 paths, expands at most one directory per batch and
+  rotates a directory until enough queued file work has drained.
 - While explicit work exists, AppExecutionServices holds a SystemMonitor explicit-work lease and
   forwards memory-pressure, thermal and Low Power Mode observations to the shared scheduler.
   Observation epochs are monotonic; stale samples are rejected. Critical state blocks new work
@@ -34,10 +41,16 @@ Date: 2026-09-17
   a corrupt app-owned database, binds roots to one live volume identity, starts FSEvents before
   traversal and stops the stream at terminal idle. A retained coordinator preserves generations
   across scans without leaving an FSEvents stream active.
+- Cache open and corruption recovery reject a non-owner-only directory and every symlink,
+  hardlink or non-regular main/WAL/SHM/journal artifact before SQLite or recovery can touch it.
+  Outside witnesses remain byte-identical.
 - FSEvents catch-up now applies the stream's initial reliability/cursor handshake before a cache
   status read. Callback batches are capped at 4,096 events and the pending delivery queue at 64
   batches; overflow coalesces to an unreliable-history invalidation. `MustScanSubDirs`, dropped
   events, root changes, mount/unmount and event-ID wrap continue to invalidate conservatively.
+- Catch-up `HistoryDone` markers are cursor progress, not mutations. Synchronous flush runs on a
+  queue separate from callback delivery, and a cancelled pump rechecks cancellation after its
+  blocked `next()` resumes so the neutral stop batch cannot advance a sticky-loss generation.
 
 The FSEvents decisions follow Apple's documented requirements: monitoring begins before baseline
 scanning, `MustScanSubDirs`/dropped history requires recursive rescan, root changes require a full
@@ -48,27 +61,33 @@ and [kFSEventStreamCreateFlagWatchRoot](https://developer.apple.com/documentatio
 
 ## Fresh focused evidence
 
-- `swift test --scratch-path /tmp/tidy-r06-build --jobs 2 --filter ScanScopeTests`
-  passed 7 tests. The fixtures assert zero actual traversal-source metadata visits for an empty
+- `swift test --scratch-path /tmp/tidy-controller-baseline --jobs 2 --no-parallel --filter
+  ScanScopeTests` passed 9 tests. The fixtures assert zero actual traversal-source metadata visits for an empty
   selected-project scope, exact Quick-root visits with unrelated Documents/credential-cache
   witnesses untouched, mandatory protected-descendant exclusion, grant owner/expiry/replay and
   root-identity replacement at engine start, and bounded Continue convergence.
-- `swift test --scratch-path /tmp/tidy-r06-build --jobs 2 --filter
-  'ScanObservationTests|ScanInvalidationTests|ScanIndexTests'` passed 37 tests in 3 suites. This
-  includes monotonic critical cooldown/stale epoch rejection, constrained one-worker admission,
-  bounded overflow invalidation, history loss, cursor/device identity, corruption/expiry/cap,
-  incremental/fresh parity and the existing unchanged-fixture >=80% metadata-visit reduction.
+- `swift test --package-path TidyCore --scratch-path /tmp/tidy-r06-build --jobs 2 --filter
+  'ScanInvalidationTests|ScanIndexTests'` passed 39 tests in 2 suites after the live FSEvents
+  corrections. This includes bounded overflow invalidation, history loss, neutral-stop generation
+  stability, `HistoryDone` classification, cursor/device identity, corruption/expiry/cap,
+  main/WAL/SHM/journal link rejection, incremental/fresh parity and unchanged reduction.
 - `swift build --scratch-path /tmp/tidy-r06-build --jobs 2` exited 0 after the production changes.
 - `xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Debug -destination
   'platform=macOS' -derivedDataPath /tmp/tidy-r06-xcode -jobs 2 build
   CODE_SIGNING_ALLOWED=NO` exited 0 for the integrated app before the final index queue/catch-up
   edits. Those later core edits compiled in the 37-test pass above.
-- A focused `ScanOrchestrationWiringTests` run initially passed 8/10. The two failures exposed a
-  real generation race: an old session's terminal cleanup stopped the replacement scan's shared
-  observation/index resources. Cleanup is now guarded by the exact active session generation.
-  The requested rerun was then interrupted by unrelated shared-tree R08 source replacement and
-  later deferred when free disk fell near the controller's 5 GiB safety floor. It is not recorded
-  as green here.
+- `xcodebuild ... -scheme TidyAppModelTests ...
+  -only-testing:TidyAppModelTests/ScanOrchestrationWiringTests test` passed 14 tests with no skips
+  in 35.696 seconds. This includes simultaneous two-window start reservation, replacement waiting
+  for old teardown, terminal-result retention, global Cancel and the production-wired real
+  FSEvents fixture. Raw log: `/tmp/tidy-r06-scan-wiring-recovered-final.log`; result bundle:
+  `/tmp/tidy-r06-xcode/Logs/Test/Test-TidyAppModelTests-2026.09.18_17-01-40-+0400.xcresult`.
+- The real fixture created 500 directories and 100,000 zero-byte files, allocated 49,152 bytes by
+  the fixture's recursive `st_blocks` measurement, and retained 37,439,217,664 bytes free after
+  creation. The complete fresh scan made 100,502 traversal-source metadata visits; the equal
+  complete unchanged scan made 0, a 100% reduction, with zero catch-up retries. These are
+  diagnostic results from this 32 GiB M1 Max host, not the separate R13 reference-hardware timing
+  or physical-footprint acceptance.
 
 All fixtures wrote only under unique `/private/tmp/TidyR06*` or
 `/private/tmp/T085ScanWiring-*` directories. No personal home, service, mutation adapter or remote
@@ -81,10 +100,6 @@ endpoint was used.
 - Real critical memory pressure, serious thermal state, Low Power Mode, sleep/wake and stale
   provider behavior remain hardware/runtime acceptance. Injected scheduler observations prove the
   production handoff logic, not physical condition delivery timing.
-- A fresh focused app-model rerun after the generation-race fix remains required. The app index is
-  production-wired, but app-level real-FSEvents unchanged reuse and the 100k metadata reduction
-  must still be recorded in a disposable fixture with raw artifacts. Existing core parity and
-  reduction tests do not substitute for that app gate.
 - Multiple-volume indexing is deliberately unavailable: a scan whose approved roots do not all
   resolve to the same live volume identity falls back to fresh traversal. External-volume consent
   and remount acceptance are not inferred from path equality.
@@ -94,9 +109,8 @@ endpoint was used.
   as required by the dependency gates. Revision-zero settings still do not install scheduler
   authority, and app construction still supplies an empty detected-tools set.
 
-R06 source behavior is implemented with the residual runtime gates above. R07 app integration is
-implemented but remains incomplete until the focused app rerun and real scratch FSEvents/100k
-artifacts are captured. Neither package is a full-program completion claim.
+R06 source behavior and R07 app/index integration are implemented with the residual runtime and
+reference-hardware gates above. Neither package is a full-program completion claim.
 
 ## Controller scope correction — cache aliases
 

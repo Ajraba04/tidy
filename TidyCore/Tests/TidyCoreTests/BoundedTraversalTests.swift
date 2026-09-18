@@ -57,7 +57,8 @@ private final class LockedTraversalSource: BoundedTraversalSource, @unchecked Se
         let children = node.children.compactMap { name -> TraversalSourceChild? in
             let childPath = request.path + "/" + name
             guard let child = nodes[childPath] else { return nil }
-            return TraversalSourceChild(name: name, identity: child.identity)
+            return TraversalSourceChild(name: name, identity: child.identity,
+                kind: child.isDirectory ? .directory : .regularFile)
         }
         return .entry(TraversalSourceEntry(
             identity: node.identity,
@@ -130,7 +131,8 @@ private final class VirtualHighCardinalityTraversalSource: BoundedTraversalSourc
     func read(_ request: TraversalSourceRequest) -> TraversalSourceRead {
         if request.path == root {
             let children = (0..<directoryCount).map {
-                TraversalSourceChild(name: "d\($0)", identity: directoryIdentity($0))
+                TraversalSourceChild(name: "d\($0)", identity: directoryIdentity($0),
+                    kind: .directory)
             }
             recordRead(children: children.count)
             return directoryEntry(identity: rootIdentity, children: children)
@@ -145,7 +147,7 @@ private final class VirtualHighCardinalityTraversalSource: BoundedTraversalSourc
         if components.count == 1, directory < directoryCount {
             let children = (0..<filesPerDirectory).map {
                 TraversalSourceChild(name: "f\($0)",
-                    identity: fileIdentity(directory: directory, file: $0))
+                    identity: fileIdentity(directory: directory, file: $0), kind: .regularFile)
             }
             recordRead(children: children.count)
             return directoryEntry(identity: directoryIdentity(directory), children: children)
@@ -538,7 +540,7 @@ struct BoundedTraversalTests {
         #expect(page.totalBytes == 8_390_656)
         #expect(page.childTotals.count == 16)
         #expect(page.topItems.count == 8)
-        #expect(page.metrics.maximumQueuedPaths == limits.queuedPaths)
+        #expect(page.metrics.maximumQueuedPaths <= limits.queuedPaths)
         #expect(page.metrics.maximumBatchEntries <= limits.batchEntries)
         #expect(page.metrics.maximumDepth <= limits.maxDepth)
         #expect(page.metrics.maximumOpenDescriptors <= limits.openDescriptors)
@@ -546,6 +548,32 @@ struct BoundedTraversalTests {
         #expect(page.metrics.maximumChildAggregates <= limits.childAggregates)
         #expect(page.metrics.maximumResultRecords == limits.resultRecords)
         #expect(page.metrics.maximumTopN == limits.topN)
+    }
+
+    @Test("wide 100k traversal applies bounded queue backpressure and completes")
+    @MainActor
+    func wideHundredThousandTraversalCompletesWithinQueueBound() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        defer { Task { await rig.cleanup() } }
+        let root = "/virtual-wide-100k"
+        let source = VirtualHighCardinalityTraversalSource(
+            root: root, directoryCount: 500, filesPerDirectory: 200)
+        let limits = try standardLimits(batchEntries: 64, queuedPaths: 4_096, maxDepth: 8,
+            hardLinks: 65_536, resultRecords: 64, topN: 8, maxBreadth: 1_024)
+        let result = await BoundedTraversal(sessions: rig.sessions, limits: limits, source: source)
+            .start(root: root, session: rig.session, sessionID: UUID(), generation: 1,
+                options: .init(minimumFileBytes: 0, collectChildTotals: false,
+                    recordSelection: .none))
+        let sourceSnapshot = source.snapshot()
+
+        #expect(result.coverage.isComplete)
+        #expect(result.cursor == nil)
+        #expect(result.metrics.processedEntries == 100_501)
+        #expect(result.metrics.metadataVisits == sourceSnapshot.readCount)
+        #expect(sourceSnapshot.readCount >= result.metrics.processedEntries)
+        #expect(result.totalBytes == 5_000_050_000)
+        #expect(result.metrics.maximumQueuedPaths <= limits.queuedPaths)
+        #expect(sourceSnapshot.maximumChildren == 500)
     }
 
     @Test("bounded top-N equals a complete bytes-descending path-ascending sort")
