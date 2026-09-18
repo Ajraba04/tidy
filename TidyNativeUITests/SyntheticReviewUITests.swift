@@ -19,4 +19,35 @@ final class SyntheticReviewUITests: XCTestCase {
             XCTAssertFalse(clean.isEnabled, "Synthetic \(tier) must never offer an effect")
         }
     }
+
+    @MainActor
+    func testSettingsRowsExposeSeparateEditorAndMetadataElements() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        defer { app.terminate() }
+
+        let settings = app.radioButtons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.click()
+
+        let rowIdentifier = "settings.row.feature.headroom"
+        let rows = app.descendants(matching: .any).matching(identifier: rowIdentifier)
+        XCTAssertEqual(rows.count, 1, rows.debugDescription)
+        XCTAssertEqual(rows.firstMatch.label, "Feature Headroom, feature.headroom")
+
+        let editor = app.checkBoxes["settings.control.feature.headroom"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), editor.debugDescription)
+        XCTAssertEqual(editor.label, "Feature Headroom, feature.headroom")
+
+        let metadata = app.staticTexts["settings.metadata.feature.headroom"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 10), metadata.debugDescription)
+        XCTAssertEqual(metadata.label, "Feature Headroom, feature.headroom")
+        XCTAssertTrue(app.staticTexts["settings.metadata.feature.buildPrep"].exists)
+        XCTAssertTrue(app.staticTexts["settings.metadata.feature.projects"].exists)
+
+        editor.click()
+        XCTAssertEqual(app.staticTexts["fixture.settings.submissions"].value as? String,
+                       "Fixture submissions: 1")
+    }
 }
