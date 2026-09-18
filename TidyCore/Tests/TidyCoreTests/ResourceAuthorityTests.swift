@@ -183,6 +183,32 @@ struct ResourceAuthorityTests {
                 == seal.tree.batches.flatMap(\.entries).map(\.relativePath))
     }
 
+    @Test("Archive cannot splice an unprotected manifest onto a valid protected scope")
+    func mixedManifestAndProtectionAreRejected() throws {
+        let scratch = try AuthorityScratch(); defer { scratch.cleanup() }
+        let unprotected = try ResourcePreflight.captureReviewedDirectory(
+            at: scratch.derivedData.path, protectedRoots: [])
+        let protected = try ResourcePreflight.captureReviewedDirectory(
+            at: scratch.derivedData.path, protectedRoots: [scratch.protected.path])
+        let unprotectedData = try unprotected.persistenceArchive.encodedBounded()
+        let protectedData = try protected.persistenceArchive.encodedBounded()
+        var mixed = try #require(
+            JSONSerialization.jsonObject(with: unprotectedData) as? [String: Any])
+        let protectedObject = try #require(
+            JSONSerialization.jsonObject(with: protectedData) as? [String: Any])
+        guard let protectedScope = protectedObject["protection"] else {
+            throw GuardedFileError.invalidManifest
+        }
+        mixed["protection"] = protectedScope
+        let mixedData = try JSONSerialization.data(withJSONObject: mixed, options: [.sortedKeys])
+        let decoded = try ReviewedManifestArchive.decodeBounded(mixedData)
+
+        #expect(throws: GuardedFileError.invalidManifest) { _ = try decoded.restore() }
+        #expect(try Data(contentsOf: scratch.protected.appendingPathComponent("keep.txt"))
+                == Data("protected".utf8))
+        #expect(try Data(contentsOf: scratch.unchanged) == Data("unchanged".utf8))
+    }
+
     @Test("Held fresh lease removes only unchanged reviewed leaves")
     func unchangedLeavesOnly() throws {
         let scratch = try AuthorityScratch(); defer { scratch.cleanup() }

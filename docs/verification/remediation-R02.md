@@ -9,7 +9,7 @@ Status: **foundation implemented; production acceptance BLOCKED**
 
 ## Result
 
-R02 now has a review-time filesystem authority contract for Xcode DerivedData. The coordinator captures the exact local volume, selected root, ancestor chain, descendant names and identities, bounded manifest batches, manifest digest, and canonical protection-scope digest during review. Execution cannot substitute a fresh tree: the retained legacy production entry now returns `productionProofUnavailable`, and the internal effect primitive consumes only a coordinator-retained review seal.
+R02 now has a review-time filesystem authority contract for Xcode DerivedData. The coordinator captures the exact local volume, selected root, ancestor chain, descendant names and identities, bounded manifest batches, manifest digest, and canonical protection-scope digest during review. Archive restoration also derives the descendant exclusions from the canonical root and protected roots and requires exact equality with the manifest's exclusion list, so independently valid manifest and protection blocks cannot be spliced into authority. Execution cannot substitute a fresh tree: the retained legacy production entry now returns `productionProofUnavailable`, and the internal effect primitive consumes only a coordinator-retained review seal.
 
 The ownership boundary is separate from filesystem identity. An effect-capable association must identify the adapter/version, exact sealed resource, recognized producers, complete owners, all shared owners, observation/expiry, and producer-manifest revalidation method. Immediately before the first effect, an internal lease provider must acquire a producer-owned exclusion primitive. The returned proof must match the same adapter/version/resource/producers/owners, be complete, use `producerExclusionLease`, and be no older than five seconds with a declared lifetime no longer than five seconds. The live lease also carries non-Codable `ContinuousClock.Instant` acquisition/deadline values; the effect checks monotonic age and a maximum five-second monotonic lifetime. Wall-clock rollback/future observations deny, and frozen wall time cannot extend the monotonic deadline. The lease is retained across every unlink. Process absence, a Tidy-owned advisory lock, and manual inactivity are represented as unsupported runtime methods and cannot satisfy validation.
 
@@ -38,7 +38,7 @@ The archive is `Codable`, but authority consumers use `encodedBounded()` and `de
 | Serialized archive input | 96 MiB |
 | Protection roots / exclusions | 256 each |
 
-R03 must bound its durable file read to 96 MiB before allocating the input `Data`, persist this archive together with operation identity and pending intent before effect, and call `restore()` after bounded decode. Restoration re-encodes every header/batch, verifies structure and aggregate limits, verifies both digests, and only then recreates an internal `ReviewedFileResource`. A digest or open file descriptor by itself is not authority. R03 must retain exact manifest bytes for positive terminal reconciliation; it must not recapture a fresher tree after a crash. Runtime freshness is intentionally absent from the archive: every process launch must acquire a new producer lease and new monotonic epoch immediately before effect.
+R03 must bound its durable file read to 96 MiB before allocating the input `Data`, persist this archive together with operation identity and pending intent before effect, and call `restore()` after bounded decode. Restoration re-encodes every header/batch, verifies structure and aggregate limits, verifies both digests, derives the canonical descendant exclusions from the protected roots, requires exact equality with the archived exclusions, and only then recreates an internal `ReviewedFileResource`. A digest or open file descriptor by itself is not authority. R03 must retain exact manifest bytes for positive terminal reconciliation; it must not recapture a fresher tree after a crash. Runtime freshness is intentionally absent from the archive: every process launch must acquire a new producer lease and new monotonic epoch immediately before effect.
 
 ## Safe-withholding behavior
 
@@ -75,23 +75,24 @@ This is an evidence-bounded conclusion about documented supported interfaces, no
 
 ## Red/green and verification evidence
 
-The first focused test build failed because the new lease, association, inventory, and review-seal types did not exist. After implementation, verification used a disposable `git archive` of `HEAD` plus only R02-owned files because R06 had a temporary shared-tree API/test mismatch. No shared files were moved or edited for that workaround.
+The first focused test build failed because the new lease, association, inventory, and review-seal types did not exist. After implementation, verification used a disposable `git archive` of `HEAD` plus only R02-owned files because the current shared worktree had an unrelated in-flight `RunLogTests`/`OptionalRunHistoryStore` API mismatch. The current-tree attempt stopped at compilation before running R02 tests; no unrelated source or test file was edited. Existing logs were preserved and the corrective run reused `/tmp/tidy-r02-isolated-build` with two jobs.
 
 Commands:
 
 ```text
-cd /tmp/tidy-r02-snapshot.eQe4mD/TidyCore
+cd /tmp/tidy-r02-correction-src.XHQj4E/TidyCore
 swift test --scratch-path /tmp/tidy-r02-isolated-build --jobs 2 --filter ResourceAuthorityTests
 swift test --scratch-path /tmp/tidy-r02-isolated-build --jobs 2 --filter GuardedDeletionTests
 ```
 
 Results:
 
-- `ResourceAuthorityTests`: 7 tests passed after final monotonic hardening, including an eight-case denial matrix (incomplete, unknown, unknown shared owner, stale association, changed owner, unsupported version, expired runtime proof, wall-clock rollback) and a frozen-wall/expired-monotonic-deadline case.
+- `ResourceAuthorityTests`: 8 tests passed, including the archive-splice regression, an eight-case denial matrix (incomplete, unknown, unknown shared owner, stale association, changed owner, unsupported version, expired runtime proof, wall-clock rollback), and a frozen-wall/expired-monotonic-deadline case.
 - `GuardedDeletionTests`: 29 tests passed.
-- Shared production package build: `swift build --scratch-path /tmp/tidy-r02-build --jobs 2` passed.
+- Regression red/green: with only the new exclusion/protection structural check removed, `mixedManifestAndProtectionAreRejected` failed because restoration threw no error; after restoring the check, the same test passed.
+- Original foundation shared production package build: `swift build --scratch-path /tmp/tidy-r02-build --jobs 2` passed.
 
-The fixture-only positive lease proves the contract and lifetime behavior on disposable files. It is internal test evidence and is not registered or installed as production Xcode authority.
+The fixture-only positive lease validates exact proof matching, wall-clock and monotonic freshness checks, and retention of the lease object across unlink operations on disposable files. It does not hold or prove a producer exclusion primitive, does not demonstrate acquire-then-observe ordering, and is not registered or installed as production Xcode authority. The exclusion race fixture and supported producer proof remain open acceptance gates.
 
 ## Remaining production acceptance gates
 
