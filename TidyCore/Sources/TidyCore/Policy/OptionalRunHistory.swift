@@ -25,7 +25,7 @@ public struct OptionalRunHistoryPolicy: Equatable, Sendable {
 }
 
 public enum OptionalRunHistoryOutcome: Equatable, Sendable {
-    case recorded(retainedCount: Int), disabled, entryExceedsLimit
+    case recorded(retainedCount: Int), disabled, entryExceedsLimit, stalePolicy
 }
 
 /// Serialized storage anchored to one owner-only directory and the exact
@@ -36,6 +36,7 @@ public actor OptionalRunHistoryStore {
     }
     private static let filename = "runs.jsonl"
     private let directory: URL
+    private var acknowledgedPolicy: (revision: UInt64, policy: OptionalRunHistoryPolicy)?
 
     public init(directory: URL) throws {
         let value = directory.standardizedFileURL
@@ -48,8 +49,12 @@ public actor OptionalRunHistoryStore {
 
     @discardableResult
     public func record(_ report: RunReport, policy: OptionalRunHistoryPolicy,
+                       acknowledgedRevision: UInt64,
                        now: Date = Date()) throws -> OptionalRunHistoryOutcome {
-        guard policy.enabled else { return try reconcile(policy: policy, now: now) }
+        guard try admit(policy, revision: acknowledgedRevision) else { return .stalePolicy }
+        guard policy.enabled else {
+            return try reconcile(policy: policy, acknowledgedRevision: acknowledgedRevision, now: now)
+        }
         let limits = try validatedLimits(policy)
         let entry = try encodedLine(report)
         guard entry.count <= limits.maxBytes else { return .entryExceedsLimit }
@@ -68,7 +73,9 @@ public actor OptionalRunHistoryStore {
 
     @discardableResult
     public func reconcile(policy: OptionalRunHistoryPolicy,
+                          acknowledgedRevision: UInt64,
                           now: Date = Date()) throws -> OptionalRunHistoryOutcome {
+        guard try admit(policy, revision: acknowledgedRevision) else { return .stalePolicy }
         let limits = try validatedLimits(policy)
         guard policy.enabled else {
             try removeValidatedIfPresent(maxBytes: limits.maxBytes); return .disabled
@@ -87,6 +94,18 @@ public actor OptionalRunHistoryStore {
 
     public func read(policy: OptionalRunHistoryPolicy) throws -> [RunReport] {
         try load(maxBytes: validatedLimits(policy).maxBytes)
+    }
+
+    /// Delayed writes and retention tasks cannot undo a newer acknowledged
+    /// policy. Equal revisions must describe the same policy.
+    private func admit(_ policy: OptionalRunHistoryPolicy, revision: UInt64) throws -> Bool {
+        if let current = acknowledgedPolicy {
+            guard revision >= current.revision else { return false }
+            if revision == current.revision, policy != current.policy { throw Error.invalidPolicy }
+        }
+        _ = try validatedLimits(policy)
+        acknowledgedPolicy = (revision, policy)
+        return true
     }
 
     private func validatedLimits(_ policy: OptionalRunHistoryPolicy)
