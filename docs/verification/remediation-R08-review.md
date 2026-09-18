@@ -12,35 +12,35 @@ Inputs: `.superpowers/sdd/r08-review.patch`, `.superpowers/sdd/r08-app-services-
 
 ## Verdict
 
-Corrective changes are required before the R08 checkpoint is approved. The review found three Important specification findings. The acknowledged-policy binder, scene-generation ordering, disabled-probe boundary, missing disk-value validation, unit labels, measured UUID/capacity binding, registry consumer metadata, generated settings reference, and structural privacy-renderer boundary otherwise match the reviewed R08 scope.
+**Corrective disposition: all three Important findings are resolved in the follow-up source and tests.** The production pressure mask includes nominal recovery, an acknowledged feature disable publishes an unavailable snapshot without probing or manual refresh, and optional history applies a newly smaller/off policy to files valid beneath the fixed 50 MiB storage ceiling. The R08 source checkpoint is approved within the evidence limits below.
 
-This review is limited to the supplied R08 commits and the R08-owned binder/history portions of the shared `AppExecutionServices` snapshot. The active R06 scan lifecycle and incremental-index sections were excluded. No tests or builds were run because of the recorded low-disk constraint; the existing 53-core, 30-monitor, 15-app-model, and 5-history results were assessed as supplied evidence only.
+This review is limited to the supplied R08 commits, the follow-up correction, and the R08-owned binder/history portions of the shared `AppExecutionServices` snapshot. The active R06 scan lifecycle and incremental-index sections were excluded. No app build or app-model suite was run because of the recorded low-disk constraint. The follow-up used the controller's existing scratch path with two jobs: 33 `HeadroomSignalsTests` and 7 `OptionalRunHistoryTests` passed, 40 total. The earlier 53-core, 30-monitor, 15-app-model, and 5-history results remain supplied prior evidence.
 
 ## Findings
 
-### Important — the production pressure source never subscribes to nominal recovery
+### Resolved Important — the production pressure source did not subscribe to nominal recovery
 
 `LiveMemoryPressureObserving` creates its dispatch source with only `.warning` and `.critical` in the event mask, while its event handler contains an `else` branch that maps an event to `.normal` (`TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:90-103`). Dispatch exposes `.normal` as a distinct event indicating that memory pressure returned to normal; an event excluded from the mask is not delivered. Once production publishes warning or critical pressure, `latestPressureLevel` can therefore remain elevated indefinitely, and each later scheduled measurement copies that stale level into the next snapshot (`SystemMonitor.swift:524-546,582-585`). The shared scheduler bridge consequently continues to derive `.critical` or `.constrained` from stale production state even after recovery (`.superpowers/sdd/r08-app-services-snapshot.swift:27-40`).
 
 The focused tests do not exercise the production mask. Their controlled observer calls the callback directly; the only nominal-event regression sends `.normal` through an obsolete subscription and asserts that it is rejected (`TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:385-428`). It therefore proves stale-subscription rejection, not current-subscription recovery.
 
-Correction: subscribe to `.normal` as well as warning and critical (or use the complete pressure mask), and add a regression that drives critical then nominal through the current subscription and proves immediate recovery publication without another probe. Production/platform delivery remains a separate runtime gate.
+Disposition: the production mask now explicitly contains normal, warning, and critical. One regression asserts that exact mask; another drives critical then nominal through the current subscription and proves immediate recovery without another probe. Production/platform delivery remains a separate runtime gate.
 
-### Important — an acknowledged feature disable leaves visible consumers showing the prior successful measurement
+### Resolved Important — an acknowledged feature disable left visible consumers showing the prior successful measurement
 
 Applying a disabled configuration clears only the monitor's internal `latestSnapshot` and pressure value, then cancels the timer/subscription; it does not publish an unavailable snapshot to existing subscribers (`TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:299-320,475-492`). A visible Headroom window or menu popover therefore retains its previous successful `snapshot` indefinitely after the acknowledged disable, because the canceled loop will not produce another value. The UI continues to display old disk/memory/swap figures without the `featureDisabledReason`, contrary to R08's immediate acknowledged-policy behavior and its prohibition on false success in denied/unavailable states.
 
 The app-model test named `testVisibleHeadroomAppliesAcknowledgedFeatureDisableImmediately` verifies only that the timer stops. It then explicitly invokes `model.refreshNow()` before expecting the disabled snapshot (`TidyAppModelTests/SharedSettingsWiringTests.swift:2117-2149`). That manual action masks the stale visible-state behavior and does not establish immediate presentation revocation.
 
-Correction: as part of accepting the newer disabled revision, publish one policy-disabled snapshot without invoking any OS probe, or make every subscribed presentation clear/replace its snapshot directly from the same acknowledged policy event. Add a visible-consumer test that performs no manual refresh, observes the disabled state, and proves the probe count remains unchanged.
+Disposition: accepting a disabled configuration now installs and broadcasts the same explicit unavailable snapshot used by manual disabled requests before canceling repeating work. The regression observes the publication directly and proves the probe count remains unchanged; no refresh is involved.
 
-### Important — lowering or disabling history can reject a file valid under the previous policy instead of applying the new policy
+### Resolved Important — lowering or disabling history could reject a file valid under the previous policy
 
 Both `record` and enabled `reconcile` call `load(maxBytes:)` with the **new** history cap, and disabled `reconcile` calls `removeValidatedIfPresent(maxBytes:)` with that same new cap (`TidyCore/Sources/TidyCore/Policy/OptionalRunHistory.swift:50-92`). `validatedFile` rejects any existing file larger than the passed cap before it can be decoded, pruned, or removed (`OptionalRunHistory.swift:129-143`). Thus a history file valid under a 10 MiB policy can make a subsequent 1 MiB policy throw `.oversized` rather than retain the newest records within 1 MiB. A single acknowledged change that sets `history.enabled=false` and lowers `history.maxMiB` can likewise fail to remove the optional file.
 
 This breaks the R08 requirement that off/age/byte controls apply independently of mandatory recovery. It also leaves `historyPersistenceError` set in the shared binder instead of completing the newly acknowledged retention decision (`.superpowers/sdd/r08-app-services-snapshot.swift:113-135`). Existing tests create and reconcile data under one unchanged 1 MiB cap; they do not cover a downward cap transition or disable combined with a lower cap (`TidyCore/Tests/TidyCoreTests/RunLogTests.swift:109-177`).
 
-Correction: validate/read a pre-existing file against the fixed storage safety ceiling (currently 50 MiB), then apply the new age/byte cap to the decoded records before publishing. The disabled path should safely remove a validated optional-history file that was legal under the preceding acknowledged cap. Add transitions from a larger valid cap to a smaller cap and to disabled, while retaining the existing mandatory-recovery witness assertion.
+Disposition: pre-existing history is now validated/read or removed against one named 50 MiB safety ceiling, after which enabled reconciliation applies the acknowledged age/byte policy to the decoded records. New transition fixtures prove a 2 MiB-valid file is trimmed to the newest record under 1 MiB, and that disable plus a lower cap removes only optional history while preserving the mandatory-recovery witness. The unsafe oversized fixture now uses a sparse 50 MiB + 1 byte file and remains rejected.
 
 ## Confirmed boundaries
 

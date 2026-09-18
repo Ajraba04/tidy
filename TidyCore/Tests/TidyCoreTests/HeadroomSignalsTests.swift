@@ -382,6 +382,26 @@ struct HeadroomSignalsTests {
         #expect(await monitor.appliedConfigurationRevisionForTesting() == 3)
     }
 
+    @Test("an acknowledged feature disable immediately publishes unavailable without probing")
+    func acknowledgedDisablePublishesUnavailableWithoutProbe() async {
+        let calls = ProbeCounter()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            configurationRevision: 1, probe: FakeSystemProbing(calls: calls),
+            pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
+        _ = await monitor.requestSnapshot()
+        let probeCount = calls.count
+        let broadcasts = await monitor.broadcastCountForTesting()
+
+        let applied = await monitor.applyConfiguration(.disabled, acknowledgedRevision: 2)
+        let snapshot = await monitor.latestSnapshotForTesting()
+
+        #expect(applied)
+        #expect(snapshot?.unavailableReason == SystemMonitor.featureDisabledReason)
+        #expect(snapshot?.volumes.isEmpty == true && snapshot?.memory == nil)
+        #expect(await monitor.broadcastCountForTesting() == broadcasts + 1)
+        #expect(calls.count == probeCount)
+    }
+
     @Test("memory-pressure events publish immediately without waiting for a timer or probing")
     func pressureEventsPublishImmediatelyWithoutProbing() async throws {
         let calls = ProbeCounter()
@@ -402,6 +422,39 @@ struct HeadroomSignalsTests {
         }
         #expect(await monitor.broadcastCountForTesting() == broadcasts + 1)
         #expect(await monitor.latestPressureLevelForTesting() == .critical)
+        #expect(calls.count == probeCount)
+    }
+
+    @Test("production pressure observation subscribes to nominal recovery")
+    func productionPressureMaskIncludesRecovery() {
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.normal))
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.warning))
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.critical))
+    }
+
+    @Test("the current pressure subscription publishes nominal recovery after critical")
+    func currentPressureSubscriptionPublishesRecovery() async throws {
+        let calls = ProbeCounter()
+        let pressure = ControlledPressureObserving()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(calls: calls), pressureObserving: pressure,
+            scheduling: ImmediateScheduling())
+        await monitor.acquireSceneLease(MonitorLease())
+        _ = await monitor.requestSnapshot()
+        let probeCount = calls.count
+
+        pressure.emit(.critical, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .critical { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        pressure.emit(.normal, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .normal { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        #expect(await monitor.latestPressureLevelForTesting() == .normal)
         #expect(calls.count == probeCount)
     }
 

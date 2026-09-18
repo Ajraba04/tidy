@@ -88,11 +88,13 @@ public protocol MemoryPressureObserving: Sendable {
 }
 
 public struct LiveMemoryPressureObserving: MemoryPressureObserving {
+    static let eventMask: DispatchSource.MemoryPressureEvent = [.normal, .warning, .critical]
+
     public init() {}
 
     public func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void) -> MemoryPressureSubscription {
         let source = DispatchSource.makeMemoryPressureSource(
-            eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility))
+            eventMask: Self.eventMask, queue: DispatchQueue.global(qos: .utility))
         source.setEventHandler { [weak source] in
             guard let event = source?.data else { return }
             if event.contains(.critical) { onChange(.critical) }
@@ -308,8 +310,10 @@ public actor SystemMonitor {
     private func apply(_ newConfiguration: Configuration) {
         configuration = newConfiguration
         if !newConfiguration.featureEnabled {
-            latestSnapshot = nil
+            let snapshot = featureDisabledSnapshot()
+            latestSnapshot = snapshot
             latestPressureLevel = nil
+            broadcast(snapshot)
         }
         if !newConfiguration.historyEnabled {
             history = SignalHistory(maxEntries: 0, maxAgeSeconds: 0)
@@ -369,11 +373,8 @@ public actor SystemMonitor {
     @discardableResult
     public func requestSnapshot() async -> SystemSnapshot {
         guard configuration.featureEnabled else {
-            let snapshot = SystemSnapshot(observedAt: clock(), bootIdentity: nil,
-                volumes: [], memory: nil, memoryUnavailableReason: Self.featureDisabledReason,
-                swap: nil, swapUnavailableReason: Self.featureDisabledReason,
-                pageOutRatePerSecond: nil, memoryPressureLevel: nil, thermalState: nil,
-                isLowPowerModeEnabled: nil, unavailableReason: Self.featureDisabledReason)
+            let snapshot = featureDisabledSnapshot()
+            latestSnapshot = snapshot
             broadcast(snapshot)
             return snapshot
         }
@@ -381,6 +382,14 @@ public actor SystemMonitor {
         latestSnapshot = snapshot
         broadcast(snapshot)
         return snapshot
+    }
+
+    private func featureDisabledSnapshot() -> SystemSnapshot {
+        SystemSnapshot(observedAt: clock(), bootIdentity: nil,
+            volumes: [], memory: nil, memoryUnavailableReason: Self.featureDisabledReason,
+            swap: nil, swapUnavailableReason: Self.featureDisabledReason,
+            pageOutRatePerSecond: nil, memoryPressureLevel: nil, thermalState: nil,
+            isLowPowerModeEnabled: nil, unavailableReason: Self.featureDisabledReason)
     }
 
     /// A dedicated stream for ONE consumer. Every caller -- the menu bar
@@ -426,6 +435,7 @@ public actor SystemMonitor {
     public func activeExplicitWorkLeaseCountForTesting() -> Int { explicitWorkLeases.count }
     public func appliedConfigurationRevisionForTesting() -> UInt64 { configurationRevision }
     public func latestPressureLevelForTesting() -> MemoryPressureLevel? { latestPressureLevel }
+    public func latestSnapshotForTesting() -> SystemSnapshot? { latestSnapshot }
     public func broadcastCountForTesting() -> UInt64 { broadcastCount }
 
     /// Test-only visibility into how many live subscriptions are currently
