@@ -80,13 +80,20 @@ struct ReviewedManifestArchive: Codable, Sendable {
         guard archiveSchemaVersion == Self.currentSchemaVersion,
               header.schemaVersion == 1 else { throw GuardedFileError.invalidManifest }
         try validateAggregateBounds()
-        let tree = ReviewedTree(header: header, batches: batches,
-            excludedRelativePaths: excludedRelativePaths, digest: manifestDigest)
-        guard tree.validateDigest(manifestDigest) else { throw GuardedFileError.invalidManifest }
         let recomputedProtection = try ResourcePreflight.protectionScope(
             rootPath: header.canonicalRootPath,
             protectedRoots: protection.canonicalProtectedRoots)
         guard recomputedProtection == protection else { throw GuardedFileError.invalidManifest }
+        let derivedExclusions = try ResourcePreflight.descendantExclusions(
+            rootPath: header.canonicalRootPath,
+            protectedRoots: protection.canonicalProtectedRoots)
+            .sorted(by: ManifestEncoding.ordered)
+        guard derivedExclusions == excludedRelativePaths else {
+            throw GuardedFileError.invalidManifest
+        }
+        let tree = ReviewedTree(header: header, batches: batches,
+            excludedRelativePaths: excludedRelativePaths, digest: manifestDigest)
+        guard tree.validateDigest(manifestDigest) else { throw GuardedFileError.invalidManifest }
         return try ResourcePreflight.makeReviewedResource(tree: tree, protection: protection)
     }
 
@@ -306,8 +313,8 @@ enum ResourcePreflight {
                                        canonicalProtectedRoots: roots)
     }
 
-    private static func descendantExclusions(rootPath: String,
-                                             protectedRoots: [String]) throws -> Set<String> {
+    fileprivate static func descendantExclusions(rootPath: String,
+                                                 protectedRoots: [String]) throws -> Set<String> {
         var exclusions: Set<String> = []
         for protected in protectedRoots {
             switch try PathGuard.relation(candidate: rootPath, protectedRoot: protected) {
