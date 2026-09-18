@@ -425,6 +425,31 @@ struct HeadroomSignalsTests {
         #expect(calls.count == probeCount)
     }
 
+    @Test("a subscriber registering after publication replays the latest snapshot")
+    func lateSubscriberReceivesLatestSnapshot() async throws {
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        let published = await monitor.requestSnapshot()
+        let receipt = Box<SystemSnapshot?>(nil)
+        let stream = await monitor.subscribe()
+        let task = Task {
+            for await snapshot in stream {
+                receipt.set(snapshot)
+                break
+            }
+        }
+        for _ in 0..<200 {
+            if receipt.get() != nil { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let received = receipt.get()
+        #expect(received?.observedAt == published.observedAt)
+        #expect(received?.volumes.first?.disk?.availableBytes
+            == published.volumes.first?.disk?.availableBytes)
+        task.cancel()
+    }
+
     @Test("production pressure observation subscribes to nominal recovery")
     func productionPressureMaskIncludesRecovery() {
         #expect(LiveMemoryPressureObserving.eventMask.contains(.normal))
