@@ -117,7 +117,7 @@ Result: **40 tests passed, 0 failures** (33 monitor/headroom and 7 optional-hist
 
 The app no longer orders measured-volume facts by `SystemSnapshot.observedAt`. The one app-owned volume observer assigns a strictly increasing `UInt64` epoch in stream-delivery order, and `AppConfigStore` rejects equal or older epochs. A newer missing-volume or remounted-volume observation therefore replaces stale UUID/capacity state even if wall time moves backward; a delayed older epoch cannot restore it.
 
-`AppExecutionServices` now has an explicit, idempotent monitoring disposal path used by its isolated deinitializer. It cancels the long-lived volume stream task and removes exactly the services-owned acknowledged-policy observer token. Scan/index generation resources and unrelated policy observers are not touched.
+`AppExecutionServices` now has an explicit, idempotent monitoring disposal path. Its ordinary deinitializer closes a small lock-protected Sendable lifetime gate and cancels the Sendable volume task synchronously, then schedules removal of the captured services-owned observer token on `MainActor` without capturing `self`. Scan/index generation resources and unrelated policy observers are not touched.
 
 Test-first evidence used the existing `/tmp/tidy-r08-xcode` cache with two jobs. Before correction, the focused model run produced five assertions: the rollback fixture retained the stale 10 GiB target across newer missing/changed observations, and teardown left one monitor subscriber plus both policy observers registered. After correction:
 
@@ -129,3 +129,9 @@ xcodebuild test -project Tidy.xcodeproj -scheme TidyAppModelTests \
 ```
 
 Result: **2 tests passed, 0 failures**. This is focused app-model evidence. It does not close real remount/filesystem delivery, wall-clock-change runtime, native UI, hardware, export, migration, package, or release gates.
+
+### Toolchain-compatible teardown follow-up
+
+The initial disposal implementation used `isolated deinit`, which requires Swift 6.2 and is not compatible with the macOS 14 CI image's Swift 6.0 toolchain. The compatible implementation uses ordinary `deinit` plus the Sendable lifetime gate described above. Policy and volume callbacks check that gate before starting work and after suspension points, so a still-registered callback cannot install history/error state after disposal while main-actor token removal is pending. The explicit disposal path remains idempotent and removes its token synchronously.
+
+Focused verification reran exactly the automatic-deinit and repeated-explicit-disposal cases in `/tmp/tidy-r08-xcode`: **2 tests passed, 0 failures**. The explicit test saves a later acknowledged policy after two disposal calls and proves the unrelated observer still fires while the disposed monitor revision does not change.
