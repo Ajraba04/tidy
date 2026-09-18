@@ -20,7 +20,16 @@ python3 scripts/verification/check-personal-data.py
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 623
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 623 \
+  --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap'
+# This fixture observes a process-global gate and must run in a fresh test
+# process. Its opt-in flag is deliberately absent from the aggregate above.
+(
+  cd TidyCore
+  TIDY_ISOLATED_GATE_TESTS=1 swift test --scratch-path "$EVIDENCE/core-build" \
+    --jobs 2 --no-parallel --filter CoreOrchestrationTests.registeredScanUsesSharedProcessCap
+) 2>&1 | tee "$EVIDENCE/isolated-process-cap.log"
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/isolated-process-cap.log" --minimum 1
 xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debug \
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
