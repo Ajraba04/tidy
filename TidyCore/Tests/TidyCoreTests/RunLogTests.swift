@@ -70,13 +70,40 @@ struct OptionalRunHistoryTests {
         let witness = Data("unresolved-recovery-witness".utf8)
         try witness.write(to: recovery)
         _ = try await store.record(report(finishedAt: Date()),
-            policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), now: Date())
+            policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), acknowledgedRevision: 1, now: Date())
 
         let outcome = try await store.reconcile(
-            policy: .init(enabled: false, retentionDays: 30, maxMiB: 1), now: Date())
+            policy: .init(enabled: false, retentionDays: 30, maxMiB: 1), acknowledgedRevision: 2, now: Date())
         #expect(outcome == .disabled)
         #expect(!FileManager.default.fileExists(atPath: history.path))
         #expect(try Data(contentsOf: recovery) == witness)
+    }
+
+    @Test("stale history work cannot override newer off or on revisions")
+    func staleHistoryWorkPreservesLatestPolicy() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OptionalHistory-Revisions-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let store = try OptionalRunHistoryStore(directory: root)
+        let enabled = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 1)
+        let disabled = OptionalRunHistoryPolicy(enabled: false, retentionDays: 30, maxMiB: 1)
+        let now = Date()
+        _ = try await store.reconcile(policy: disabled, acknowledgedRevision: 2)
+        #expect(try await store.record(report(finishedAt: now), policy: enabled,
+            acknowledgedRevision: 1) == .stalePolicy)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("runs.jsonl").path))
+        _ = try await store.record(report(finishedAt: now), policy: enabled,
+            acknowledgedRevision: 3)
+        let before = try Data(contentsOf: root.appendingPathComponent("runs.jsonl"))
+        #expect(try await store.reconcile(policy: disabled,
+            acknowledgedRevision: 2) == .stalePolicy)
+        #expect(try Data(contentsOf: root.appendingPathComponent("runs.jsonl")) == before)
+        await #expect(throws: OptionalRunHistoryStore.Error.invalidPolicy) {
+            _ = try await store.reconcile(policy: disabled, acknowledgedRevision: 3)
+        }
+        #expect(try Data(contentsOf: root.appendingPathComponent("runs.jsonl")) == before)
     }
 
     @Test("age and byte limits independently retain only eligible newest reports")
@@ -92,12 +119,12 @@ struct OptionalRunHistoryTests {
         let policy = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 1)
         _ = try await store.record(
             report(finishedAt: now.addingTimeInterval(-31 * 86_400)),
-            policy: policy, now: now.addingTimeInterval(-31 * 86_400))
+            policy: policy, acknowledgedRevision: 1, now: now.addingTimeInterval(-31 * 86_400))
         _ = try await store.record(report(finishedAt: now, titleBytes: 700_000),
-            policy: policy, now: now)
+            policy: policy, acknowledgedRevision: 1, now: now)
         _ = try await store.record(
             report(finishedAt: now.addingTimeInterval(1), titleBytes: 700_000),
-            policy: policy, now: now.addingTimeInterval(1))
+            policy: policy, acknowledgedRevision: 1, now: now.addingTimeInterval(1))
 
         let retained = try await store.read(policy: policy)
         #expect(retained.count == 1)
@@ -118,7 +145,7 @@ struct OptionalRunHistoryTests {
         try bytes.write(to: url)
         await #expect(throws: OptionalRunHistoryStore.Error.malformed) {
             _ = try await store.record(report(finishedAt: Date()),
-                policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), now: Date())
+                policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), acknowledgedRevision: 1, now: Date())
         }
         #expect(try Data(contentsOf: url) == bytes)
     }
@@ -150,7 +177,7 @@ struct OptionalRunHistoryTests {
             }
             let store = try OptionalRunHistoryStore(directory: root)
             do {
-                _ = try await store.reconcile(policy: policy, now: Date())
+                _ = try await store.reconcile(policy: policy, acknowledgedRevision: 1, now: Date())
                 Issue.record("unsafe \(kind) history was accepted")
             } catch let error as OptionalRunHistoryStore.Error {
                 #expect(error == (kind == "oversized" ? .oversized : .unsafeStorage))

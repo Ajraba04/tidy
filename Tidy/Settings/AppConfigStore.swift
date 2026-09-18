@@ -29,6 +29,7 @@ final class AppConfigStore {
     var hasPendingSettingsWrites: Bool { !pendingOrder.isEmpty }
     var effectivePolicy: EffectivePolicy? { resolvePolicy(displayed) }
     var acknowledgedEffectivePolicy: EffectivePolicy? { resolvePolicy(acknowledged) }
+    var acknowledgedSettingsRevision: UInt64 { acknowledged.revision }
 
     private let bridge: ExecutionPolicyBridge
     private var acknowledged: SettingsEnvelope

@@ -88,3 +88,9 @@ Before implementation, the focused policy/settings/monitor baseline ran 172 test
 - Real missing-resource-key delivery on production filesystems, real two-volume/remount identity behavior, and supported-host privacy API declarations remain production/platform gates.
 - Hidden-idle ten-minute CPU/RSS, interactive/scan physical footprint, constrained-host cancellation, 8 GiB Apple Silicon and Intel, macOS 14/current, and human accessibility acceptance remain R13 gates.
 - R09-R11 settings stay intentionally unavailable until their project/ecosystem/assistance consumers and positive/negative acceptance fixtures land. The generated reference records those limitations and does not claim full-program completion.
+
+## Resumed integration correction — history policy ordering
+
+A controller review found that monitor configuration rejected stale settings, but queued history retention/completed-run writes still accepted an older policy. The history actor now requires an acknowledged revision on every mutating request, rejects older revisions without filesystem changes, and rejects conflicting policies with the same revision. The app passes its acknowledged revision and prevents stale completions from replacing newer history-error state.
+
+Test-first evidence: `/tmp/tidy-history-revision-red.log` failed because the revision-bound API did not exist; after the change, `swift test --package-path TidyCore --scratch-path /tmp/tidy-controller-baseline --jobs 2 --no-parallel --filter OptionalRunHistoryTests` passed **5 tests**, including delayed-on-after-off, delayed-off-after-on, conflicting same-revision, unsafe storage, retention and recovery-witness cases. Log: `/tmp/tidy-history-revision-green.log`. Final app/aggregate verification remains required after joint integration.
