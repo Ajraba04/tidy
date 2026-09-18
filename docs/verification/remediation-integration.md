@@ -23,3 +23,36 @@ Fresh focused source evidence before the combined integration commit:
 Real app/FSEvents fixture: 500 directories, 100,000 files, 49,152 allocated bytes, fresh metadata visits 100,502, unchanged visits 0, complete content parity, zero catch-up retries. The 100% measured reduction exceeds the 80% correctness gate on this M1 Max fixture. This is not reference-hardware latency, physical footprint or whole-app idle performance evidence.
 
 Final full core/model/architecture checks and whole-branch review are recorded below once complete. Earlier failures remain in the package reports and must not be erased by focused passes.
+
+## Shared-settings full-model integration correction
+
+The first recovered full-model run on 2026-09-18 executed 132 tests and left two
+`SharedSettingsWiringTests` cases failing. The failures had independent causes:
+
+- A positive-revision app bootstrap returned while the bridge's asynchronous initial scheduler
+  installation could still own admission. An immediate legacy setter could therefore receive and
+  discard `.unavailable` before entering the tested replace/sync failure path. App bootstrap now
+  awaits that initial installation before publishing its editable shared services.
+- `PolicyDefaults.rows` rebuilt the complete immutable static setting registry on every lookup.
+  Document validation and optimistic replay multiply those lookups across the bounded 32-snapshot
+  queue, allowing the real I/O suspension to cross its five-second deadlock watchdog. The registry
+  is now initialized once as immutable process state; queue bounds, retention, and the watchdog are
+  unchanged.
+
+Fresh focused evidence using `/tmp/tidy-r08-xcode`, `-jobs 2`, and the macOS arm64 destination:
+
+- The two formerly failing tests passed together: 2 tests, 0 failures, 6.902 seconds
+  (`/tmp/tidy-focused-two-green.log`).
+- The replace/post-rename failure regression passed 20 fresh-process repetitions with zero
+  failures (`/tmp/tidy-focused-replace-20x.log`).
+- Seven settings/bootstrap/queue integration regressions passed with zero failures in 6.220
+  seconds, including both formerly failing cases, the 32-snapshot overflow path, schema-1 and
+  schema-2 bootstrap, and revision-zero/recovery scheduler admission
+  (`/tmp/tidy-settings-integration-green.log`). The authority/queue case completed in 3.574
+  seconds with its original finite watchdog and exact rejection assertions intact.
+- Focused Core policy/default/transfer verification passed 32 tests across 2 suites in 42.906
+  seconds (`/tmp/tidy-core-policy-cache.log`). The exhaustive portable-classifier registry test
+  completed in 8.040 seconds.
+
+These focused passes close the two observed integration failures. They do not replace the required
+fresh whole-suite model/Core reruns or release acceptance.

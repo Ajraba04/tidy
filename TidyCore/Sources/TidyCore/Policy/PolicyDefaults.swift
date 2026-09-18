@@ -5,9 +5,8 @@ public enum ImmutableLimit: String, Hashable, Sendable {
 }
 
 public enum PolicyDefaults {
-    public static var rows: [SettingDefinition] {
+    public static let rows: [SettingDefinition] =
         FeatureSettings.rows + CleanupSettings.rows + ScanSettings.rows + ExperienceSettings.rows
-    }
 
     public static var hardLimits: [ImmutableLimit: Int64] {
         [.manualGiB: 100, .manualItems: 100, .automaticGiB: 5, .automaticItems: 20,
