@@ -18,8 +18,7 @@ final class StatsRefresher {
     private(set) var snapshot: SystemSnapshot?
 
     private let monitor: SystemMonitor
-    private let sceneLease = MonitorLease()
-    private var sceneGeneration: UInt64 = 0
+    private let sceneLeaseController: MonitorSceneLeaseController
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
     // cancel() is thread-safe, so the unsafe opt-out is sound here.
@@ -27,6 +26,7 @@ final class StatsRefresher {
 
     init(monitor: SystemMonitor) {
         self.monitor = monitor
+        self.sceneLeaseController = MonitorSceneLeaseController(monitor: monitor)
         // `monitor` (a value copy of the actor reference, not `self`) is the
         // only thing this task needs to obtain its OWN subscription; `self`
         // is re-resolved weakly on every iteration below, so this task never
@@ -49,23 +49,13 @@ final class StatsRefresher {
 
     deinit {
         observationTask?.cancel()
-        let monitor = monitor
-        let sceneLease = sceneLease
-        Task { await monitor.updateSceneLease(sceneLease, visible: false,
-            generation: .max) }
+        sceneLeaseController.dispose()
     }
 
     /// The popover became visible: switch to the visible sampling cadence
     /// and take one immediate reading.
     func onPopoverAppear() {
-        let monitor = monitor
-        let sceneLease = sceneLease
-        sceneGeneration &+= 1
-        let generation = sceneGeneration
-        Task {
-            await monitor.updateSceneLease(sceneLease, visible: true, generation: generation)
-            await monitor.requestSnapshot(forScene: sceneLease, generation: generation)
-        }
+        sceneLeaseController.setVisible(true, requestSnapshot: true)
     }
 
     /// The popover closed. If background monitoring isn't explicitly
@@ -73,12 +63,7 @@ final class StatsRefresher {
     /// `SystemMonitor` tears its repeating loop down entirely -- not just
     /// slows it.
     func onPopoverDisappear() {
-        let monitor = monitor
-        let sceneLease = sceneLease
-        sceneGeneration &+= 1
-        let generation = sceneGeneration
-        Task { await monitor.updateSceneLease(sceneLease, visible: false,
-            generation: generation) }
+        sceneLeaseController.setVisible(false)
     }
 
 }

@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 import Observation
 import XCTest
-import TidyCore
+@testable import TidyCore
 
 private actor ScanLifecycleGate {
     private var entered = false
@@ -69,6 +69,7 @@ private struct ScanWiringScratch {
     /// so any fixture that wants a real, working scan must install policy first, exactly as a
     /// real user does the first time they save Settings.
     @MainActor func services(defaultScope: String = "quick", cacheEnabled: Bool = false,
+      forceContinuablePartial: Bool = false,
       scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil)
       async throws -> AppExecutionServices {
         let settings = SettingsStore(url: configURL)
@@ -82,7 +83,9 @@ private struct ScanWiringScratch {
             ]))))
         let services = await AppExecutionServices.bootstrap(
             paths: AppStoragePaths(home: home, settings: configURL, journal: journal),
-            settings: settings, observe: { _ in }, scanLifecycleHook: scanLifecycleHook)
+            settings: settings, observe: { _ in }, scanLifecycleHook: scanLifecycleHook,
+            scanTraversalLimits: forceContinuablePartial
+                ? try TraversalLimits(batchEntries: 1).withTestingBatchLimitPerSlice(2) : nil)
         await services.policyBridge.drain()
         return services
     }
@@ -128,6 +131,7 @@ private struct ScanWiringScratch {
         }
         return total
     }
+
 }
 
 private func waitUntil(timeoutSeconds: TimeInterval = 4.0,
@@ -457,6 +461,190 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         XCTAssertEqual(final.activeWork, baseline.activeWork)
         XCTAssertEqual(final.liveSubscribers, baseline.liveSubscribers)
         XCTAssertEqual(final.bufferedEvents, baseline.bufferedEvents)
+    }
+
+    func testContinuableTerminalPartialReleasesIdleResourcesAndGapChangeFailsClosed()
+      async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        try Data(repeating: 1, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("a-visited.bin"))
+        try Data(repeating: 2, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("z-pending.bin"))
+        let services = try await scratch.services(cacheEnabled: true,
+            forceContinuablePartial: true)
+        try await waitUntil { await services.systemMonitor.subscriberCountForTesting() >= 1 }
+        let baselineSubscribers = await services.systemMonitor.subscriberCountForTesting()
+        let model = ScanViewModel(services: services)
+        await model.runScan()
+        guard let sessionID = services.activeScanSessionID else {
+            XCTFail("Expected active scan"); return
+        }
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: sessionID))?.terminal == .partial
+        }
+        guard let partial = await services.latestScanResult(sessionID: sessionID) else {
+            XCTFail("Expected retained partial result"); return
+        }
+        XCTAssertTrue(partial.continuationAvailable)
+        XCTAssertGreaterThanOrEqual(partial.metadataVisits, 2,
+            "the fixture must retain totals from at least one visited child before idling")
+        model.detachSubscription()
+
+        try await waitUntil {
+            let scheduler = await services.explicitSessions.snapshot()
+            let registry = await services.scanRegistry.snapshot()
+            let leaseCount = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+            let subscribers = await services.systemMonitor.subscriberCountForTesting()
+            let timerRunning = await services.systemMonitor.isTimerRunningForTesting()
+            let watchActive = await services.activeScanIndexWatchIsActiveForTesting()
+            return scheduler.active == 0 && scheduler.queued == 0
+                && registry.activeWork == 0 && registry.liveSubscribers == 0
+                && leaseCount == 0 && subscribers == baselineSubscribers
+                && timerRunning == false && watchActive == false
+        }
+
+        // Change bytes that were already accumulated before the terminal partial. Continue must
+        // either restart fresh or reject the dormant cursor; it may never publish the old total.
+        try Data(repeating: 7, count: 32_768).write(
+            to: scratch.cache.appendingPathComponent("a-visited.bin"))
+        do {
+            let resumed = try await services.continueActiveScan()
+            try await waitUntil {
+                (try? await services.scanRegistry.state(sessionID: resumed.sessionID))?.terminal != nil
+            }
+            let result = await resumed.latestResult()
+            XCTAssertNotEqual(result?.coverage.isComplete, true,
+                "changed already-visited bytes must not survive the unwatched gap as complete")
+        } catch CoreOrchestrationError.invalidScopeAuthorization {
+            // Expected fail-closed path when catch-up sees the gap mutation or cannot prove
+            // device/history continuity.
+        }
+
+        try await waitUntil {
+            let scheduler = await services.explicitSessions.snapshot()
+            let leaseCount = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+            let watchActive = await services.activeScanIndexWatchIsActiveForTesting()
+            return scheduler.active == 0 && scheduler.queued == 0
+                && scheduler.liveSessions == 0
+                && leaseCount == 0 && watchActive == false
+        }
+        await services.disposeScanResourcesForTesting()
+    }
+
+    func testFirstIndexedPartialContinueWaitsForSuspensionAndUsesLiveDeviceCheckpoint()
+      async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        try Data(repeating: 1, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("a-visited.bin"))
+        try Data(repeating: 2, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("z-pending.bin"))
+        let gate = ScanLifecycleGate()
+        let services = try await scratch.services(cacheEnabled: true,
+            forceContinuablePartial: true, scanLifecycleHook: { event in
+                if event == .continuationSuspensionStarted { await gate.pause() }
+            })
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        let first = try await services.beginScan(environment: environment, ownerID: UUID())
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: first.sessionID))?.terminal == .partial
+        }
+        await gate.waitUntilEntered()
+        let immediate = Task { @MainActor in try await services.continueActiveScan() }
+        await Task.yield()
+        let leaseCountWhilePaused = await services.systemMonitor
+            .activeExplicitWorkLeaseCountForTesting()
+        XCTAssertEqual(leaseCountWhilePaused, 1,
+            "Continue must wait behind suspension instead of racing a second observation lease")
+        await gate.release()
+        let continued = try await immediate.value
+        XCTAssertNotEqual(continued.sessionID, first.sessionID)
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: continued.sessionID))?.terminal
+                == .partial
+        }
+        await services.cancelActiveScan()
+        let scheduler = await services.explicitSessions.snapshot()
+        XCTAssertEqual(scheduler.active, 0)
+        XCTAssertEqual(scheduler.queued, 0)
+        XCTAssertEqual(scheduler.liveSessions, 0)
+        let finalLeaseCount = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+        let finalWatchActive = await services.activeScanIndexWatchIsActiveForTesting()
+        XCTAssertEqual(finalLeaseCount, 0)
+        XCTAssertFalse(finalWatchActive)
+        await services.disposeScanResourcesForTesting()
+    }
+
+    func testSimultaneousContinueCallersShareOneReservedContinuationTransition() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        try Data(repeating: 1, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("a-visited.bin"))
+        try Data(repeating: 2, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("z-pending.bin"))
+        let gate = ScanLifecycleGate()
+        let services = try await scratch.services(cacheEnabled: true,
+            forceContinuablePartial: true, scanLifecycleHook: { event in
+                if event == .continuationSuspensionStarted { await gate.pause() }
+            })
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        let first = try await services.beginScan(environment: environment, ownerID: UUID())
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: first.sessionID))?.terminal == .partial
+        }
+        await gate.waitUntilEntered()
+
+        let firstContinue = Task { @MainActor in try await services.continueActiveScan() }
+        let secondContinue = Task { @MainActor in try await services.continueActiveScan() }
+        await Task.yield()
+        await gate.release()
+        let firstHandle = try await firstContinue.value
+        let secondHandle = try await secondContinue.value
+        XCTAssertEqual(firstHandle.sessionID, secondHandle.sessionID)
+        XCTAssertEqual(firstHandle.generation, secondHandle.generation)
+        let afterContinue = await services.scanRegistry.snapshot()
+        XCTAssertEqual(afterContinue.sessions, 2,
+            "one initial partial plus exactly one shared continuation session")
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: firstHandle.sessionID))?.terminal
+                == .partial
+        }
+        await services.cancelActiveScan()
+        await services.disposeScanResourcesForTesting()
+        let scheduler = await services.explicitSessions.snapshot()
+        XCTAssertEqual(scheduler.active, 0)
+        XCTAssertEqual(scheduler.queued, 0)
+        XCTAssertEqual(scheduler.liveSessions, 0)
+    }
+
+    func testIndexDisabledTerminalPartialDoesNotAdvertiseContinueAndReleasesSession() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        try Data(repeating: 1, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("a-visited.bin"))
+        try Data(repeating: 2, count: 4_096).write(
+            to: scratch.cache.appendingPathComponent("z-pending.bin"))
+        let services = try await scratch.services(cacheEnabled: false,
+            forceContinuablePartial: true)
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        let first = try await services.beginScan(environment: environment, ownerID: UUID())
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: first.sessionID))?.terminal == .partial
+        }
+        let latest = await first.latestResult()
+        let result = try XCTUnwrap(latest)
+        XCTAssertFalse(result.continuationAvailable)
+        try await waitUntil { services.activeScanSessionID == nil }
+        do {
+            _ = try await services.continueActiveScan()
+            XCTFail("Index-disabled partial must not expose a dormant continuation")
+        } catch CoreOrchestrationError.invalidScopeAuthorization {
+            // The UI-visible result already reported continuation unavailable.
+        }
+        let scheduler = await services.explicitSessions.snapshot()
+        XCTAssertEqual(scheduler.active, 0)
+        XCTAssertEqual(scheduler.queued, 0)
+        XCTAssertEqual(scheduler.liveSessions, 0)
     }
 
     // 9. Wiring regression: the legacy no-op boundaries are never called by the rewired app. This

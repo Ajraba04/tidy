@@ -213,6 +213,69 @@ struct ScanScopeTests {
             PathGuard.isEqualOrDescendant($0, of: outside.deletingLastPathComponent().path)
         })
     }
+
+    @Test("event after guard consumption invalidates the published cursor at suspension")
+    @MainActor
+    func continuationGuardIsConsumedInsideScanEngineHandoff() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        for name in ["a-visited.bin", "m-pending.bin", "z-pending.bin"] {
+            try Data(repeating: 1, count: 4_096).write(to: cache.appendingPathComponent(name))
+        }
+        let authorization = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        let environment = rig.bridge.acknowledgedEnvelope!.config.makePolicyEnvironment(
+            homeDirectory: rig.home.path, detectedTools: [])
+        let sessions = rig.bridge.explicitSessions
+        let work = try await sessions.beginSession(
+            requirements: try SchedulerRequirements(features: [.headroom]))
+        defer { Task { await sessions.finish(session: work) } }
+        let registry = ScanSessionRegistry()
+        let source = FakeScanEventSource()
+        let dbURL = rig.root.appendingPathComponent("continuation-index.sqlite")
+        let store = try ScanIndexStore(databaseURL: dbURL)
+        let index = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+        let volumeUUID = try #require(ScanRootIdentity.resolve(path: authorization.roots[0]))
+            .volumeUUID
+        try await store.persistCursor(volumeUUID: volumeUUID, cursor: 0,
+            deviceUUID: "fixture-device")
+        await index.startWatching(approvedRoots: authorization.roots, volumeUUID: volumeUUID)
+        let limits = try TraversalLimits(batchEntries: 1).withTestingBatchLimitPerSlice(2)
+        let changedPath = cache.appendingPathComponent("a-visited.bin").path
+        let dependencies = CoreScanDependencies(processProbe: { _, _ in .availableEmpty },
+            testHook: { point in
+                if point == .afterContinuationGuardConsumed {
+                    await source.emit(events: [ScanEvent(path: changedPath)],
+                        historyReliable: true)
+                }
+            }, metadataVisit: nil)
+        let first = try await ScanEngine.start(environment: environment,
+            authorization: authorization, ownerID: rig.ownerID, registry: registry,
+            sessions: sessions, session: work, traversalLimits: limits,
+            dependencies: dependencies, indexCoordinator: index)
+        let firstSubscription = try await registry.subscribe(sessionID: first.sessionID)
+        for await event in firstSubscription.stream where event.terminal != nil { break }
+        #expect((await first.latestResult())?.continuationAvailable == true)
+
+        #expect(await index.suspendWatchingForManualContinuation())
+        let watchGuard = try #require(await index.resumeWatchingForManualContinuation())
+        let continued = try await ScanEngine.continueScan(from: first, registry: registry,
+            watchGuard: watchGuard)
+        let continuedSubscription = try await registry.subscribe(sessionID: continued.sessionID)
+        for await event in continuedSubscription.stream where event.terminal != nil { break }
+        let result = try #require(await continued.latestResult())
+        #expect(!result.coverage.isComplete)
+        #expect(result.continuationAvailable)
+        #expect(!(await index.suspendWatchingForManualContinuation()),
+            "publication-to-suspension event must reject the newly retained cursor")
+        await continued.discardContinuation()
+        await #expect(throws: CoreOrchestrationError.invalidScopeAuthorization) {
+            _ = try await ScanEngine.continueScan(from: continued, registry: registry)
+        }
+        await index.stopWatching()
+    }
 }
 
 private actor ScanMetadataVisitRecorder {

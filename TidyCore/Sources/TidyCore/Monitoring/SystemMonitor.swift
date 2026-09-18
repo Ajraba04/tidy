@@ -158,6 +158,66 @@ public struct MonitorLease: Hashable, Sendable {
     public init(id: UUID = UUID()) { self.id = id }
 }
 
+/// Serializes one scene's visibility messages before they reach `SystemMonitor`. Disposal closes
+/// the local producer first, waits for every earlier transition, then asks the monitor to remove
+/// both the active lease and its generation entry. This preserves stale-task ordering without a
+/// process-lifetime UUID tombstone for every destroyed view model.
+public final class MonitorSceneLeaseController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let monitor: SystemMonitor
+    private let lease: MonitorLease
+    private var generation: UInt64 = 0
+    private var active = true
+    private var tail: Task<Void, Never>?
+
+    public init(monitor: SystemMonitor, lease: MonitorLease = MonitorLease()) {
+        self.monitor = monitor
+        self.lease = lease
+    }
+
+    public func setVisible(_ visible: Bool, requestSnapshot: Bool = false) {
+        lock.lock()
+        guard active else { lock.unlock(); return }
+        generation &+= 1
+        let generation = generation
+        let previous = tail
+        let monitor = monitor
+        let lease = lease
+        let task = Task {
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await monitor.updateSceneLease(lease, visible: visible, generation: generation)
+            if visible, requestSnapshot {
+                _ = await monitor.requestSnapshot(forScene: lease, generation: generation)
+            }
+        }
+        tail = task
+        lock.unlock()
+    }
+
+    public func dispose() {
+        lock.lock()
+        guard active else { lock.unlock(); return }
+        active = false
+        generation &+= 1
+        let generation = generation
+        let previous = tail
+        let monitor = monitor
+        let lease = lease
+        let task = Task {
+            await previous?.value
+            await monitor.disposeSceneLease(lease, generation: generation)
+        }
+        tail = task
+        lock.unlock()
+    }
+
+    public func awaitPendingForTesting() async {
+        let pending = lock.withLock { tail }
+        await pending?.value
+    }
+}
+
 /// The optional, timestamped, per-volume/system observation described by
 /// the T10 contract. `SystemMonitor` owns the ONE decision of whether a
 /// repeating background sample loop may exist at all; every other consumer
@@ -349,6 +409,16 @@ public actor SystemMonitor {
         reschedule()
     }
 
+    /// Terminal counterpart to `updateSceneLease`. Callers must serialize it after their earlier
+    /// scene transitions (which `MonitorSceneLeaseController` does); once ordered, the generation
+    /// can be removed instead of retained as a tombstone for the process lifetime.
+    public func disposeSceneLease(_ lease: MonitorLease, generation: UInt64) {
+        guard generation >= (sceneLeaseGenerations[lease] ?? 0) else { return }
+        let changed = sceneLeases.remove(lease) != nil
+        sceneLeaseGenerations.removeValue(forKey: lease)
+        if changed { reschedule() }
+    }
+
     @discardableResult
     public func requestSnapshot(forScene lease: MonitorLease,
                                 generation: UInt64) async -> SystemSnapshot? {
@@ -432,6 +502,7 @@ public actor SystemMonitor {
     }
 
     public func activeSceneLeaseCountForTesting() -> Int { sceneLeases.count }
+    public func sceneLeaseGenerationCountForTesting() -> Int { sceneLeaseGenerations.count }
     public func activeExplicitWorkLeaseCountForTesting() -> Int { explicitWorkLeases.count }
     public func appliedConfigurationRevisionForTesting() -> UInt64 { configurationRevision }
     public func latestPressureLevelForTesting() -> MemoryPressureLevel? { latestPressureLevel }
