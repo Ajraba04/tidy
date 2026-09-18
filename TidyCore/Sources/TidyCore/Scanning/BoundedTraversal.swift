@@ -53,6 +53,8 @@ public struct TraversalLimits: Equatable, Sendable {
     public let cursorTombstones: Int
     public let protectedRoots: Int
     public let sliceSeconds: Int
+    private var testingSliceNanoseconds: UInt64?
+    fileprivate var testingMaximumBatchesPerSlice: Int?
 
     public init(batchEntries: Int = 64, queuedPaths: Int = 4_096, maxDepth: Int = 64,
                 openDescriptors: Int = 8, hardLinkIdentities: Int = 4_096,
@@ -85,6 +87,8 @@ public struct TraversalLimits: Equatable, Sendable {
         self.cursorTombstones = cursorTombstones
         self.protectedRoots = protectedRoots
         self.sliceSeconds = sliceSeconds
+        self.testingSliceNanoseconds = nil
+        self.testingMaximumBatchesPerSlice = nil
     }
 
     internal func replacing(maxDepth: Int? = nil, topN: Int? = nil) -> TraversalLimits {
@@ -94,14 +98,16 @@ public struct TraversalLimits: Equatable, Sendable {
             resultRecords: resultRecords, topN: topN ?? self.topN,
             maxBreadth: maxBreadth, maxPathBytes: maxPathBytes, cursorCount: cursorCount,
             cursorTombstones: cursorTombstones, protectedRoots: protectedRoots,
-            sliceSeconds: sliceSeconds)
+            sliceSeconds: sliceSeconds, testingSliceNanoseconds: testingSliceNanoseconds,
+            testingMaximumBatchesPerSlice: testingMaximumBatchesPerSlice)
     }
 
     private init(validatedBatchEntries batchEntries: Int, queuedPaths: Int, maxDepth: Int,
                  openDescriptors: Int, hardLinkIdentities: Int, childAggregates: Int,
                  resultRecords: Int, topN: Int, maxBreadth: Int, maxPathBytes: Int,
                  cursorCount: Int, cursorTombstones: Int, protectedRoots: Int,
-                 sliceSeconds: Int) {
+                 sliceSeconds: Int, testingSliceNanoseconds: UInt64?,
+                 testingMaximumBatchesPerSlice: Int?) {
         self.batchEntries = batchEntries
         self.queuedPaths = queuedPaths
         self.maxDepth = maxDepth
@@ -116,6 +122,27 @@ public struct TraversalLimits: Equatable, Sendable {
         self.cursorTombstones = cursorTombstones
         self.protectedRoots = protectedRoots
         self.sliceSeconds = sliceSeconds
+        self.testingSliceNanoseconds = testingSliceNanoseconds
+        self.testingMaximumBatchesPerSlice = testingMaximumBatchesPerSlice
+    }
+
+    var sliceDurationNanoseconds: UInt64 {
+        testingSliceNanoseconds ?? UInt64(sliceSeconds) * 1_000_000_000
+    }
+
+    /// Test-only clock compression for cross-module lifecycle fixtures. Production settings still
+    /// enforce the binding 30...1,800 second range and never call this SPI.
+    internal func withTestingSliceDuration(nanoseconds: UInt64) -> Self {
+        var copy = self
+        copy.testingSliceNanoseconds = nanoseconds
+        return copy
+    }
+
+    internal func withTestingBatchLimitPerSlice(_ batches: Int) -> Self {
+        precondition(batches > 0)
+        var copy = self
+        copy.testingMaximumBatchesPerSlice = batches
+        return copy
     }
 }
 
@@ -570,7 +597,7 @@ public actor BoundedTraversal {
     private func executeSlice(state: inout TraversalState,
                               probe: SchedulerCancellationProbe) async -> TraversalResult {
         let sliceStart = clock.nowNanoseconds()
-        let sliceNanoseconds = UInt64(limits.sliceSeconds) * 1_000_000_000
+        let sliceNanoseconds = limits.sliceDurationNanoseconds
         var pageRecords: [TraversalRecord] = []
 
         while !state.pending.isEmpty {
@@ -818,6 +845,11 @@ public actor BoundedTraversal {
                 }
             }
 
+            if !state.pending.isEmpty,
+               let maximum = limits.testingMaximumBatchesPerSlice,
+               state.metrics.batches >= maximum {
+                return issueCursor(for: state, records: pageRecords, reason: .sliceExpired)
+            }
             let elapsed = clock.nowNanoseconds() &- sliceStart
             if !state.pending.isEmpty, elapsed >= sliceNanoseconds {
                 return issueCursor(for: state, records: pageRecords, reason: .sliceExpired)
@@ -863,7 +895,7 @@ public actor BoundedTraversal {
             return makeTerminal(state: state, reason: .cursorLimit, records: records)
         }
         let now = clock.nowNanoseconds()
-        let duration = UInt64(limits.sliceSeconds) * 1_000_000_000
+        let duration = limits.sliceDurationNanoseconds
         let (expiresAt, overflow) = now.addingReportingOverflow(duration)
         guard !overflow else {
             return makeTerminal(state: state, reason: .arithmeticOverflow, records: records)

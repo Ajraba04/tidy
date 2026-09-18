@@ -27,6 +27,7 @@ enum AppScanRequest: Sendable {
 enum AppScanLifecycleEvent: Equatable, Sendable {
     case startReserved
     case cleanupDetached(UUID)
+    case continuationSuspensionStarted
 }
 
 private struct AppScanObservationResources: Sendable {
@@ -39,7 +40,10 @@ private final class AppScanGenerationResources: @unchecked Sendable {
     let id = UUID()
     let session: WorkSession
     let index: ScanIndexCoordinator?
-    let observation: AppScanObservationResources
+    var observation: AppScanObservationResources?
+    var awaitingManualContinuation = false
+    var continuationInvalidated = false
+    var suspension: (id: UUID, task: Task<Void, Never>)?
     var cleanupClaimed = false
 
     init(session: WorkSession, index: ScanIndexCoordinator?,
@@ -123,6 +127,7 @@ final class AppExecutionServices {
         homeDirectory: paths.home.path)
     @ObservationIgnored private let scanLifecycleHook:
         (@Sendable (AppScanLifecycleEvent) async -> Void)?
+    @ObservationIgnored private let scanTraversalLimits: TraversalLimits?
     @ObservationIgnored private var acceptedScanObservationID: UUID?
     @ObservationIgnored private var scanTransition:
         (id: UUID, task: Task<CoreScanHandle, Error>)?
@@ -140,13 +145,15 @@ final class AppExecutionServices {
 
     private init(paths: AppStoragePaths, settings: SettingsStore,
                  worker: AppBootstrapWorkerResult,
-                 scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)?) {
+                 scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)?,
+                 scanTraversalLimits: TraversalLimits? = nil) {
         self.paths = paths
         self.settings = settings
         self.settingsLoad = worker.load
         self.initialJournalAdmission = worker.journalAdmission
         self.coordinator = worker.coordinator
         self.scanLifecycleHook = scanLifecycleHook
+        self.scanTraversalLimits = scanTraversalLimits
         let envelope = worker.load.envelope ?? SettingsEnvelope(schemaVersion: 2, revision: 0,
             config: TidyConfig(schemaVersion: 2))
         self.policyBridge = ExecutionPolicyBridge(coordinator: worker.coordinator,
@@ -315,6 +322,8 @@ final class AppExecutionServices {
             let handle = try await ScanEngine.start(environment: environment,
                 authorization: authorization, ownerID: ownerID, registry: scanRegistry,
                 sessions: explicitSessions, session: session,
+                traversalLimits: scanTraversalLimits,
+                dormantContinuationSupported: indexCoordinator != nil,
                 indexCoordinator: indexCoordinator)
             guard let observation else { throw CoreOrchestrationError.schedulerUnavailable }
             let resources = AppScanGenerationResources(session: session,
@@ -343,23 +352,55 @@ final class AppExecutionServices {
 
     func continueActiveScan() async throws -> CoreScanHandle {
         if let scanTransition { return try await resolveScanTransition(scanTransition) }
-        if let scanCleanup { await resolveScanCleanup(scanCleanup) }
-        guard let activeScanHandle, let resources = activeScanResources,
-              (await activeScanHandle.latestResult())?.continuationAvailable == true else {
-            throw CoreOrchestrationError.invalidScopeAuthorization
-        }
         let transitionID = UUID()
         let task = Task { @MainActor [self] in
-            let handle = try await ScanEngine.continueScan(from: activeScanHandle,
-                registry: scanRegistry)
-            guard activeScanResources === resources, !resources.cleanupClaimed else {
-                throw CoreOrchestrationError.foreignOrFinishedSession
+            if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+            guard let activeScanHandle, let resources = activeScanResources,
+                  (await activeScanHandle.latestResult())?.continuationAvailable == true else {
+                throw CoreOrchestrationError.invalidScopeAuthorization
             }
-            activeScanSessionID = handle.sessionID
-            self.activeScanHandle = handle
-            retainScanHandle(handle)
-            trackScanSessionLifetime(sessionID: handle.sessionID, resources: resources)
-            return handle
+            await suspendScanGenerationForManualContinuation(resources)
+            if let suspension = resources.suspension {
+                await resolveScanSuspension(suspension, resources: resources)
+            }
+            guard !resources.cleanupClaimed,
+                  !resources.continuationInvalidated,
+                  (await activeScanHandle.latestResult())?.continuationAvailable == true else {
+                if resources.continuationInvalidated {
+                    await cleanupScanGeneration(resources,
+                        terminalSessionID: activeScanHandle.sessionID,
+                        cancelSchedulerSession: true)
+                }
+                throw CoreOrchestrationError.invalidScopeAuthorization
+            }
+            do {
+                var watchGuard: ScanContinuationWatchGuard?
+                if resources.awaitingManualContinuation {
+                    guard let index = resources.index,
+                          let resumedGuard = await index.resumeWatchingForManualContinuation() else {
+                        await activeScanHandle.discardContinuation()
+                        throw CoreOrchestrationError.invalidScopeAuthorization
+                    }
+                    watchGuard = resumedGuard
+                    resources.observation = await startScanObservation()
+                    resources.awaitingManualContinuation = false
+                }
+                let handle = try await ScanEngine.continueScan(from: activeScanHandle,
+                    registry: scanRegistry, watchGuard: watchGuard)
+                guard activeScanResources === resources, !resources.cleanupClaimed else {
+                    throw CoreOrchestrationError.foreignOrFinishedSession
+                }
+                activeScanSessionID = handle.sessionID
+                self.activeScanHandle = handle
+                retainScanHandle(handle)
+                trackScanSessionLifetime(sessionID: handle.sessionID, resources: resources)
+                return handle
+            } catch {
+                await cleanupScanGeneration(resources,
+                    terminalSessionID: activeScanHandle.sessionID,
+                    cancelSchedulerSession: true)
+                throw error
+            }
         }
         let transition = (id: transitionID, task: task)
         scanTransition = transition
@@ -406,6 +447,11 @@ final class AppExecutionServices {
                self.activeScanResources === resources {
                 if self.activeScanSessionID != sessionID { return }
                 if (await self.activeScanHandle?.latestResult())?.continuationAvailable == true {
+                    await self.suspendScanGenerationForManualContinuation(resources)
+                    if resources.continuationInvalidated {
+                        await self.cleanupScanGeneration(resources,
+                            terminalSessionID: sessionID, cancelSchedulerSession: true)
+                    }
                     return
                 }
             }
@@ -415,9 +461,50 @@ final class AppExecutionServices {
         }
     }
 
+    private func suspendScanGenerationForManualContinuation(
+        _ resources: AppScanGenerationResources
+    ) async {
+        if let suspension = resources.suspension {
+            await resolveScanSuspension(suspension, resources: resources)
+            return
+        }
+        guard activeScanResources === resources, !resources.cleanupClaimed else { return }
+        if resources.awaitingManualContinuation { return }
+        resources.awaitingManualContinuation = true
+        let suspensionID = UUID()
+        let task = Task { @MainActor [self] in
+            await scanLifecycleHook?(.continuationSuspensionStarted)
+            let continuationIsSafe = if let index = resources.index {
+                await index.suspendWatchingForManualContinuation()
+            } else {
+                false
+            }
+            if !continuationIsSafe {
+                await activeScanHandle?.discardContinuation()
+                resources.continuationInvalidated = true
+            }
+            if let observation = resources.observation {
+                await stopScanObservation(observation)
+                resources.observation = nil
+            }
+        }
+        let suspension = (id: suspensionID, task: task)
+        resources.suspension = suspension
+        await resolveScanSuspension(suspension, resources: resources)
+    }
+
+    private func resolveScanSuspension(_ suspension: (id: UUID, task: Task<Void, Never>),
+                                       resources: AppScanGenerationResources) async {
+        await suspension.task.value
+        if resources.suspension?.id == suspension.id { resources.suspension = nil }
+    }
+
     private func cleanupScanGeneration(_ resources: AppScanGenerationResources,
                                        terminalSessionID: UUID,
                                        cancelSchedulerSession: Bool) async {
+        if let suspension = resources.suspension {
+            await resolveScanSuspension(suspension, resources: resources)
+        }
         guard !resources.cleanupClaimed else { return }
         resources.cleanupClaimed = true
         if activeScanResources === resources {
@@ -433,7 +520,10 @@ final class AppExecutionServices {
             await explicitSessions.finish(session: resources.session)
             await scanLifecycleHook?(.cleanupDetached(terminalSessionID))
             await resources.index?.stopWatching()
-            await stopScanObservation(resources.observation)
+            if let observation = resources.observation {
+                await stopScanObservation(observation)
+                resources.observation = nil
+            }
         }
         let cleanup = (id: cleanupID, task: task)
         scanCleanup = cleanup
@@ -534,16 +624,21 @@ final class AppExecutionServices {
         retainedScanHandleOrder.removeAll()
     }
 
+    func activeScanIndexWatchIsActiveForTesting() async -> Bool {
+        await activeScanResources?.index?.isWatchActiveForTesting() ?? false
+    }
+
     static func bootstrap(paths: AppStoragePaths) async -> AppExecutionServices {
         let settings = SettingsStore(url: paths.settings)
         return await bootstrap(paths: paths, settings: settings, observe: { _ in },
-            scanLifecycleHook: nil)
+            scanLifecycleHook: nil, scanTraversalLimits: nil)
     }
 
     static func bootstrap(paths: AppStoragePaths, settings: SettingsStore,
                           observe: @escaping @Sendable (AppBootstrapStage) -> Void,
                           scanLifecycleHook:
-                            (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil) async
+                            (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil,
+                          scanTraversalLimits: TraversalLimits? = nil) async
         -> AppExecutionServices {
         let worker = await Task.detached {
             observe(.beforeSettingsLoad)
@@ -561,7 +656,7 @@ final class AppExecutionServices {
                 journalAdmission: admission)
         }.value
         let services = AppExecutionServices(paths: paths, settings: settings, worker: worker,
-            scanLifecycleHook: scanLifecycleHook)
+            scanLifecycleHook: scanLifecycleHook, scanTraversalLimits: scanTraversalLimits)
         // Do not publish an editable store while the loaded scheduler policy still owns its
         // admission transition; an immediate settings edit must reach the persistence path.
         await services.explicitSessions.awaitInitialInstall()

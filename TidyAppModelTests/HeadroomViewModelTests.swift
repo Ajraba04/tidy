@@ -149,6 +149,31 @@ final class HeadroomViewModelTests: XCTestCase {
         XCTAssertEqual(finalCount, 1, "the survivor's own subscription should be the only one left")
     }
 
+    func testDestroyingManySceneModelsReturnsLeaseGenerationBookkeepingToBaseline() async throws {
+        let monitor = makeMonitor()
+        let baselineLeases = await monitor.activeSceneLeaseCountForTesting()
+        let baselineGenerations = await monitor.sceneLeaseGenerationCountForTesting()
+
+        for _ in 0..<100 {
+            var headroom: HeadroomViewModel? = HeadroomViewModel(monitor: monitor, cardOrder: [])
+            var menu: StatsRefresher? = StatsRefresher(monitor: monitor)
+            headroom?.onAppear()
+            menu?.onPopoverAppear()
+            headroom = nil
+            menu = nil
+        }
+
+        try await waitUntil(timeout: 5) {
+            let leases = await monitor.activeSceneLeaseCountForTesting()
+            let generations = await monitor.sceneLeaseGenerationCountForTesting()
+            return leases == baselineLeases && generations == baselineGenerations
+        }
+        let finalLeases = await monitor.activeSceneLeaseCountForTesting()
+        let finalGenerations = await monitor.sceneLeaseGenerationCountForTesting()
+        XCTAssertEqual(finalLeases, baselineLeases)
+        XCTAssertEqual(finalGenerations, baselineGenerations)
+    }
+
     func testResolvedHeadroomTargetBytesIsNilWithoutAPolicy() {
         XCTAssertNil(resolvedHeadroomTargetBytes(nil))
     }

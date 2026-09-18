@@ -227,12 +227,18 @@ public struct CoreScanHandle: Sendable {
     }
 
     public func latestResult() async -> CoreScanResult? { await store.latest() }
+
+    /// Drops the dormant single-use traversal token when an app-owned observation gap cannot be
+    /// proven unchanged. Once discarded, a later Continue fails closed instead of reusing totals
+    /// accumulated before the gap.
+    public func discardContinuation() async { await continuations.clear() }
 }
 
 internal enum CoreScanTestPoint: Equatable, Sendable {
     case beforeFilesystem
     case beforeProcess
     case beforeTerminal
+    case afterContinuationGuardConsumed
 }
 
 internal struct CoreScanProcessEvidence: Sendable {
@@ -502,16 +508,20 @@ public extension ScanEngine {
                       registry: ScanSessionRegistry,
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
+                      dormantContinuationSupported: Bool = true,
                       indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
         try await start(environment: environment, authorization: authorization,
             ownerID: ownerID,
             registry: registry, sessions: sessions, session: session,
             traversalLimits: traversalLimits, dependencies: .live,
-            indexCoordinator: indexCoordinator)
+            indexCoordinator: indexCoordinator,
+            dormantContinuationSupported: dormantContinuationSupported)
     }
 
     static func continueScan(from handle: CoreScanHandle,
-                             registry: ScanSessionRegistry) async throws -> CoreScanHandle {
+                             registry: ScanSessionRegistry,
+                             watchGuard: ScanContinuationWatchGuard? = nil) async throws
+      -> CoreScanHandle {
         guard let pending = await handle.continuations.take() else {
             throw CoreOrchestrationError.invalidScopeAuthorization
         }
@@ -530,7 +540,8 @@ public extension ScanEngine {
                 store: store, continuations: handle.continuations)
             try await registry.startWork(sessionID: sessionID) { reporter in
                 await runScopedContinuation(pending: pending, reporter: reporter,
-                    store: store, continuations: handle.continuations)
+                    store: store, continuations: handle.continuations,
+                    watchGuard: watchGuard)
             }
             return next
         } catch {
@@ -559,7 +570,8 @@ internal extension ScanEngine {
                       sessions: BridgeExplicitSessions, session: WorkSession,
                       traversalLimits: TraversalLimits? = nil,
                       dependencies: CoreScanDependencies,
-                      indexCoordinator: ScanIndexCoordinator? = nil) async throws -> CoreScanHandle {
+                      indexCoordinator: ScanIndexCoordinator? = nil,
+                      dormantContinuationSupported: Bool = true) async throws -> CoreScanHandle {
         try authorization.consumeForStart(ownerID: ownerID, environment: environment)
         let provisional = try await CoreOrchestrationContext.make(sessions: sessions,
             session: session, sessionID: UUID(), traversalLimits: traversalLimits)
@@ -579,7 +591,8 @@ internal extension ScanEngine {
                 await runScopedRegistered(environment: environment, authorization: authorization,
                     context: context, reporter: reporter, store: store,
                     dependencies: dependencies, indexCoordinator: indexCoordinator,
-                    continuations: continuations)
+                    continuations: continuations,
+                    dormantContinuationSupported: dormantContinuationSupported)
             }
         } catch {
             try? await registry.complete(sessionID: sessionID, terminal: .failed,
@@ -830,7 +843,8 @@ internal extension ScanEngine {
                                              store: CoreScanResultStore,
                                              dependencies: CoreScanDependencies,
                                              indexCoordinator: ScanIndexCoordinator?,
-                                             continuations: CoreScanContinuationStore) async
+                                             continuations: CoreScanContinuationStore,
+                                             dormantContinuationSupported: Bool) async
       -> ScanSessionCompletion {
         let accumulator = CoreScanAccumulator(environment: environment)
         await dependencies.testHook?(.beforeFilesystem)
@@ -841,13 +855,15 @@ internal extension ScanEngine {
             context: context, rootIndex: 0, current: nil,
             completedAccumulator: accumulator, reporter: reporter, store: store,
             dependencies: dependencies, indexCoordinator: indexCoordinator,
-            continuations: continuations)
+            continuations: continuations,
+            dormantContinuationSupported: dormantContinuationSupported)
     }
 
     fileprivate static func runScopedContinuation(pending: PendingCoreScanContinuation,
                                               reporter: ScanSessionReporter,
                                               store: CoreScanResultStore,
-                                              continuations: CoreScanContinuationStore) async
+                                              continuations: CoreScanContinuationStore,
+                                              watchGuard: ScanContinuationWatchGuard?) async
       -> ScanSessionCompletion {
         await runScopedPages(environment: pending.environment,
             authorization: pending.authorization, context: pending.context,
@@ -855,7 +871,8 @@ internal extension ScanEngine {
             current: (pending.traversal, pending.cursor),
             completedAccumulator: pending.completedAccumulator,
             reporter: reporter, store: store, dependencies: pending.dependencies,
-            indexCoordinator: pending.indexCoordinator, continuations: continuations)
+            indexCoordinator: pending.indexCoordinator, continuations: continuations,
+            continuationWatchGuard: watchGuard)
     }
 
     fileprivate static func runScopedPages(environment: CleanEnvironment,
@@ -868,7 +885,9 @@ internal extension ScanEngine {
                                        store: CoreScanResultStore,
                                        dependencies: CoreScanDependencies,
                                        indexCoordinator: ScanIndexCoordinator?,
-                                       continuations: CoreScanContinuationStore) async
+                                       continuations: CoreScanContinuationStore,
+                                       continuationWatchGuard: ScanContinuationWatchGuard? = nil,
+                                       dormantContinuationSupported: Bool = true) async
       -> ScanSessionCompletion {
         var completed = completedAccumulator
         let protected = Array(Set(environment.protectedRoots + authorization.excludedRoots))
@@ -936,6 +955,19 @@ internal extension ScanEngine {
             displayed.filesOver1GB = Array(displayed.filesOver1GB
                 .sorted(by: rankedBefore).prefix(8))
             if let cursor = result.cursor {
+                guard dormantContinuationSupported else {
+                    await continuations.clear()
+                    return await partialCompletion(displayed, store: store)
+                }
+                if let continuationWatchGuard, let indexCoordinator {
+                    guard await indexCoordinator.consumeContinuationGuard(
+                        continuationWatchGuard) else {
+                        await continuations.clear()
+                        displayed.reasons.insert(.churn)
+                        return await partialCompletion(displayed, store: store)
+                    }
+                    await dependencies.testHook?(.afterContinuationGuardConsumed)
+                }
                 await continuations.put(PendingCoreScanContinuation(
                     environment: environment, authorization: authorization,
                     context: context, rootIndex: index, traversal: traversal,
@@ -957,6 +989,13 @@ internal extension ScanEngine {
         }
         do { _ = try await context.checkCurrent(allowLiveObservationChanges: true) }
         catch { completed.reasons.insert(.policyRevisionMismatch) }
+        if let continuationWatchGuard, let indexCoordinator {
+            if await indexCoordinator.consumeContinuationGuard(continuationWatchGuard) {
+                await dependencies.testHook?(.afterContinuationGuardConsumed)
+            } else {
+                completed.reasons.insert(.churn)
+            }
+        }
         await continuations.clear()
         let coverage = TraversalCoverage(isComplete: completed.reasons.isEmpty,
             reasons: completed.reasons)

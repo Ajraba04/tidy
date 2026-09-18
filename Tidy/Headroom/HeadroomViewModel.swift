@@ -17,8 +17,7 @@ final class HeadroomViewModel {
     let cardOrder: [String]
 
     private let monitor: SystemMonitor
-    private let sceneLease = MonitorLease()
-    private var sceneGeneration: UInt64 = 0
+    private let sceneLeaseController: MonitorSceneLeaseController
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
     // cancel() is thread-safe, so the unsafe opt-out is sound here.
@@ -26,6 +25,7 @@ final class HeadroomViewModel {
 
     init(monitor: SystemMonitor, cardOrder: [String]) {
         self.monitor = monitor
+        self.sceneLeaseController = MonitorSceneLeaseController(monitor: monitor)
         self.cardOrder = cardOrder
         // `monitor` (a value copy of the actor reference, not `self`) is the
         // only thing this task needs to obtain its OWN subscription; `self`
@@ -47,34 +47,19 @@ final class HeadroomViewModel {
 
     deinit {
         observationTask?.cancel()
-        let monitor = monitor
-        let sceneLease = sceneLease
-        Task { await monitor.updateSceneLease(sceneLease, visible: false,
-            generation: .max) }
+        sceneLeaseController.dispose()
     }
 
     static let defaultCardOrder = ["disk", "memoryPressure", "swap", "thermal", "power"]
 
     func onAppear() {
-        let monitor = monitor
-        let sceneLease = sceneLease
-        sceneGeneration &+= 1
-        let generation = sceneGeneration
-        Task {
-            await monitor.updateSceneLease(sceneLease, visible: true, generation: generation)
-            await monitor.requestSnapshot(forScene: sceneLease, generation: generation)
-        }
+        sceneLeaseController.setVisible(true, requestSnapshot: true)
     }
 
     /// Window closed: this is the point at which background sampling stops
     /// entirely unless `monitor.backgroundEnabled` is explicitly on.
     func onDisappear() {
-        let monitor = monitor
-        let sceneLease = sceneLease
-        sceneGeneration &+= 1
-        let generation = sceneGeneration
-        Task { await monitor.updateSceneLease(sceneLease, visible: false,
-            generation: generation) }
+        sceneLeaseController.setVisible(false)
     }
 
     /// One explicit re-read, for a manual refresh control -- never on a
