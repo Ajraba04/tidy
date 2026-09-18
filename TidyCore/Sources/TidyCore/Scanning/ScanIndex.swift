@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SQLite3
 
 /// Identifies one cacheable aggregate. `rootIdentity` must be a stable
@@ -84,6 +85,7 @@ public enum ScanIndexError: Error, Equatable, Sendable {
     case corrupted
     case statementFailed(String)
     case partialCannotReplaceComplete
+    case unsafeLocation
 }
 
 /// Outcome of one commit attempt through the generation/barrier protocol.
@@ -115,9 +117,17 @@ public actor ScanIndexStore {
         try FileManager.default.createDirectory(
             at: databaseURL.deletingLastPathComponent(),
             withIntermediateDirectories: true)
+        // macOS exposes some otherwise safe temporary roots through `/var` -> `/private/var`.
+        // `SQLITE_OPEN_NOFOLLOW` rejects any symlink component, so resolve the directory only
+        // after it exists and append the already-validated leaf name. Production callers first
+        // lstat the exact app-owned directory and every SQLite family file below.
+        let openedURL = URL(fileURLWithPath: PathGuard.canonicalize(
+            databaseURL.deletingLastPathComponent().path), isDirectory: true)
+            .appendingPathComponent(databaseURL.lastPathComponent)
         var handle: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
-        guard sqlite3_open_v2(databaseURL.path, &handle, flags, nil) == SQLITE_OK,
+        _ = try Self.validateRegularFileIfPresent(openedURL)
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOFOLLOW
+        guard sqlite3_open_v2(openedURL.path, &handle, flags, nil) == SQLITE_OK,
               let opened = handle else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed"
             sqlite3_close_v2(handle)
@@ -158,12 +168,64 @@ public actor ScanIndexStore {
     public static func recover(databaseURL: URL) throws -> ScanIndexStore {
         let fm = FileManager.default
         for suffix in ["", "-wal", "-shm", "-journal"] {
-            let path = databaseURL.path + suffix
-            if fm.fileExists(atPath: path) {
-                try? fm.removeItem(atPath: path)
+            let url = URL(fileURLWithPath: databaseURL.path + suffix)
+            if try validateRegularFileIfPresent(url) {
+                try fm.removeItem(at: url)
             }
         }
         return try ScanIndexStore(databaseURL: databaseURL)
+    }
+
+    /// Production entry point. The cache lives in a dedicated user-owned 0700 directory under
+    /// app storage and uses one exact filename; unknown/symlink/hardlink artifacts are preserved
+    /// and rejected instead of opened, truncated or removed.
+    public static func openAppOwned(databaseURL: URL) throws -> ScanIndexStore {
+        try validateAppOwnedLocation(databaseURL)
+        return try ScanIndexStore(databaseURL: databaseURL)
+    }
+
+    public static func recoverAppOwned(databaseURL: URL) throws -> ScanIndexStore {
+        try validateAppOwnedLocation(databaseURL)
+        let recovered = try recover(databaseURL: databaseURL)
+        try validateAppOwnedLocation(databaseURL)
+        return recovered
+    }
+
+    private static func validateAppOwnedLocation(_ databaseURL: URL) throws {
+        guard databaseURL.lastPathComponent == "cache.sqlite" else {
+            throw ScanIndexError.unsafeLocation
+        }
+        let directory = databaseURL.deletingLastPathComponent()
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory.path) {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+        }
+        var info = stat()
+        guard lstat(directory.path, &info) == 0,
+              info.st_mode & S_IFMT == S_IFDIR,
+              info.st_uid == geteuid(),
+              info.st_mode & 0o077 == 0 else {
+            throw ScanIndexError.unsafeLocation
+        }
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            _ = try validateRegularFileIfPresent(
+                URL(fileURLWithPath: databaseURL.path + suffix))
+        }
+    }
+
+    @discardableResult
+    private static func validateRegularFileIfPresent(_ url: URL) throws -> Bool {
+        var info = stat()
+        if lstat(url.path, &info) != 0 {
+            guard errno == ENOENT else { throw ScanIndexError.unsafeLocation }
+            return false
+        }
+        guard info.st_mode & S_IFMT == S_IFREG,
+              info.st_uid == geteuid(), info.st_nlink == 1 else {
+            throw ScanIndexError.unsafeLocation
+        }
+        return true
     }
 
     deinit {

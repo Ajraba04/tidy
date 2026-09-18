@@ -51,7 +51,7 @@ public extension SettingsPresentationRegistry {
             return .unavailable("R11 notifications and assistance are not implemented.")
         }
         if raw.hasPrefix("scan.cache") {
-            return .unavailable("R07 incremental-index application integration is not implemented.")
+            return .connected("App-owned incremental scan index")
         }
         if raw.hasPrefix("scan.") || raw == "scope.excludedRoots" {
             return .connected("Explicit scan scope and scheduler policy")

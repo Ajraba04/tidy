@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import TidyCore
 
@@ -36,6 +37,85 @@ private func makeRecord(key: ScanIndexKey, totalBytes: Int64 = 4_096, isComplete
 
 @Suite("T09 ScanIndex durable aggregate cache")
 struct ScanIndexTests {
+    @Test("app-owned cache rejects links for every SQLite family file without touching the witness",
+          arguments: ["", "-wal", "-shm", "-journal"], [false, true])
+    func appOwnedCacheRejectsLinkedDatabaseFamilyWithoutTouchingOutsideWitness(
+        suffix: String, hardLink: Bool
+    ) throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexSafety-\(UUID().uuidString)", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let linkedArtifact = URL(fileURLWithPath: database.path + suffix)
+        let outside = root.appendingPathComponent("outside-witness")
+        let witness = Data("must remain byte-identical".utf8)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: cacheDirectory,
+            withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        try witness.write(to: outside)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = hardLink
+            ? link(outside.path, linkedArtifact.path)
+            : symlink(outside.path, linkedArtifact.path)
+        #expect(result == 0)
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: outside) == witness)
+        var info = stat()
+        #expect(lstat(linkedArtifact.path, &info) == 0,
+            "recovery must preserve the rejected linked artifact for diagnosis")
+    }
+
+    @Test func appOwnedCacheRejectsUnsafeDirectoryWithoutTouchingOutsideWitness() throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexDirectory-\(UUID().uuidString)", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let witness = Data("unsafe directory witness".utf8)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: cacheDirectory,
+            withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
+        try witness.write(to: database)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: database) == witness)
+    }
+
+    @Test func appOwnedCacheRejectsSymlinkedDirectoryWithoutTouchingOutsideWitness() throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexDirectoryLink-\(UUID().uuidString)", isDirectory: true)
+        let outsideDirectory = root.appendingPathComponent("outside", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let outsideDatabase = outsideDirectory.appendingPathComponent("cache.sqlite")
+        let witness = Data("outside directory witness".utf8)
+        try FileManager.default.createDirectory(at: outsideDirectory,
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try witness.write(to: outsideDatabase)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(symlink(outsideDirectory.path, cacheDirectory.path) == 0)
+
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: outsideDatabase) == witness)
+    }
     // MARK: - ScanRootIdentity: pinning the String(describing:) assumption (T09 review item 8)
 
     @Test("resolveIsStableAndDistinguishesFiles")

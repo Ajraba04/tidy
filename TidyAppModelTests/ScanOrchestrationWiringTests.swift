@@ -4,6 +4,34 @@ import Observation
 import XCTest
 import TidyCore
 
+private actor ScanLifecycleGate {
+    private var entered = false
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func pause() async {
+        entered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+        if released { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
 private func canonicalScratchBase() throws -> URL {
     var path = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard realpath("/private/tmp", &path) != nil else {
@@ -40,23 +68,66 @@ private struct ScanWiringScratch {
     /// deliberately leaves the T08.1b scheduler façade unavailable (see `ExecutionPolicyBridge`),
     /// so any fixture that wants a real, working scan must install policy first, exactly as a
     /// real user does the first time they save Settings.
-    @MainActor func services(defaultScope: String = "quick") async throws -> AppExecutionServices {
+    @MainActor func services(defaultScope: String = "quick", cacheEnabled: Bool = false,
+      scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil)
+      async throws -> AppExecutionServices {
         let settings = SettingsStore(url: configURL)
         _ = await settings.load()
         let rate = SettingID(rawValue: "scan.uiBatchesPerSecond")
         let scope = SettingID(rawValue: "scan.defaultScope")
+        let cache = SettingID(rawValue: "scan.cacheEnabled")
         _ = try await settings.update(expectedRevision: 0,
             change: .preferences(.init(global: .init(fields: [
-                rate: .integer(4), scope: .choice(defaultScope)
+                rate: .integer(4), scope: .choice(defaultScope), cache: .bool(cacheEnabled)
             ]))))
         let services = await AppExecutionServices.bootstrap(
             paths: AppStoragePaths(home: home, settings: configURL, journal: journal),
-            settings: settings, observe: { _ in })
+            settings: settings, observe: { _ in }, scanLifecycleHook: scanLifecycleHook)
         await services.policyBridge.drain()
         return services
     }
 
     func remove() { try? FileManager.default.removeItem(at: root) }
+
+    func populateWideFixture(directoryCount: Int = 500, filesPerDirectory: Int = 200) throws {
+        for directoryIndex in 0..<directoryCount {
+            let directory = cache.appendingPathComponent("bucket-\(directoryIndex)",
+                isDirectory: true)
+            try FileManager.default.createDirectory(at: directory,
+                withIntermediateDirectories: false)
+            for fileIndex in 0..<filesPerDirectory {
+                let path = directory.appendingPathComponent("entry-\(fileIndex)").path
+                let descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+                guard descriptor >= 0 else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+                guard close(descriptor) == 0 else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+            }
+        }
+    }
+
+    func allocatedFixtureBytes() throws -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(at: root,
+            includingPropertiesForKeys: nil, options: [], errorHandler: { _, _ in false }) else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError)
+        }
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            var info = stat()
+            guard lstat(url.path, &info) == 0 else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            let (bytes, overflow) = Int64(info.st_blocks).multipliedReportingOverflow(by: 512)
+            let (next, totalOverflow) = total.addingReportingOverflow(bytes)
+            guard !overflow, !totalOverflow else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EOVERFLOW))
+            }
+            total = next
+        }
+        return total
+    }
 }
 
 private func waitUntil(timeoutSeconds: TimeInterval = 4.0,
@@ -69,8 +140,121 @@ private func waitUntil(timeoutSeconds: TimeInterval = 4.0,
     }
 }
 
+private func freeBytes(at path: String) throws -> UInt64 {
+    var info = statfs()
+    guard statfs(path, &info) == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    return UInt64(info.f_bavail) * UInt64(info.f_bsize)
+}
+
+@MainActor
+private func runAppScanToCompletion(services: AppExecutionServices,
+                                    environment: CleanEnvironment) async throws -> CoreScanResult {
+    var handle = try await services.beginScan(environment: environment, ownerID: UUID())
+    while true {
+        try await waitUntil(timeoutSeconds: 600) {
+            (try? await services.scanRegistry.state(sessionID: handle.sessionID))?.terminal != nil
+        }
+        guard let state = try? await services.scanRegistry.state(sessionID: handle.sessionID),
+              state.terminal != nil,
+              let result = await handle.latestResult() else {
+            throw NSError(domain: "TidyR07ScanFixture", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "scan did not reach a retained terminal result"])
+        }
+        if result.continuationAvailable {
+            handle = try await services.continueActiveScan()
+        } else {
+            return result
+        }
+    }
+}
+
 @MainActor
 final class ScanOrchestrationWiringTests: XCTestCase {
+
+    func testMissingLiveSignalCannotReopenNominalSchedulerAdmission() {
+        let partial = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: "missing", swap: nil,
+            swapUnavailableReason: nil, pageOutRatePerSecond: nil,
+            memoryPressureLevel: nil, thermalState: .nominal,
+            isLowPowerModeEnabled: false)
+        XCTAssertEqual(schedulerLiveObservation(from: partial), .unknown)
+        let critical = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil,
+            swapUnavailableReason: nil, pageOutRatePerSecond: nil,
+            memoryPressureLevel: .critical, thermalState: nil,
+            isLowPowerModeEnabled: nil)
+        XCTAssertEqual(schedulerLiveObservation(from: critical), .critical)
+    }
+
+    func testSimultaneousWindowsShareTheReservedStart() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let gate = ScanLifecycleGate()
+        let services = try await scratch.services(scanLifecycleHook: { event in
+            if event == .startReserved { await gate.pause() }
+        })
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        let first = Task { @MainActor in
+            try await services.beginScan(environment: environment, ownerID: UUID())
+        }
+        await gate.waitUntilEntered()
+        let second = Task { @MainActor in
+            try await services.beginScan(environment: environment, ownerID: UUID())
+        }
+        await Task.yield()
+        await gate.release()
+
+        let firstHandle = try await first.value
+        let secondHandle = try await second.value
+        XCTAssertEqual(firstHandle.sessionID, secondHandle.sessionID)
+        XCTAssertEqual(firstHandle.generation, secondHandle.generation)
+        let snapshot = await services.scanRegistry.snapshot()
+        XCTAssertEqual(snapshot.sessions, 1,
+            "overlapping windows must not create a second registry generation")
+    }
+
+    func testReplacementStartWaitsForDetachedOldCleanupThenCompletes() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let cleanupGate = ScanLifecycleGate()
+        let services = try await scratch.services(cacheEnabled: true,
+            scanLifecycleHook: { event in
+                if case .cleanupDetached = event { await cleanupGate.pause() }
+            })
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        let first = try await services.beginScan(environment: environment, ownerID: UUID())
+        try await waitUntil {
+            (try? await services.scanRegistry.state(sessionID: first.sessionID))?.terminal != nil
+        }
+        await cleanupGate.waitUntilEntered()
+
+        let replacementTask = Task { @MainActor in
+            try await services.beginScan(environment: environment, ownerID: UUID())
+        }
+        await Task.yield()
+        let whileCleanupPaused = await services.scanRegistry.snapshot()
+        XCTAssertEqual(whileCleanupPaused.sessions, 1,
+            "replacement start must wait for the retained teardown barrier")
+        await cleanupGate.release()
+        let replacement = try await replacementTask.value
+        XCTAssertNotEqual(first.sessionID, replacement.sessionID)
+        XCTAssertEqual(services.activeScanSessionID, replacement.sessionID)
+
+        try await waitUntil(timeoutSeconds: 20) {
+            (try? await services.scanRegistry.state(sessionID: replacement.sessionID))?.terminal != nil
+        }
+        let state = try await services.scanRegistry.state(sessionID: replacement.sessionID)
+        let result = await replacement.latestResult()
+        let scheduler = await services.explicitSessions.snapshot()
+        let registry = await services.scanRegistry.snapshot()
+        XCTAssertEqual(state.terminal, .complete,
+            "scheduler=\(scheduler) registry=\(registry) result=\(String(describing: result))")
+        XCTAssertEqual(result?.coverage.isComplete, true,
+            "scheduler=\(scheduler) registry=\(registry)")
+        await services.disposeScanResourcesForTesting()
+    }
 
     // 1. `runScan()` never calls the legacy `ScanEngine.run(environment:)` no-op path — that path
     // always returns empty ranking arrays, so a non-empty result here can only have come from the
@@ -305,5 +489,64 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         XCTAssertFalse(report.topLevelHomeRanking.contains {
             $0.path == scratch.documents.path || $0.path == scratch.cache.path
         })
+    }
+
+    func testRealFSEventsHundredThousandUnchangedScanMatchesFreshAndReducesMetadataVisits()
+      async throws {
+        XCTAssertEqual(ProcessInfo.processInfo.environment["TIDY_RUN_R07_100K"], "1",
+            "The TidyAppModelTests scheme must run the bounded R07 acceptance fixture.")
+        let fiveGiB = UInt64(5) * 1_024 * 1_024 * 1_024
+        let freeBefore = try freeBytes(at: "/private/tmp")
+        XCTAssertGreaterThan(freeBefore, fiveGiB,
+            "The fixture must not start below the 5 GiB host safety floor.")
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        try scratch.populateWideFixture()
+        let allocatedBytes = try scratch.allocatedFixtureBytes()
+        XCTAssertLessThanOrEqual(allocatedBytes, Int64(512) * 1_024 * 1_024)
+        let freeAfterCreation = try freeBytes(at: "/private/tmp")
+        XCTAssertGreaterThan(freeAfterCreation, fiveGiB,
+            "The fixture must remain above the 5 GiB host safety floor.")
+
+        let services = try await scratch.services(cacheEnabled: true)
+        let environment = services.configStore.config.makePolicyEnvironment(
+            homeDirectory: services.paths.home.path, detectedTools: [])
+        var fresh = try await runAppScanToCompletion(services: services, environment: environment)
+        XCTAssertTrue(fresh.coverage.isComplete)
+        XCTAssertGreaterThanOrEqual(fresh.metadataVisits, 100_502)
+        var unchanged: CoreScanResult?
+        var freshPasses = 1
+        // APFS may publish fixture-creation events after the first baseline watch begins. That
+        // must conservatively force another full pass; once catch-up is quiet, the next unchanged
+        // pass must reuse the committed aggregate. Bound the retry instead of masking live loss.
+        for _ in 0..<3 {
+            try await waitUntil(timeoutSeconds: 30) { services.activeScanSessionID == nil }
+            XCTAssertNil(services.activeScanSessionID)
+            let candidate = try await runAppScanToCompletion(
+                services: services, environment: environment)
+            XCTAssertTrue(candidate.coverage.isComplete)
+            if candidate.metadataVisits * 5 <= fresh.metadataVisits,
+               case .cached? = candidate.indexStatus {
+                unchanged = candidate
+                break
+            }
+            fresh = candidate
+            freshPasses += 1
+        }
+        await services.disposeScanResourcesForTesting()
+        let cachedResult = try XCTUnwrap(unchanged,
+            "Real FSEvents catch-up never reached bounded unchanged cache reuse.")
+        XCTAssertEqual(cachedResult.report.topLevelHomeRanking.map(\.path),
+            fresh.report.topLevelHomeRanking.map(\.path))
+        XCTAssertEqual(cachedResult.report.topLevelHomeRanking.map(\.bytes),
+            fresh.report.topLevelHomeRanking.map(\.bytes))
+        let reduction = 1.0 - (Double(cachedResult.metadataVisits) / Double(fresh.metadataVisits))
+        XCTAssertGreaterThanOrEqual(reduction, 0.8)
+        print("R07_REAL_FSEVENTS_100K fixtureDirectories=500 fixtureFiles=100000 "
+            + "allocatedBytes=\(allocatedBytes) "
+            + "freeBefore=\(freeBefore) freeAfterCreation=\(freeAfterCreation) "
+            + "catchUpFreshRetries=\(freshPasses - 1) freshMetadataVisits=\(fresh.metadataVisits) "
+            + "cachedMetadataVisits=\(cachedResult.metadataVisits) reduction=\(reduction) "
+            + "freshComplete=\(fresh.coverage.isComplete) "
+            + "unchangedComplete=\(cachedResult.coverage.isComplete) parity=true")
     }
 }

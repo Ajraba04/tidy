@@ -1,4 +1,5 @@
 import Foundation
+import CoreServices
 import Testing
 @testable import TidyCore
 
@@ -94,6 +95,12 @@ actor FakeScanEventStream: ScanEventStream {
 
 @Suite("T09 ScanInvalidation generation ledger")
 struct ScanInvalidationTests {
+    @Test func historyDoneMarkerIsNotTreatedAsFilesystemMutation() {
+        #expect(!fsEventRepresentsMutation(
+            FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone)))
+        #expect(fsEventRepresentsMutation(FSEventStreamEventFlags(
+            kFSEventStreamEventFlagNone)))
+    }
     @Test func liveDeliveryQueueIsBoundedAndOverflowFailsClosed() async {
         let box = FSEventsDeliveryBox()
         for cursor in 1...100 {
@@ -239,17 +246,20 @@ struct ScanInvalidationTests {
         let invalidation = ScanInvalidation(source: source)
         let root = "/tmp/fixture-root"
         await invalidation.start(approvedRoots: [root], resumeCursor: nil)
+        let generationBeforeStop = await invalidation.currentGeneration(for: root)
         // `stop()` awaits the pump task's own completion (`await pumpTask?.value`) after
         // unblocking it via the stream's `stop()`, so by the time this call returns the pump is
         // guaranteed to have exited — no polling loop needed to make this assertion safe.
         await invalidation.stop()
         #expect(await source.lastStreamIsStopped())
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop,
+            "the neutral batch used to unblock a cancelled pump must not invalidate roots")
         await invalidation.invalidateRoot(root)
-        #expect(await invalidation.currentGeneration(for: root) == 1,
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop + 1,
             "the ledger itself still works after stop(); only the event pump is gone")
 
         await source.emit(events: [ScanEvent(path: root + "/x")], historyReliable: true)
-        #expect(await invalidation.currentGeneration(for: root) == 1,
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop + 1,
             "an event emitted after stop() has no running pump left to apply it")
     }
 

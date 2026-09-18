@@ -141,9 +141,9 @@ Generated from the tested Tidy settings registry. MiB and GiB values use powers 
 |scan.onLowPower|pauseDiscretionary|pauseAll, pauseDiscretionary|restriction / invalidate|global, profile|Available: Explicit scan scope and scheduler policy|
 |scan.onSeriousThermal|pauseDiscretionary|pauseAll, pauseDiscretionary|restriction / invalidate|global, profile|Available: Explicit scan scope and scheduler policy|
 |scan.resumeAfterCriticalSeconds|120|integer 120...900|preference / invalidate|global, profile|Available: Explicit scan scope and scheduler policy|
-|scan.cacheEnabled|true|boolean|preference / invalidate|global, profile|Unavailable: R07 incremental-index application integration is not implemented.|
-|scan.cacheMiB|64|integer 8...128|preference / invalidate|global, profile|Unavailable: R07 incremental-index application integration is not implemented.|
-|scan.cacheExpiryHours|24|integer 1...48|preference / invalidate|global, profile|Unavailable: R07 incremental-index application integration is not implemented.|
+|scan.cacheEnabled|true|boolean|preference / invalidate|global, profile|Available: App-owned incremental scan index|
+|scan.cacheMiB|64|integer 8...128|preference / invalidate|global, profile|Available: App-owned incremental scan index|
+|scan.cacheExpiryHours|24|integer 1...48|preference / invalidate|global, profile|Available: App-owned incremental scan index|
 |monitor.backgroundEnabled|false|boolean|authority / consent|machine-local authority only|Unavailable: Local background-monitor consent is not implemented.|
 |monitor.visibleIntervalSeconds|5|integer 2...60|preference / none|global, profile|Available: SystemMonitor sampling and bounded signal history|
 |monitor.hiddenIntervalSeconds|60|integer 60...900|preference / none|global, profile|Available: SystemMonitor sampling and bounded signal history|

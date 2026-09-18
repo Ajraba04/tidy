@@ -103,8 +103,11 @@ final class ScanViewModel {
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
+                guard !Task.isCancelled else { return }
                 let subscription = try await self.services.scanRegistry.subscribe(sessionID: sessionID)
-                guard self.sessionID == sessionID else { await subscription.cancel(); return }
+                guard !Task.isCancelled, self.sessionID == sessionID else {
+                    await subscription.cancel(); return
+                }
                 self.subscription = subscription
                 for await event in subscription.stream {
                     guard self.sessionID == sessionID, event.sessionID == sessionID else { break }

@@ -193,6 +193,7 @@ public actor ScanInvalidation {
     private func pump(_ stream: any ScanEventStream) async {
         while !Task.isCancelled {
             let batch = await stream.next()
+            guard !Task.isCancelled else { break }
             apply(batch)
         }
     }
@@ -354,6 +355,8 @@ final class FSEventsDeliveryBox: @unchecked Sendable {
 private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendable {
     private let box = FSEventsDeliveryBox()
     private let queue = DispatchQueue(label: "com.tidy.scanindex.fsevents")
+    private let flushQueue = DispatchQueue(label: "com.tidy.scanindex.fsevents.flush")
+    private let streamLock = NSLock()
     private var streamRef: FSEventStreamRef?
     private var initial: ScanEventBatch?
 
@@ -400,14 +403,16 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
     func next() async -> ScanEventBatch { await box.next() }
 
     func flush() async -> UInt64 {
-        guard let streamRef else { return box.snapshotCursor() }
         // `FSEventStreamFlushSync` blocks its calling thread until the OS has delivered every
         // buffered event; running it directly on whatever cooperative-pool thread `flush()`
-        // resumed on could starve that pool. Hopping onto the stream's own delivery queue keeps
-        // the block confined to a dedicated thread instead.
+        // resumed on could starve that pool. It also must not run on the stream's callback queue:
+        // when events are pending, FlushSync waits for callbacks that need that queue and would
+        // deadlock. A separate serial queue confines the block while delivery remains runnable.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            queue.async {
-                FSEventStreamFlushSync(streamRef)
+            flushQueue.async { [self] in
+                streamLock.lock()
+                if let streamRef { FSEventStreamFlushSync(streamRef) }
+                streamLock.unlock()
                 continuation.resume()
             }
         }
@@ -417,11 +422,14 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
     func stop() async {
         // Unblock the pump first: `stopDelivery()` is safe to call even if nothing is parked.
         box.stopDelivery()
-        guard let streamRef else { return }
+        let stoppedStream = streamLock.withLock { () -> FSEventStreamRef? in
+            defer { streamRef = nil }
+            return streamRef
+        }
+        guard let streamRef = stoppedStream else { return }
         FSEventStreamStop(streamRef)
         FSEventStreamInvalidate(streamRef)
         FSEventStreamRelease(streamRef)
-        self.streamRef = nil
     }
 }
 
@@ -451,8 +459,15 @@ private func fsEventsScanCallback(
     for index in 0..<eventLimit {
         let flag = eventFlags[index]
         if flag & unreliableMask != 0 { reliable = false }
-        if index < paths.count { events.append(ScanEvent(path: paths[index])) }
         maxID = max(maxID, UInt64(eventIds[index]))
+        // Catch-up completion names the watched root but is not a filesystem mutation.
+        // Invalidating it makes every restarted real stream reject an unchanged cache record.
+        if !fsEventRepresentsMutation(flag) { continue }
+        if index < paths.count { events.append(ScanEvent(path: paths[index])) }
     }
     box.deliver(ScanEventBatch(events: events, cursor: maxID, historyReliable: reliable))
+}
+
+internal func fsEventRepresentsMutation(_ flags: FSEventStreamEventFlags) -> Bool {
+    flags & FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) == 0
 }
