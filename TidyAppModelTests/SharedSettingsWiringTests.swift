@@ -2091,27 +2091,85 @@ final class SharedSettingsWiringTests: XCTestCase {
         }
     }
 
-    @MainActor func testMeasuredVolumeIdentityAndCapacityResolveHeadroomWithoutPathApproval() async throws {
+    @MainActor func testMonotonicVolumeEpochAcceptsNewerMissingAndRemountedObservations()
+        async throws {
         try await run { _, services, _ in
             let store = services.configStore
-            let volumeID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
-            store.updateSelectedVolume(identity: volumeID.uuidString,
+            let firstVolumeID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+            let remountedVolumeID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+            store.updateSelectedVolume(identity: firstVolumeID.uuidString,
                 capacityBytes: 100 * 1_073_741_824,
-                observedAt: Date(timeIntervalSince1970: 20))
+                observationEpoch: 10)
             XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
                            10 * 1_073_741_824)
 
+            store.updateSelectedVolume(identity: nil,
+                capacityBytes: nil,
+                observationEpoch: 11)
+            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                         "a newer missing-volume observation must win despite wall-clock rollback")
+
+            store.updateSelectedVolume(identity: remountedVolumeID.uuidString,
+                capacityBytes: 200 * 1_073_741_824,
+                observationEpoch: 12)
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           20 * 1_073_741_824,
+                           "a newer remounted volume must replace the missing state")
+
+            store.updateSelectedVolume(identity: firstVolumeID.uuidString,
+                capacityBytes: 100 * 1_073_741_824,
+                observationEpoch: 11)
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           20 * 1_073_741_824,
+                           "an old epoch cannot restore stale volume identity or capacity")
+
             store.updateSelectedVolume(identity: "/path/is/not/authority",
                 capacityBytes: 100 * 1_073_741_824,
-                observedAt: Date(timeIntervalSince1970: 21))
+                observationEpoch: 13)
             XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy))
-
-            store.updateSelectedVolume(identity: volumeID.uuidString,
-                capacityBytes: 200 * 1_073_741_824,
-                observedAt: Date(timeIntervalSince1970: 19))
-            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy),
-                         "an older observation cannot replace the newer unavailable state")
         }
+    }
+
+    @MainActor func testExecutionServicesTeardownCancelsVolumeObservationAndOnlyItsPolicyObserver()
+        async throws {
+        let scratch = try A3Scratch()
+        defer { scratch.remove() }
+        let probe = A3Probe(stops: [])
+        let io = A3RealIO(probe: probe)
+        let settings = SettingsStore(url: scratch.paths.settings, io: io)
+        var services: AppExecutionServices? = await AppExecutionServices.bootstrap(
+            paths: scratch.paths, settings: settings, observe: { probe.hit($0.rawValue) })
+        weak var releasedServices = services
+        let store = try XCTUnwrap(services?.configStore)
+        let monitor = try XCTUnwrap(services?.systemMonitor)
+        var unrelatedObserverCalls = 0
+        let unrelatedToken = store.observeAcknowledgedPolicy { _, _ in
+            unrelatedObserverCalls += 1
+        }
+        defer { store.removeAcknowledgedPolicyObserver(unrelatedToken) }
+
+        var deadline = Date().addingTimeInterval(2)
+        var subscriberCount = await monitor.subscriberCountForTesting()
+        while subscriberCount != 1, Date() < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+            subscriberCount = await monitor.subscriberCountForTesting()
+        }
+        XCTAssertEqual(subscriberCount, 1)
+        XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 2)
+
+        services = nil
+        deadline = Date().addingTimeInterval(2)
+        subscriberCount = await monitor.subscriberCountForTesting()
+        while (releasedServices != nil || subscriberCount != 0), Date() < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+            subscriberCount = await monitor.subscriberCountForTesting()
+        }
+
+        XCTAssertNil(releasedServices)
+        XCTAssertEqual(subscriberCount, 0)
+        XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 1)
+        XCTAssertEqual(unrelatedObserverCalls, 1)
+        try scratch.intact()
     }
 
     @MainActor func testVisibleHeadroomAppliesAcknowledgedFeatureDisableImmediately() async throws {

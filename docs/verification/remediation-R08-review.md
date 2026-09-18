@@ -56,3 +56,12 @@ Disposition: pre-existing history is now validated/read or removed against one n
 ## Remaining evidence boundary
 
 Even after these source corrections, R08 does not close full hardware, native UI, accessibility/VoiceOver, actual export-file, released-shape migration/import/reset, real missing-resource-key, two-volume/remount, hidden-idle physical observation, constrained-host, Intel, package, or release gates. Final integrated Debug/Release and aggregate suites are still required after the shared R06/R08 file is settled; the existing focused results cannot substitute for those gates.
+
+## Additional integration-review disposition
+
+Two later integration findings are resolved in the shared app binder:
+
+- Measured-volume delivery now uses a strictly increasing app-owned epoch rather than wall-clock `Date`. Newer missing and remounted observations replace stale UUID/capacity state despite clock rollback, while equal/older epochs are rejected.
+- Service teardown now cancels the volume-observation stream and removes only its own acknowledged-policy observer token. The regression retains an unrelated observer and proves it remains registered after the service and monitor subscription are released.
+
+The focused app-model red run reproduced stale volume state and leaked registrations with five assertion failures. The green run passed both targeted tests. The shared `AppExecutionServices` file remains a joint R06/R08 integration artifact for the controller's commit and aggregate verification; this follow-up does not review or alter its scan/index/history mutation sections. Real remount delivery and clock-change behavior remain platform/runtime gates.
