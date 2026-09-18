@@ -56,3 +56,15 @@ Fresh focused evidence using `/tmp/tidy-r08-xcode`, `-jobs 2`, and the macOS arm
 
 These focused passes close the two observed integration failures. They do not replace the required
 fresh whole-suite model/Core reruns or release acceptance.
+
+## Review-correction aggregate checkpoint
+
+The intermediate review-correction Core run executed 685 tests across 69 suites in 321.892 seconds, with one failure: `BoundedProcessRunnerTests.descendantOutlivesCLIAndPipeDeadline` observed 1.721064083 seconds against its unchanged 1-second timed-segment limit. Other development builds were active on the host; this is a possible scheduling contributor, not proven causation. The same built test binary reran that exact case with `--skip-build` and passed without source or limit changes (2.424 seconds total including the separate descendant-completion wait). Logs: `/tmp/tidy-remediation-core-reviewed.log`, `/tmp/tidy-remediation-process-timing-rerun.log`. The failed aggregate remains failed evidence. It also predates the final continuation-handoff guard and strengthened byte-budget assertions, so a new final aggregate is required.
+
+The next Core checkpoint passed **687 tests across 69 suites** in 205.220 seconds (`/tmp/tidy-remediation-core-accepted.log`), including the unchanged process timing assertion. The count/skip checker passed. This checkpoint precedes the reviewer's consolidated final catch-up/continuation-pause findings and is not the final accepted-source aggregate.
+
+The first complete verifier pass on `6d707f0` passed **689 Core tests / 69 suites** in 166.805 seconds and the separate isolated process-cap case. Full model execution then produced **137 total, 136 passed, 1 failed, 0 skipped**: `HeadroomViewModelTests.testReadinessReflectsAvailableBytesAgainstTarget` failed two assertions after its unchanged 2-second wait found no snapshot. The real FSEvents/100k case passed in 21.476 seconds. The verifier correctly stopped before native/Release. This exposed a possible initial subscription/broadcast ordering gap and is being corrected; no timeout or assertion was relaxed. Preserved artifacts are `/tmp/tidy-remediation-before-snapshot-replay/` (including the failed model result bundle and the entire verifier log).
+
+Commit `ce89f22` closes that initial-state race by registering a subscriber and replaying the monitor's latest observed snapshot in one actor turn. It starts no probe or timer and preserves the measurement timestamp. A deterministic publication-before-subscription regression failed before the fix and passed afterward; all 34 `HeadroomSignalsTests` and all 11 `HeadroomViewModelTests` passed with the original readiness watchdog and assertions. The bounded reviewer approved the correction. The complete verifier is rerunning on these inputs.
+
+Final post-replay results: **690 Core / 69 suites**, isolated-cap **1**, app models **137**, synthetic native UI **2**, all passed. Universal Release built both architectures. [Final verification](remediation-final-verification.md) records exact timings, cache fixture visits, input hashes, the artifact-stage CLI correction and preserved failure boundaries.

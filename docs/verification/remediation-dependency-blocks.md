@@ -18,7 +18,7 @@ The plan places the remaining project/ranking/Build Prep breadth after R02–R08
 
 ## Native and physical acceptance: R13
 
-Current host and exact missing measurements are listed in [headroom acceptance](headroom-acceptance.md). Two synthetic XCTest UI runner attempts failed during bootstrap before assertions. A functioning native test session is required to run those assertions. A human accessibility evaluation, supported OS/architecture runtime coverage, controlled app/child traffic and exact reference-machine measurements are separate gates. No model/source/build result substitutes for them.
+Current host and exact missing measurements are listed in [headroom acceptance](headroom-acceptance.md). Two early synthetic XCTest UI runner attempts failed during bootstrap before assertions. A later fresh native fixture session passed both synthetic tests after the Settings AX correction; see [native fixture evidence](remediation-settings-ax.md). Production journeys remain unverified. A human accessibility evaluation, supported OS/architecture runtime coverage, controlled app/child traffic and exact reference-machine measurements are separate gates. No model/source/build result substitutes for them.
 
 ## Distribution: R14
 
