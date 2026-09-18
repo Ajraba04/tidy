@@ -49,6 +49,52 @@ struct ScanScopeTests {
         #expect(!visited.contains { PathGuard.isEqualOrDescendant($0, of: unrelatedCache.path) })
     }
 
+    @Test("Quick cache aliases never authorize home, unrelated or outside roots",
+          arguments: ["home", "unrelated", "outside", "ancestor"])
+    @MainActor
+    func quickCacheAliasesDoNotExpandScope(_ kind: String) async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript")
+        let unrelated = rig.home.appendingPathComponent("Documents")
+        let outside = rig.root.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        if kind == "ancestor" {
+            try FileManager.default.createDirectory(at: cache.deletingLastPathComponent().deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outside.appendingPathComponent("typescript"), withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: cache.deletingLastPathComponent(), withDestinationURL: outside)
+        } else {
+            try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let target = kind == "home" ? rig.home : (kind == "unrelated" ? unrelated : outside)
+            try FileManager.default.createSymbolicLink(at: cache, withDestinationURL: target)
+        }
+        let authorization = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        #expect(authorization.roots.isEmpty)
+        // Even the red fixture is entirely inside the owned scratch root.
+        let visits = ScanMetadataVisitRecorder()
+        _ = try await rig.run(authorization: authorization, visits: visits)
+        #expect(await visits.paths().isEmpty)
+    }
+
+    @Test("moving an authorized cache ancestor and replacing it with an alias denies start")
+    @MainActor
+    func ancestorAliasCannotReuseTheSameLeafIdentity() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let caches = rig.home.appendingPathComponent("Library/Caches")
+        try FileManager.default.createDirectory(at: caches.appendingPathComponent("typescript"), withIntermediateDirectories: true)
+        let authorization = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        let moved = rig.root.appendingPathComponent("moved-caches")
+        try FileManager.default.moveItem(at: caches, to: moved)
+        try FileManager.default.createSymbolicLink(at: caches, withDestinationURL: moved)
+        let visits = ScanMetadataVisitRecorder()
+        await #expect(throws: ScanScopeAuthorizationError.invalidRoot) {
+            _ = try await rig.run(authorization: authorization, visits: visits)
+        }
+        #expect(await visits.paths().isEmpty)
+    }
+
     @Test("full-home consent is owner-bound and single-use")
     @MainActor
     func fullHomeConsentCannotTransferOrReplay() async throws {

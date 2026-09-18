@@ -97,3 +97,11 @@ endpoint was used.
 R06 source behavior is implemented with the residual runtime gates above. R07 app integration is
 implemented but remains incomplete until the focused app rerun and real scratch FSEvents/100k
 artifacts are captured. Neither package is a full-program completion claim.
+
+## Controller scope correction — cache aliases
+
+Quick scope previously canonicalized known cache paths before issuing authority. Disposable fixtures proved that a leaf or ancestor symlink could authorize the fixture home, an unrelated directory, or an outside sibling. A moved cache ancestor replaced by a symlink could also preserve the leaf's opaque identity and pass the start check.
+
+Quick candidates now keep their fixed lexical paths and use descriptor-relative no-follow capture. Grants retain typed volume/device/inode/generation/mode and ancestor identities, enforce the acknowledged home volume, and revalidate those identities at start. Root minimization no longer resolves aliases after validation. The four alias fixtures perform zero traversal metadata visits; the moved-ancestor case denies before traversal. No test traversed the actual home or system root.
+
+RED: `/tmp/tidy-scope-alias-red.log`, 2 tests / 10 expected issues before the fix. GREEN: `swift test --package-path TidyCore --scratch-path /tmp/tidy-controller-baseline --jobs 2 --no-parallel --filter ScanScopeTests`, **9 tests passed**, `/tmp/tidy-scope-alias-green.log`. Physical mount/remount acceptance remains separate.

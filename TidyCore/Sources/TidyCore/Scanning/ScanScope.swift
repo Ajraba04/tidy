@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum ScanScopeMode: String, Equatable, Sendable {
@@ -13,6 +14,24 @@ public enum ScanScopeAuthorizationError: Error, Equatable, Sendable {
     case foreignConsent
     case expiredConsent
     case consumedConsent
+}
+
+/// Scope identity is captured through no-follow descriptors, including every
+/// ancestor. Resolving aliases must never turn a known cache into broader scope.
+private struct ScanScopeRootIdentity: Equatable, Sendable {
+    let volumeID: UUID
+    let device: UInt64
+    let inode: UInt64
+    let generation: UInt64?
+    let mode: UInt32
+    let parents: [FileNodeIdentity]
+
+    static func capture(path: String) -> Self? {
+        guard let value = try? ResourcePreflight.captureFile(at: path),
+              value.mode & UInt32(S_IFMT) == UInt32(S_IFDIR) else { return nil }
+        return Self(volumeID: value.volumeID, device: value.device, inode: value.inode,
+            generation: value.generation, mode: value.mode, parents: value.parentChain)
+    }
 }
 
 public struct FullHomeScanConsent: Sendable {
@@ -65,7 +84,7 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
         let homeDirectory: String
         let policyRevision: UInt64
         let expiresAt: UInt64
-        let rootIdentities: [String: ScanRootIdentity]
+        let rootIdentities: [String: ScanScopeRootIdentity]
         var consumed: Bool
     }
     private let lock = NSLock()
@@ -78,7 +97,7 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
 
     func register(id: UUID, authorityID: UUID, ownerID: UUID, homeDirectory: String,
                   policyRevision: UInt64, expiresAt: UInt64,
-                  rootIdentities: [String: ScanRootIdentity]) {
+                  rootIdentities: [String: ScanScopeRootIdentity]) {
         lock.lock(); defer { lock.unlock() }
         grants[id] = Grant(authorityID: authorityID, ownerID: ownerID,
             homeDirectory: homeDirectory, policyRevision: policyRevision,
@@ -102,7 +121,7 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
             throw ScanScopeAuthorizationError.expiredConsent
         }
         guard grant.rootIdentities.allSatisfy({ path, identity in
-            ScanRootIdentity.resolve(path: path) == identity
+            ScanScopeRootIdentity.capture(path: path) == identity
         }) else {
             grants.removeValue(forKey: id)
             throw ScanScopeAuthorizationError.invalidRoot
@@ -251,7 +270,6 @@ public final class ScanScopeAuthority {
     }
 
     private func quickRoots(environment: CleanEnvironment) -> [String] {
-        let fileManager = FileManager.default
         let relativeRoots = [
             "Library/Developer/Xcode/DerivedData",
             "Library/Developer/Xcode/DocumentationCache",
@@ -276,9 +294,14 @@ public final class ScanScopeAuthority {
             ".cocoapods/repos",
             "Library/Android/sdk/temp"
         ]
-        let candidates = relativeRoots.map { PathGuard.canonicalize(environment.path($0)) }
-            .filter(fileManager.fileExists(atPath:))
-        return canonicalMinimalRoots(candidates)
+        guard let homeIdentity = ScanScopeRootIdentity.capture(path: homeDirectory) else { return [] }
+        let candidates = relativeRoots.map(environment.path).filter { path in
+            guard path != homeDirectory,
+                  PathGuard.isEqualOrDescendant(path, of: homeDirectory),
+                  let identity = ScanScopeRootIdentity.capture(path: path) else { return false }
+            return identity.volumeID == homeIdentity.volumeID
+        }
+        return minimalRoots(candidates)
     }
 
     private func selectedProjectRoots(_ rawRoots: [String]) throws -> [String] {
@@ -295,7 +318,7 @@ public final class ScanScopeAuthority {
             }
             roots.append(canonical)
         }
-        return canonicalMinimalRoots(roots)
+        return minimalRoots(roots)
     }
 
     private func authorization(mode: ScanScopeMode, roots: [String], ownerID: UUID,
@@ -315,9 +338,14 @@ public final class ScanScopeAuthority {
             expiry = computed
         }
         guard now < expiry else { throw ScanScopeAuthorizationError.expiredConsent }
-        var rootIdentities: [String: ScanRootIdentity] = [:]
+        guard let homeIdentity = ScanScopeRootIdentity.capture(path: homeDirectory) else {
+            throw ScanScopeAuthorizationError.invalidRoot
+        }
+        var rootIdentities: [String: ScanScopeRootIdentity] = [:]
         for root in narrowed {
-            guard let identity = ScanRootIdentity.resolve(path: root) else {
+            guard PathGuard.isEqualOrDescendant(root, of: homeDirectory),
+                  let identity = ScanScopeRootIdentity.capture(path: root),
+                  identity.volumeID == homeIdentity.volumeID else {
                 throw ScanScopeAuthorizationError.invalidRoot
             }
             rootIdentities[root] = identity
@@ -332,8 +360,8 @@ public final class ScanScopeAuthority {
             expiresAt: expiry, ledger: grantLedger)
     }
 
-    private func canonicalMinimalRoots(_ rawRoots: [String]) -> [String] {
-        let sorted = Set(rawRoots.map(PathGuard.canonicalize)).sorted {
+    private func minimalRoots(_ rawRoots: [String]) -> [String] {
+        let sorted = Set(rawRoots).sorted {
             ($0.split(separator: "/").count, $0) < ($1.split(separator: "/").count, $1)
         }
         var result: [String] = []
