@@ -4,6 +4,12 @@ import SwiftUI
 import TidyCore
 import UniformTypeIdentifiers
 
+@MainActor func resolvedUIAdvancedSettings(_ policy: EffectivePolicy?) -> Bool {
+    guard let policy, case .stored(.bool(let value))? =
+        policy.fields[SettingID(rawValue: "ui.advancedSettings")]?.value else { return false }
+    return value
+}
+
 enum SettingsRowAvailability: Equatable {
     case editable, notApplicable(String), unavailable(String), deferred(String)
 }

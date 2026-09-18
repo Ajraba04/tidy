@@ -123,9 +123,3 @@ final class HeadroomViewModel {
         policy.fields[SettingID(rawValue: "ui.units")]?.value else { return .binary }
     return .decimal
 }
-
-@MainActor func resolvedUIAdvancedSettings(_ policy: EffectivePolicy?) -> Bool {
-    guard let policy, case .stored(.bool(let value))? =
-        policy.fields[SettingID(rawValue: "ui.advancedSettings")]?.value else { return false }
-    return value
-}
