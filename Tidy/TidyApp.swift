@@ -153,6 +153,9 @@ struct TidyApp: App {
             }
         }
         .task { await startBootstrap() }
+#if TIDY_RUNTIME_TEST_HOST
+        .modifier(RuntimeTestAppearance())
+#endif
     }
 
     @MainActor
