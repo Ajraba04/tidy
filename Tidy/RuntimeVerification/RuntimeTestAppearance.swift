@@ -42,11 +42,50 @@ struct RuntimeTestAppearanceAttestation: View {
     }
 
     var body: some View {
-        Text(value)
-            .font(.caption)
-            .accessibilityLabel("Runtime presentation environment")
-            .accessibilityValue(value)
-            .accessibilityIdentifier("runtime.appearance.environment")
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.caption)
+                .accessibilityLabel("Runtime presentation environment")
+                .accessibilityValue(value)
+                .accessibilityIdentifier("runtime.appearance.environment")
+            if ProcessInfo.processInfo.arguments.contains("--tidy-runtime-compact") {
+                RuntimeCompactWindowGeometry()
+            }
+        }
+    }
+}
+
+private struct RuntimeCompactWindowGeometry: View {
+    @State private var geometry = "not-open"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(geometry)
+                .font(.caption.monospaced())
+                .accessibilityLabel("Runtime Settings window geometry")
+                .accessibilityValue(geometry)
+                .accessibilityIdentifier("runtime.settings.geometry")
+            Button("Set compact Settings size") {
+                guard let window = NSApp.windows.first(where: { $0.title == "Settings" }) else {
+                    return
+                }
+                window.setContentSize(NSSize(width: 480, height: 520))
+                capture(window)
+            }
+            .accessibilityIdentifier("runtime.settings.compact")
+        }
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSWindow.didBecomeKeyNotification)) { notification in
+                guard let window = notification.object as? NSWindow,
+                      window.title == "Settings" else { return }
+                capture(window)
+            }
+    }
+
+    private func capture(_ window: NSWindow) {
+        geometry = "frame:\(window.frame.size) min:\(window.minSize) "
+            + "contentMin:\(window.contentMinSize) max:\(window.maxSize) "
+            + "resizable:\(window.styleMask.contains(.resizable))"
     }
 }
 #endif

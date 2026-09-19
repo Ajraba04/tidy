@@ -17,6 +17,7 @@ python3 scripts/verification/check-project.py
 python3 scripts/verification/check-personal-data.py --self-test
 python3 scripts/verification/check-personal-data.py
 python3 scripts/verification/privacy-api-inventory.py --self-test
+python3 scripts/verification/run-r13-observation.py --self-test
 python3 scripts/verification/privacy-api-inventory.py \
   --check-document docs/verification/privacy-api-inventory.md
 (
@@ -58,7 +59,9 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 142 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 144 \
+  --require-case 'testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan' \
+  --require-case 'testCancelDuringRescanTargetsNewStartInsteadOfOldTerminalSession' \
   --require-case 'testFreshInstallExplicitScanUsesDefaultsWithoutWritingSettingsOrStartingBackgroundWork' \
   --require-case 'testT081bOnlyExactFreshDefaultsInstallRevisionZeroSchedulerPolicy' \
   --require-case 'testT081bFreshDefaultProvenanceExpiresAfterLaterStoreLoadAndUpdate' \
@@ -90,14 +93,20 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   2>&1 | tee "$EVIDENCE/production-native-build.log"
 python3 scripts/verification/check-runtime-binary.py fixture \
   "$EVIDENCE/production-ui-build/Build/Products/Debug/TidyProductionRuntimeHost.app"
+# Fixed-duration and performance cases require the external observer's owned
+# proceed/observed tokens. run-r13-observation.py drives and verifies those
+# separate current-host captures; they are not standalone UI smoke tests.
 xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configuration Debug \
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/production-ui-build" \
+  -skip-testing:TidyProductionNativeUITests/ProductionObservationRuntimeUITests \
+  -skip-testing:TidyProductionNativeUITests/ProductionPerformanceRuntimeUITests \
   -resultBundlePath "$EVIDENCE/production-native-ui.xcresult" test-without-building \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES \
   2>&1 | tee "$EVIDENCE/production-native-ui.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/production-native-ui.xcresult" \
-  --minimum 10 \
+  --minimum 11 \
+  --require-case 'testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit' \
   --require-case 'testProductionLightAppearanceKeepsSettingsAndCleanupUsable' \
   --require-case 'testProductionDarkAppearanceKeepsSettingsAndCleanupUsable' \
   --require-case 'testProductionLightIncreasedContrastAndReducedMotion' \

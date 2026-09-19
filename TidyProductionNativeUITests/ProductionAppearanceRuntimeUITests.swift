@@ -24,8 +24,14 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
     }
 
     @MainActor
+    func testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit() throws {
+        try verifyAppearance(dark: false, increased: false, reducedMotion: false,
+                             compact: true)
+    }
+
+    @MainActor
     private func verifyAppearance(dark: Bool, increased: Bool,
-                                  reducedMotion: Bool) throws {
+                                  reducedMotion: Bool, compact: Bool = false) throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES",
@@ -33,8 +39,9 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
             dark ? "--tidy-runtime-appearance-dark" : "--tidy-runtime-appearance-light"]
         if increased { app.launchArguments.append("--tidy-runtime-increased-contrast") }
         if reducedMotion { app.launchArguments.append("--tidy-runtime-reduce-motion") }
+        if compact { app.launchArguments.append("--tidy-runtime-compact") }
+        addTeardownBlock { @MainActor in self.cleanup(app) }
         app.launch()
-        defer { cleanup(app) }
 
         let control = app.windows["Tidy Production Runtime Verification"]
         let attestation = control.staticTexts["runtime.appearance.environment"]
@@ -51,6 +58,22 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         control.buttons["runtime.open.settings"].click()
         let settings = app.windows["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        if compact {
+            let geometry = control.staticTexts["runtime.settings.geometry"]
+            XCTAssertTrue(geometry.waitForExistence(timeout: 5))
+            let description = geometry.value as? String ?? "missing"
+            let geometryAttachment = XCTAttachment(string: description)
+            geometryAttachment.name = "Settings window size constraints"
+            geometryAttachment.lifetime = .keepAlways
+            add(geometryAttachment)
+            // A fixed host-only AppKit input sets the real production window's
+            // content size. This tests compact layout, not a synthetic drag.
+            control.click()
+            control.buttons["runtime.settings.compact"].click()
+            settings.click()
+            XCTAssertLessThanOrEqual(settings.frame.width, 500,
+                "Settings could not resize to its compact width: \(description)")
+        }
         let editor = settings.checkBoxes["settings.control.feature.headroom"]
         let metadata = settings.staticTexts["settings.metadata.feature.headroom"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10), settings.debugDescription)
@@ -59,13 +82,22 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         XCTAssertTrue(metadata.exists)
         XCTAssertFalse((metadata.value as? String ?? "").isEmpty)
         XCTAssertTrue(settings.frame.contains(editor.frame))
+        XCTAssertTrue(settings.frame.contains(metadata.frame))
+        XCTAssertGreaterThanOrEqual(metadata.frame.height, 120,
+                                   "The seven-line metadata block collapsed")
+        let row = settings.descendants(matching: .any)["settings.row.feature.headroom"]
+        XCTAssertGreaterThanOrEqual(row.frame.height, metadata.frame.height + editor.frame.height)
         let settingsViewport = settings.scrollViews.firstMatch
         XCTAssertTrue(settingsViewport.frame.contains(metadata.frame),
             "The settings metadata is clipped by its scroll viewport: "
                 + "viewport=\(settingsViewport.frame), metadata=\(metadata.frame)")
         capture(settings, name: "\(expected)-settings")
+        if compact {
+            try audit(app)
+        }
 
         let search = settings.textFields["settings.search"]
+        XCTAssertEqual(search.label, "Search settings")
         search.click()
         search.typeText(String(repeating: "long-query-", count: 8))
         XCTAssertEqual(search.value as? String, String(repeating: "long-query-", count: 8))
@@ -89,6 +121,25 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         XCTAssertFalse(cleanNow.isEnabled)
         XCTAssertTrue(clean.frame.contains(cleanNow.frame))
         capture(clean, name: "\(expected)-safe-clean")
+        if compact {
+            try audit(app)
+        }
+    }
+
+    @MainActor
+    private func audit(_ app: XCUIApplication) throws {
+        try app.performAccessibilityAudit(for: [.contrast, .sufficientElementDescription]) { issue in
+            let element = issue.element
+            print("Accessibility audit: \(issue.compactDescription); "
+                + "identifier=\(element?.identifier ?? "none"); "
+                + "label=\(element?.label ?? "none"); frame=\(String(describing: element?.frame))")
+            let details = XCTAttachment(string: issue.detailedDescription + "\n"
+                + (element?.debugDescription ?? "No associated element"))
+            details.name = "Accessibility audit issue"
+            details.lifetime = .keepAlways
+            self.add(details)
+            return false
+        }
     }
 
     @MainActor

@@ -39,7 +39,7 @@ struct TidyApp: App {
 #if TIDY_RUNTIME_TEST_HOST
         WindowGroup("Tidy Production Runtime Verification",
                     id: RuntimeTestComposition.controlWindowID) {
-            withServices { services in
+            withServices(accessibilityLabel: "Runtime verification controls") { services in
                 RuntimeTestControlView(services: services, scenario: runtimeScenario)
             }
         }
@@ -47,7 +47,7 @@ struct TidyApp: App {
 #endif
 
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
-            withServices { services in
+            withServices(accessibilityLabel: "Tidy menu") { services in
                 VStack(alignment: .leading, spacing: 0) {
                     MenuBarContentView(services: services)
                         .environment(services.configStore)
@@ -66,14 +66,14 @@ struct TidyApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Scan Report", id: WindowID.scan) {
-            withServices { services in
+            withServices(accessibilityLabel: "Scan report") { services in
                 ScanView(services: services)
             }
         }
         .windowResizability(.contentSize)
 
         Window("Headroom", id: WindowID.headroom) {
-            withServices { services in
+            withServices(accessibilityLabel: "Headroom") { services in
                 HeadroomView(services: services)
                     .environment(services.configStore)
             }
@@ -81,14 +81,14 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         WindowGroup(id: WindowID.clean, for: Tier.self) { $tier in
-            withServices { services in
+            withServices(accessibilityLabel: "Cleanup review") { services in
                 CleanView(tier: tier ?? .safe, services: services)
             }
         }
         .windowResizability(.contentSize)
 
         Window("Custom Clean", id: WindowID.custom) {
-            withServices { services in
+            withServices(accessibilityLabel: "Custom cleanup") { services in
                 CustomView(services: services)
                     .environment(services.configStore)
             }
@@ -96,7 +96,7 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         Window("Settings", id: WindowID.settings) {
-            withServices { services in
+            withServices(accessibilityLabel: "Settings") { services in
                 VStack {
                     if let message = services.persistenceError {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -116,7 +116,7 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         Window("Welcome to Tidy", id: WindowID.onboarding) {
-            withServices { services in
+            withServices(accessibilityLabel: "Welcome to Tidy") { services in
                 VStack {
                     if let message = services.persistenceError {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -133,6 +133,7 @@ struct TidyApp: App {
 
     @ViewBuilder
     private func withServices<Content: View>(
+        accessibilityLabel: String,
         @ViewBuilder content: (AppExecutionServices) -> Content
     ) -> some View {
         Group {
@@ -152,6 +153,8 @@ struct TidyApp: App {
                 storageUnavailable
             }
         }
+        .background(SceneContentAccessibilityLabel(label: accessibilityLabel)
+            .frame(width: 0, height: 0))
         .task { await startBootstrap() }
 #if TIDY_RUNTIME_TEST_HOST
         .modifier(RuntimeTestAppearance())
@@ -209,6 +212,38 @@ struct TidyApp: App {
         return AppStoragePaths(home: home,
             settings: base.appendingPathComponent("config.json"),
             journal: base.appendingPathComponent("execution", isDirectory: true))
+    }
+}
+
+/// SwiftUI's macOS hosting container is a separate accessibility group from its
+/// declarative children. Label that public AppKit container without combining or
+/// hiding any of the scene's independently accessible controls.
+private struct SceneContentAccessibilityLabel: NSViewRepresentable {
+    let label: String
+
+    func makeNSView(context: Context) -> LabelView {
+        let view = LabelView(frame: .zero)
+        view.setAccessibilityElement(false)
+        view.label = label
+        return view
+    }
+
+    func updateNSView(_ view: LabelView, context: Context) {
+        view.label = label
+        view.applyLabel()
+    }
+
+    final class LabelView: NSView {
+        var label = ""
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyLabel()
+        }
+
+        func applyLabel() {
+            window?.contentView?.setAccessibilityLabel(label)
+        }
     }
 }
 
