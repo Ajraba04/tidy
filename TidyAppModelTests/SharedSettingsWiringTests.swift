@@ -2043,6 +2043,58 @@ extension SharedSettingsWiringTests {
         }
     }
 
+    func testT081bExternalSettingsCreationAndReplacementDenyFreshBootstrapWithoutWrites()
+      async throws {
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let external = SettingsStore(url: scratch.paths.settings)
+            let externalLoad = await external.load()
+            XCTAssertEqual(externalLoad.disposition, .newDefaults)
+            _ = try await external.update(expectedRevision: 0, change: .transcriptAgeDays(120))
+            let names = ["config.json", "config.backup.json", "config.lock", "config.store.json"]
+            let before = try Dictionary(uniqueKeysWithValues: names.compactMap { name in
+                let url = scratch.support.appendingPathComponent(name)
+                return FileManager.default.fileExists(atPath: url.path)
+                    ? (name, try Data(contentsOf: url)) : nil
+            })
+
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A second SettingsStore publication must invalidate fresh defaults")
+            let after = try Dictionary(uniqueKeysWithValues: names.compactMap { name in
+                let url = scratch.support.appendingPathComponent(name)
+                return FileManager.default.fileExists(atPath: url.path)
+                    ? (name, try Data(contentsOf: url)) : nil
+            })
+            XCTAssertEqual(after, before, "Denied bootstrap must preserve every settings byte")
+        }
+
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let corrupt = Data("{broken".utf8)
+            try corrupt.write(to: scratch.paths.settings)
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), corrupt)
+        }
+
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            try Data("first external bytes".utf8).write(to: scratch.paths.settings)
+            let future = Data(#"{"schemaVersion":999,"revision":0,"config":{}}"#.utf8)
+            try future.write(to: scratch.paths.settings, options: .atomic)
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), future)
+        }
+    }
+
     func testT081bPresentationConflictAndWriteFailureDiscardWithoutClosing() async throws {
         try await run(seed: t081Envelope()) { scratch, services, _ in
             let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())

@@ -22,6 +22,13 @@ already consumed token all remain unavailable. The scheduler independently requi
 `.freshDefaults` origin and exact canonical bytes, and carries the accepted origin in its prepared
 token and acknowledged state so live observation can safely re-resolve the same policy.
 
+The token also captures the exact `SettingsDiskImage` observed by the issuing load. Immediately
+before scheduler preparation, the settings actor reopens the bounded path and requires the same
+directory/config/backup/lock/metadata identities and bytes. The sole exception is the existing
+absent-parent to empty-settings-parent refresh caused by execution-journal bootstrap. Any external
+settings creation, replacement, corrupt/future document, staging remnant, or directory replacement
+denies without modifying the observed bytes.
+
 `ScanScopeAuthority` now consumes the exact envelope actually accepted by the read-only scheduler,
 rather than treating every positive revision as sufficient or globally allowing revision zero.
 The first real settings save still crosses the existing synchronous admission barrier; after durable
@@ -64,6 +71,11 @@ Competing settings load/update/rollback/import work is denied during that bounde
 window. This establishes serialization without adding a global watcher or changing external-file
 conflict semantics.
 
+Acquisition also reopens `SettingsFiles` and compares the current disk image with the captured image.
+When the settings directory did not exist at issuance, only the already accepted parent-creation
+case is allowed, and only while config, backup, lock, and metadata all remain absent. The refreshed
+directory identity becomes the store's current image; every other difference denies.
+
 The existing public `ExecutionPolicyBridge(... loaded:)` initializer supplies no bootstrap evidence;
 it cannot enable revision zero. The bootstrap initializer binds the result to the same settings actor.
 Only `.newDefaults` with the exact canonical envelope can select `.freshDefaults` origin.
@@ -104,6 +116,11 @@ Tests also cover strong issuing-actor retention and forced generation exhaustion
 The reservation regression pauses scheduler preparation after the lease is acquired and verifies
 that competing load and update requests fail until installation releases it.
 
+Final review then identified a cross-store/filesystem race outside the actor generation: another
+store or process could create settings after issuance but before acquire. The added regression was
+red for a second-store valid nondefault publication, raw corrupt creation, and atomic future-schema
+replacement. Exact disk-image revalidation made all three green and preserved every resulting byte.
+
 ## Focused verification
 
 Core command, using the requested two-job external scratch path:
@@ -119,14 +136,14 @@ observation at revision zero, the fresh-default Quick scope, the complete existi
 fixed-deny mutation matrix, and the missing-settings/first-save publication boundaries.
 
 App-model commands used `/tmp/tidy-r05-resume-xcode`, `-jobs 2`, the macOS arm64 destination,
-signing disabled, and 16 selected tests:
+signing disabled, and 17 selected tests:
 
-- all thirteen `testT081b...` scheduler/settings handoff, provenance, and reservation tests;
+- all fourteen `testT081b...` scheduler/settings handoff, provenance, disk-race, and reservation tests;
 - pristine explicit scan without a settings write;
 - bootstrap/Settings opening with no scan or process work;
 - selected-project scope with no roots.
 
-Result: **16 tests passed, 0 failures**. The pristine test also observed zero pre-request sessions,
+Result: **17 tests passed, 0 failures**. The pristine test also observed zero pre-request sessions,
 zero active work, zero explicit monitor leases, no monitor timer, no index watch, unchanged absence of
 `config.json`, a nonempty Quick result from the owned cache fixture, and released scan resources.
 

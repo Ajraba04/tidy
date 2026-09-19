@@ -44,6 +44,7 @@ public actor SettingsStore {
     public init(url: URL) { self.url = url; self.io = DarwinJournalIO() }
     internal init(url: URL, io: any JournalPOSIXIO) { self.url = url; self.io = io }
     internal func lastPublicationFailure() -> SettingsPublicationFailure? { publicationFailure }
+    internal func schedulerBootstrapImageForIssue() -> SettingsDiskImage? { loadedImage }
 
     public func load() -> SettingsLoadResult {
         guard invalidateSchedulerBootstrapBeforeAccess() else {
@@ -417,6 +418,29 @@ public actor SettingsStore {
         schedulerBootstrapGeneration = value
         schedulerBootstrapGenerationExhausted = false
         schedulerBootstrapReservation = nil
+    }
+
+    /// Reopens the settings path immediately before scheduler admission. The
+    /// exact captured disk image must still exist. The sole exception mirrors
+    /// `refreshEmptyParentIdentityIfNeeded`: journal bootstrap may create the
+    /// previously absent parent while every settings artifact remains absent.
+    internal func revalidateSchedulerBootstrapImage(_ expected: SettingsDiskImage) -> Bool {
+        guard loadedImage == expected else { return false }
+        let disk: SettingsDiskImage
+        do {
+            disk = try SettingsFiles.load(url)
+            guard try disk.loaded().disposition == .newDefaults else { return false }
+        } catch {
+            return false
+        }
+        if disk == expected { return true }
+        guard expected.directory == nil,
+              expected.config == nil, expected.backup == nil,
+              expected.lock == nil, expected.metadata == nil,
+              disk.config == nil, disk.backup == nil,
+              disk.lock == nil, disk.metadata == nil else { return false }
+        loadedImage = disk
+        return true
     }
 
 }
