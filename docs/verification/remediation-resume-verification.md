@@ -76,3 +76,13 @@ parity and disposable copy/replace/remove witness. Stable artifacts are in
 `dist/remediation-1782b4d/`; exact hashes and boundaries are in
 [R14 package evidence](remediation-R14-resume.md). This success cannot turn the failed
 native gate into release approval. No further tests followed the single aggregate.
+
+
+## Subsequent focused continuation
+
+The next resume made only test/fixture changes and ran the existing compact case three
+times (diagnosis plus two bounded corrections), without repeating this aggregate or
+packaging. It isolated off-window screenshot false positives and window occlusion;
+the final case remains failed on the inactive verification window's native title.
+This report's original counts and exit65 remain unchanged. See
+[window-scope evidence](remediation-R13-audit-window-scope.md) for current status.

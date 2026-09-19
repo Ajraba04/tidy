@@ -71,3 +71,14 @@ numeric gates include authorized hidden CPU below 0.5% of one core over ten minu
 
 
 Current resumed results, exact input hashes and retained failure are in [resumed verification](remediation-resume-verification.md). The final local package record is separate from these test results.
+
+
+### Focused compact-audit continuation
+
+A later resume diagnosed off-window contrast capture and overlapping auxiliary-window
+pixels. The test now retains narrowly classified off-all-window false positives and the
+compile-scoped fixture arranges its windows without overlap. The last focused case
+still failed on the inactive auxiliary window's visible native title; Clean audit was
+not reached. No broad suite or package rebuild followed. The native gate remains open;
+see [window-scope evidence](remediation-R13-audit-window-scope.md) for the exact three
+focused results, screenshots and next fixture-design boundary.

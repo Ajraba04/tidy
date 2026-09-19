@@ -25,6 +25,8 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
 
     @MainActor
     func testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit() throws {
+        continueAfterFailure = false
+        assertAuditIssueClassificationBoundaries()
         try verifyAppearance(dark: false, increased: false, reducedMotion: false,
                              compact: true)
     }
@@ -71,6 +73,7 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
             control.click()
             control.buttons["runtime.settings.compact"].click()
             settings.click()
+            arrangeAuditWindows(control: control, subjectWindow: settings)
             XCTAssertLessThanOrEqual(settings.frame.width, 500,
                 "Settings could not resize to its compact width: \(description)")
         }
@@ -93,7 +96,7 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
                 + "viewport=\(settingsViewport.frame), metadata=\(metadata.frame)")
         capture(settings, name: "\(expected)-settings")
         if compact {
-            try audit(app)
+            try audit(app, subjectWindow: settings)
         }
 
         let search = settings.textFields["settings.search"]
@@ -120,26 +123,206 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         XCTAssertTrue(cleanNow.waitForExistence(timeout: 45), clean.debugDescription)
         XCTAssertFalse(cleanNow.isEnabled)
         XCTAssertTrue(clean.frame.contains(cleanNow.frame))
+        if compact {
+            arrangeAuditWindows(control: control, subjectWindow: clean)
+        }
         capture(clean, name: "\(expected)-safe-clean")
         if compact {
-            try audit(app)
+            try audit(app, subjectWindow: clean)
         }
     }
 
     @MainActor
-    private func audit(_ app: XCUIApplication) throws {
+    private func arrangeAuditWindows(
+        control: XCUIElement,
+        subjectWindow: XCUIElement
+    ) {
+        let attestation = control.staticTexts["runtime.audit.arrangement"]
+        XCTAssertTrue(attestation.exists, control.debugDescription)
+        let previousAttestation = attestation.value as? String
+        let controlSize = control.frame.size
+        let subjectSize = subjectWindow.frame.size
+
+        control.click()
+        control.buttons["runtime.audit.arrange"].click()
+
+        let detail = attestation.value as? String ?? "missing"
+        let attachment = XCTAttachment(string: detail)
+        attachment.name = "Audit window arrangement"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertNotEqual(detail, previousAttestation,
+            "Audit window arrangement action did not update its attestation")
+        XCTAssertTrue(detail.hasPrefix("arranged:onscreen"), detail)
+        XCTAssertEqual(control.frame.size, controlSize,
+            "Audit arrangement changed the control window size")
+        XCTAssertEqual(subjectWindow.frame.size, subjectSize,
+            "Audit arrangement changed the subject window size")
+        XCTAssertFalse(control.frame.intersects(subjectWindow.frame),
+            "Audit windows overlap: control=\(control.frame), subject=\(subjectWindow.frame)")
+        subjectWindow.click()
+    }
+
+    @MainActor
+    private func audit(_ app: XCUIApplication, subjectWindow: XCUIElement) throws {
+        let capturedWindowFrame = subjectWindow.frame
+        let capturedAppWindowFrames = app.windows.allElementsBoundByIndex
+            .filter(\.exists)
+            .map(\.frame)
         try app.performAccessibilityAudit(for: [.contrast, .sufficientElementDescription]) { issue in
             let element = issue.element
+            let elementFrame = element?.frame
+            let liveWindowFrame = subjectWindow.frame
+            let liveAppWindowFrames = app.windows.allElementsBoundByIndex
+                .filter(\.exists)
+                .map(\.frame)
+            let windowFramesAreStable = liveWindowFrame == capturedWindowFrame
+                && liveAppWindowFrames == capturedAppWindowFrames
+            let isOffWindowContrast = windowFramesAreStable
+                && Self.shouldIgnoreAuditIssue(
+                    auditType: issue.auditType,
+                    elementFrame: elementFrame,
+                    subjectWindow: capturedWindowFrame,
+                    appWindows: capturedAppWindowFrames)
+            let geometry = "auditType=\(issue.auditType.rawValue); "
+                + "capturedSubjectWindow=\(capturedWindowFrame); "
+                + "liveSubjectWindow=\(liveWindowFrame); "
+                + "capturedAppWindows=\(capturedAppWindowFrames); "
+                + "liveAppWindows=\(liveAppWindowFrames); "
+                + "elementFrame=\(String(describing: elementFrame))"
             print("Accessibility audit: \(issue.compactDescription); "
                 + "identifier=\(element?.identifier ?? "none"); "
-                + "label=\(element?.label ?? "none"); frame=\(String(describing: element?.frame))")
-            let details = XCTAttachment(string: issue.detailedDescription + "\n"
+                + "label=\(element?.label ?? "none"); \(geometry)")
+            if isOffWindowContrast {
+                print("Ignoring off-window contrast audit false positive; \(geometry)")
+            }
+            let details = XCTAttachment(string: issue.detailedDescription + "\n" + geometry + "\n"
                 + (element?.debugDescription ?? "No associated element"))
-            details.name = "Accessibility audit issue"
+            details.name = isOffWindowContrast
+                ? "Off-window contrast audit false positive"
+                : "Accessibility audit issue"
             details.lifetime = .keepAlways
             self.add(details)
-            return false
+            if !windowFramesAreStable {
+                XCTFail("App window geometry changed during accessibility audit; \(geometry)")
+                return false
+            }
+            return isOffWindowContrast
         }
+        XCTAssertEqual(subjectWindow.frame, capturedWindowFrame,
+            "Subject window moved during accessibility audit")
+        XCTAssertEqual(
+            app.windows.allElementsBoundByIndex.filter(\.exists).map(\.frame),
+            capturedAppWindowFrames,
+            "App window geometry changed during accessibility audit")
+    }
+
+    private func assertAuditIssueClassificationBoundaries() {
+        let window = CGRect(x: 100, y: 100, width: 400, height: 500)
+        let below = CGRect(x: 100, y: 601, width: 100, height: 20)
+        XCTAssertTrue(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .sufficientElementDescription,
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: [.contrast, .sufficientElementDescription],
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: XCUIAccessibilityAuditType(rawValue: UInt64(1) << 63),
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: nil,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: below,
+            subjectWindow: .zero,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: []))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window, .zero]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: CGRect(x: 100, y: 601, width: -100, height: 20),
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: .zero,
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: CGRect(x: CGFloat.nan, y: 0, width: 100, height: 20),
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: CGRect(x: 120, y: 120, width: 100, height: 20),
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: CGRect(x: 100, y: 599, width: 100, height: 20),
+            subjectWindow: window,
+            appWindows: [window]))
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: CGRect(x: 100, y: 600, width: 100, height: 20),
+            subjectWindow: window,
+            appWindows: [window]))
+        let otherWindow = CGRect(x: 80, y: 580, width: 440, height: 200)
+        XCTAssertFalse(Self.shouldIgnoreAuditIssue(
+            auditType: .contrast,
+            elementFrame: below,
+            subjectWindow: window,
+            appWindows: [window, otherWindow]))
+    }
+
+    private static func shouldIgnoreAuditIssue(
+        auditType: XCUIAccessibilityAuditType,
+        elementFrame: CGRect?,
+        subjectWindow: CGRect,
+        appWindows: [CGRect]
+    ) -> Bool {
+        guard auditType == .contrast,
+              let elementFrame,
+              isValidAuditFrame(elementFrame),
+              isValidAuditFrame(subjectWindow),
+              !appWindows.isEmpty,
+              appWindows.allSatisfy(isValidAuditFrame),
+              appWindows.contains(subjectWindow) else { return false }
+        return appWindows.allSatisfy { window in
+            elementFrame.maxX < window.minX
+                || elementFrame.minX > window.maxX
+                || elementFrame.maxY < window.minY
+                || elementFrame.minY > window.maxY
+        }
+    }
+
+    private static func isValidAuditFrame(_ frame: CGRect) -> Bool {
+        frame.size.width > 0 && frame.size.height > 0
+            && [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
+                frame.minX, frame.minY, frame.maxX, frame.maxY].allSatisfy(\.isFinite)
     }
 
     @MainActor
