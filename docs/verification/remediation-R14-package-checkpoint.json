@@ -1,0 +1,27 @@
+{
+  "sourceRevision": "b4acfff2a78343884457b14ee5d9efba3df91e12",
+  "packageScriptSHA256": "5539ec11bae918ce2796e86ed524e2328fc83e0e7e4e28888ac776cb9ab77e7b",
+  "appVersion": "1.5.0",
+  "appBuild": "1",
+  "architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "artifacts": {
+    "Tidy-dev.zip": "087f65ca9330cf2428259bbcdf968e2860ec313cdc599bff74ef3689a40f1149",
+    "Tidy-dev.dmg": "1582fdc4b93262e783878b98714e1c3d799385ec1736342c4be185b69a17182e"
+  },
+  "zipEntryCount": 23,
+  "bundleFileCount": 6,
+  "zipAndDmgBundleParity": true,
+  "signature": "adhoc; strict verification passed",
+  "entitlements": "none",
+  "hardenedRuntime": false,
+  "privacyManifestSyntax": true,
+  "localizationResourcePresent": true,
+  "copyReplaceRemovePreservedWitness": true,
+  "normalAppLaunched": false,
+  "gatekeeperAccepted": false,
+  "supportedOSInstallAcceptance": false,
+  "published": false
+}
