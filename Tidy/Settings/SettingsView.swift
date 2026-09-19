@@ -1569,10 +1569,15 @@ struct SettingsView: View {
                     value: .bool(value))
             }))
                 .accessibilityIdentifier("settings.showAdvanced")
-            RegistrySettingsSurface(rows: rows) { id, value in
-                _ = model.submit(id: id, value: value)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    RegistrySettingsContent(rows: rows) { id, value in
+                        _ = model.submit(id: id, value: value)
+                    }
+                    SettingsWorkflowSurface(store: store)
+                }
             }
-            SettingsWorkflowSurface(store: store)
+            .accessibilityIdentifier("settings.content")
         }.padding().frame(minWidth: 480, minHeight: 520).navigationTitle("Settings")
     }
 }
@@ -1583,22 +1588,34 @@ struct RegistrySettingsSurface: View {
     let submit: (SettingID, SettingValue?) -> Void
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                switch SettingsSurfaceEmptyState.resolve(
-                    rows: rows, registryState: registryState) {
-                case .registryFailure:
-                    Label("Settings are unavailable because registry validation failed.",
-                          systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                        .accessibilityIdentifier("settings.registry.failure")
-                case .noMatches:
-                    ContentUnavailableView("No settings match",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try another search or section."))
-                        .accessibilityIdentifier("settings.search.noMatches")
-                case .content:
-                    ForEach(rows) { RegistrySettingRow(row: $0, submit: submit) }
-                }
+            RegistrySettingsContent(rows: rows, registryState: registryState, submit: submit)
+        }
+    }
+}
+
+/// The production window owns scrolling so workflow controls cannot compress
+/// the registry into a viewport shorter than a single settings row.
+private struct RegistrySettingsContent: View {
+    let rows: [SettingsSurfaceRow]
+    var registryState: SettingsRegistryState = SettingsSurfaceModel.registryState
+    let submit: (SettingID, SettingValue?) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            switch SettingsSurfaceEmptyState.resolve(
+                rows: rows, registryState: registryState) {
+            case .registryFailure:
+                Label("Settings are unavailable because registry validation failed.",
+                      systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("settings.registry.failure")
+            case .noMatches:
+                ContentUnavailableView("No settings match",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another search or section."))
+                    .accessibilityIdentifier("settings.search.noMatches")
+            case .content:
+                ForEach(rows) { RegistrySettingRow(row: $0, submit: submit) }
             }
         }
     }

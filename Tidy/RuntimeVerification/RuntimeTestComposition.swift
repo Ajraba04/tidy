@@ -232,6 +232,7 @@ struct RuntimeTestControlView: View {
             Text("Production runtime verification")
                 .font(.title2.bold())
                 .accessibilityIdentifier("runtime.control.title")
+            RuntimeTestAppearanceAttestation()
             Text("This dedicated build uses production scenes and services with disposable storage.")
                 .fixedSize(horizontal: false, vertical: true)
             Text(scenario.rawValue)

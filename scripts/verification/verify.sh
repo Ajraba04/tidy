@@ -97,7 +97,11 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES \
   2>&1 | tee "$EVIDENCE/production-native-ui.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/production-native-ui.xcresult" \
-  --minimum 6 \
+  --minimum 10 \
+  --require-case 'testProductionLightAppearanceKeepsSettingsAndCleanupUsable' \
+  --require-case 'testProductionDarkAppearanceKeepsSettingsAndCleanupUsable' \
+  --require-case 'testProductionLightIncreasedContrastAndReducedMotion' \
+  --require-case 'testProductionDarkIncreasedContrastAndReducedMotion' \
   --require-case 'testProductionFreshDefaultsQuickScanKeepsSettingsAbsent' \
   --require-case 'testProductionFullHomeScanCancelSurvivesCloseAndReopen' \
   --require-case 'testProductionFullHomeScanTraversesOnlySyntheticHomeAndPreservesWitness' \
