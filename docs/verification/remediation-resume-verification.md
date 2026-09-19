@@ -70,5 +70,9 @@ performance, exact privacy-purpose classification, supported producer exclusion 
 positive effect/recovery delivery, and actual installation/upgrade/uninstall remain
 open under the unchanged binding plan.
 
-Final-source local packaging is recorded separately in the R14 package report. A
-successful package inspection cannot turn the failed native gate into release approval.
+Final-source local packaging from `1782b4d` built and passed bounded inspection: both
+architectures, strict ad-hoc signature, resources, runtime-marker exclusion, ZIP/DMG
+parity and disposable copy/replace/remove witness. Stable artifacts are in
+`dist/remediation-1782b4d/`; exact hashes and boundaries are in
+[R14 package evidence](remediation-R14-resume.md). This success cannot turn the failed
+native gate into release approval. No further tests followed the single aggregate.

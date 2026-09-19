@@ -1,5 +1,39 @@
 # R14 local package preparation — 2026-09-19
 
+## Current resumed checkpoint — source `1782b4d`
+
+The final-source package build and bounded inspector both exited 0. The normal app was
+not launched. Source was an isolated detached local clone of
+`1782b4df58f2993da397e7811414e2f89f7c6f9f`, with clean relevant source inputs.
+Command: `bash scripts/make-release.sh dev`, using the existing ad-hoc signing policy.
+Build/source root: `/private/tmp/tidy-resume-package-ZInt1V/`.
+Inspection: `/private/tmp/tidy-resume-inspection-25a43567/result.json`.
+Inspector SHA-256: `2406206d7eec8584675e60460da93ac7982212344d14f8191864263f708568aa`.
+Package script SHA-256: `5539ec11bae918ce2796e86ed524e2328fc83e0e7e4e28888ac776cb9ab77e7b`.
+
+Stable local copies are under `dist/remediation-1782b4d/` in the active worktree, with
+`Tidy-dev.sha256` and `inspection-result.json`. Copied bytes were hash-verified.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Tidy-dev.zip | `3ec416c326fdc2e680b7b9796ca08765edf2a300819ae567c17c2f601f3dfa8d` |
+| Tidy-dev.dmg | `2ea0e19e10a6379c6d0002ad5cb505a87b59820e47c4949cc60ee9be4976c484` |
+
+Version1.5.0/build1, arm64 and x86_64, English and privacy resources, strict ad-hoc
+signature, empty entitlements, and ZIP/DMG bundle parity passed. The actual signature
+has no hardened-runtime flag; policy was not changed. The normal binary contains no
+fixture markers. The DMG was inspected read-only and detached; its Applications link
+is correct. The disposable filesystem copy/replace/remove rehearsal preserved its
+independent recovery witness.
+
+This packaging success is separate from the final verifier's native-audit timeout.
+It is not Gatekeeper, install/upgrade/uninstall, supported-OS, notarization, privacy-purpose
+or release acceptance. No normal-app launch, installation, security change, or publication
+occurred. Current application NO-GO and full-program INCOMPLETE are unchanged.
+
+## Historical checkpoint (before this resume)
+
+
 Status: package-byte inspection passed for the recorded checkpoint; full distribution and supported-host installation acceptance remain open.
 
 Built an isolated `git archive` of source `b4acfff2a78343884457b14ee5d9efba3df91e12` using the existing local ad-hoc signing path. The only packaging-script change is a two-job Xcode build limit, matching the verification workflow. Command: `bash scripts/make-release.sh dev`. It completed successfully and produced both ZIP and DMG. The normal production app was not launched, no existing installation was modified, and no security/permission/notarization/publication step was performed.
