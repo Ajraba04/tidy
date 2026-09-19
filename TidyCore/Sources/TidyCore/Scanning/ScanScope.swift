@@ -239,7 +239,7 @@ public final class ScanScopeAuthority {
     }
 
     private func policySnapshot() throws -> PolicySnapshot {
-        guard let envelope = bridge.acknowledgedEnvelope, envelope.revision > 0 else {
+        guard let envelope = bridge.acknowledgedScanEnvelope else {
             throw ScanScopeAuthorizationError.policyUnavailable
         }
         let profiles = envelope.preferences?.profiles ?? []

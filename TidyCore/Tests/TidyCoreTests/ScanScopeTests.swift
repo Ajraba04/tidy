@@ -4,6 +4,36 @@ import Testing
 
 @Suite("Production scan scope authorization", .serialized)
 struct ScanScopeTests {
+    @Test("exact absent-file defaults authorize only the bounded Quick roots")
+    @MainActor
+    func freshDefaultsAuthorizeQuickScopeWithoutPersistingSettings() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR05FreshScope-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let cache = home.appendingPathComponent("Library/Caches/typescript", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let settingsURL = root.appendingPathComponent("settings/config.json")
+        let settings = SettingsStore(url: settingsURL)
+        let bootstrap = await settings.loadForSchedulerBootstrap()
+        let loaded = bootstrap.result
+        #expect(loaded.disposition == .newDefaults)
+        let config = try #require(loaded.envelope?.config)
+        let environment = config.makePolicyEnvironment(homeDirectory: home.path, detectedTools: [])
+        let coordinator = ExecutionCoordinator(environment: environment,
+            journalDirectory: root.appendingPathComponent("journal"))
+        let bridge = ExecutionPolicyBridge(coordinator: coordinator, settings: settings,
+            bootstrap: bootstrap, homeDirectory: home.path, detectedTools: [])
+        await bridge.drain()
+
+        let authority = ScanScopeAuthority(bridge: bridge, homeDirectory: home.path)
+        let authorization = try authority.authorizePolicyDefault(ownerID: UUID())
+        #expect(authorization.mode == .quick)
+        #expect(authorization.roots == [PathGuard.canonicalize(cache.path)])
+        #expect(!FileManager.default.fileExists(atPath: settingsURL.path))
+    }
+
     @Test("selected-project scope with no acknowledged roots performs zero metadata visits")
     @MainActor
     func selectedProjectsWithoutRootsVisitsNothing() async throws {

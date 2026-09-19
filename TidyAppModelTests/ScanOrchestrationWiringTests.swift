@@ -90,6 +90,13 @@ private struct ScanWiringScratch {
         return services
     }
 
+    @MainActor func freshDefaultServices() async -> AppExecutionServices {
+        let settings = SettingsStore(url: configURL)
+        return await AppExecutionServices.bootstrap(
+            paths: AppStoragePaths(home: home, settings: configURL, journal: journal),
+            settings: settings, observe: { _ in })
+    }
+
     func remove() { try? FileManager.default.removeItem(at: root) }
 
     func populateWideFixture(directoryCount: Int = 500, filesPerDirectory: Int = 200) throws {
@@ -176,6 +183,40 @@ private func runAppScanToCompletion(services: AppExecutionServices,
 
 @MainActor
 final class ScanOrchestrationWiringTests: XCTestCase {
+
+    func testFreshInstallExplicitScanUsesDefaultsWithoutWritingSettingsOrStartingBackgroundWork()
+      async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let services = await scratch.freshDefaultServices()
+        XCTAssertEqual(services.settingsLoad.disposition, .newDefaults)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: scratch.configURL.path))
+        let beforeRegistry = await services.scanRegistry.snapshot()
+        let beforeLeaseCount = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+        let beforeTimer = await services.systemMonitor.isTimerRunningForTesting()
+        let beforeIndexWatch = await services.activeScanIndexWatchIsActiveForTesting()
+        XCTAssertEqual(beforeRegistry.sessions, 0)
+        XCTAssertEqual(beforeRegistry.activeWork, 0)
+        XCTAssertEqual(beforeLeaseCount, 0)
+        XCTAssertFalse(beforeTimer)
+        XCTAssertFalse(beforeIndexWatch)
+
+        let model = ScanViewModel(services: services)
+        await model.runScan()
+        try await waitUntil { if case .complete = model.phase { return true }; return false }
+
+        guard case .complete(let report) = model.phase else {
+            return XCTFail("Fresh defaults did not admit the explicit scan: \(model.phase)")
+        }
+        XCTAssertTrue(report.topLevelHomeRanking.contains { $0.path == scratch.cache.path })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: scratch.configURL.path),
+            "Read-only scan admission must not persist defaults as a side effect")
+        try await waitUntil { services.activeScanSessionID == nil }
+        let afterLeaseCount = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+        let afterTimer = await services.systemMonitor.isTimerRunningForTesting()
+        XCTAssertEqual(afterLeaseCount, 0)
+        XCTAssertFalse(afterTimer)
+        await services.disposeScanResourcesForTesting()
+    }
 
     func testMissingLiveSignalCannotReopenNominalSchedulerAdmission() {
         let partial = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],

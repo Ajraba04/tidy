@@ -296,10 +296,20 @@ private struct SchedulerIdentity: Equatable, Sendable {
     let admission: ScanAdmission; let slice: Int
 }
 
+/// Revision zero is never ordinary scheduler policy. The sole exceptional
+/// origin is the exact in-memory defaults returned for an absent settings file;
+/// it is carried through the prepared token so callers cannot turn an arbitrary
+/// revision-zero document into scheduler authority.
+internal enum SchedulerPolicyOrigin: Equatable, Sendable {
+    case durable
+    case freshDefaults
+}
+
 internal struct PreparedSchedulerPolicy: Equatable, Sendable {
     fileprivate let controllerID: UUID; fileprivate let id: UUID
     fileprivate let generation: UInt64; fileprivate let candidate: SettingsEnvelope
     fileprivate let resolution: SchedulerResolution; fileprivate let ticket: SchedulerAdmissionTicket
+    fileprivate let origin: SchedulerPolicyOrigin
 }
 internal struct PreparedSchedulerPresentation: Equatable, Sendable {
     fileprivate let controllerID: UUID; fileprivate let id: UUID
@@ -568,6 +578,7 @@ internal actor SchedulerPolicyController {
     private let scheduler: WorkScheduler
     private let hook: (any SchedulerTestHook)?
     private var acknowledged: SettingsEnvelope?
+    private var acknowledgedOrigin: SchedulerPolicyOrigin?
     private var operative: SchedulerResolution?
     private var generation: UInt64
     private var epoch: UInt64
@@ -629,6 +640,7 @@ internal actor SchedulerPolicyController {
 
     internal func prepare(_ admission: SchedulerAdmissionTicket,
         candidate: SettingsEnvelope, observation: SchedulerObservation,
+        origin: SchedulerPolicyOrigin = .durable,
         using capability: SchedulerPolicyControllerCapability) async -> SchedulerPrepareResult {
         guard capability.controllerID == controllerID, admission.controllerID == controllerID else {
             return .rejected(.foreignToken)
@@ -639,7 +651,7 @@ internal actor SchedulerPolicyController {
             return .rejected(.staleRevision(current: revision))
         }
         let resolved: SchedulerResolution
-        do { resolved = try resolve(candidate, observation: observation) }
+        do { resolved = try resolve(candidate, observation: observation, origin: origin) }
         catch let reason as SchedulerFailureReason {
             barrier.unavailable(); await scheduler.markUnavailable(); return .failedClosed(reason)
         } catch {
@@ -660,7 +672,8 @@ internal actor SchedulerPolicyController {
         } else { effect = .invalidate }
         let id = UUID(); currentInvalidating = id; currentPresentation = nil
         let token = PreparedSchedulerPolicy(controllerID: controllerID, id: id,
-            generation: generation, candidate: candidate, resolution: resolved, ticket: admission)
+            generation: generation, candidate: candidate, resolution: resolved, ticket: admission,
+            origin: origin)
         await hook?.receive(.invalidationClaiming(revision: candidate.revision))
         guard barrier.claimPreparation(admission) else {
             if currentInvalidating == id { currentInvalidating = nil }
@@ -715,7 +728,8 @@ internal actor SchedulerPolicyController {
         }
         guard barrier.claim(prepared.ticket) else { return .rejected(.superseded) }
         recordConsumed(prepared.id); currentInvalidating = nil
-        acknowledged = acknowledgedEnvelope; operative = prepared.resolution
+        acknowledged = acknowledgedEnvelope; acknowledgedOrigin = prepared.origin
+        operative = prepared.resolution
         await scheduler.install(prepared.resolution, revision: acknowledgedEnvelope.revision,
             generation: prepared.generation, epoch: epoch)
         guard barrier.finish(prepared.ticket) else { await scheduler.markUnavailable(); return .rejected(.superseded) }
@@ -751,7 +765,8 @@ internal actor SchedulerPolicyController {
         guard prepared.epoch == epoch else { return .rejected(.superseded) }
         guard barrier.claimPresentation(prepared.barrierEpoch) else { return .rejected(.superseded) }
         recordConsumed(prepared.id); currentPresentation = nil
-        acknowledged = acknowledgedEnvelope; operative = prepared.resolution
+        acknowledged = acknowledgedEnvelope; acknowledgedOrigin = .durable
+        operative = prepared.resolution
         await scheduler.install(prepared.resolution, revision: acknowledgedEnvelope.revision,
             generation: generation, epoch: epoch)
         guard barrier.finishPresentation(prepared.barrierEpoch) else { return .rejected(.superseded) }
@@ -773,12 +788,16 @@ internal actor SchedulerPolicyController {
         observation: SchedulerObservation, acknowledgedEnvelope: SettingsEnvelope,
         using capability: SchedulerPolicyControllerCapability) async -> SchedulerObservationResult {
         guard capability.controllerID == controllerID, let acknowledged,
+              let acknowledgedOrigin,
               acknowledged == acknowledgedEnvelope else { return .failedClosed(.envelopeMismatch) }
         guard currentInvalidating == nil, currentPresentation == nil,
               barrier.openEpoch() != nil else { return .failedClosed(.envelopeMismatch) }
         guard newEpoch > epoch else { return .rejectedStale(current: epoch) }
         let resolved: SchedulerResolution
-        do { resolved = try resolve(acknowledgedEnvelope, observation: observation) }
+        do {
+            resolved = try resolve(acknowledgedEnvelope, observation: observation,
+                origin: acknowledgedOrigin)
+        }
         catch let reason as SchedulerFailureReason { return .failedClosed(reason) }
         catch { return .failedClosed(.invalidPolicyDocument) }
         epoch = newEpoch; operative = resolved
@@ -813,9 +832,17 @@ internal actor SchedulerPolicyController {
     }
 
     private func resolve(_ envelope: SettingsEnvelope,
-                         observation: SchedulerObservation) throws -> SchedulerResolution {
-        guard envelope.schemaVersion == TidyConfig.currentSchemaVersion, envelope.revision > 0 else {
+                         observation: SchedulerObservation,
+                         origin: SchedulerPolicyOrigin = .durable) throws -> SchedulerResolution {
+        guard envelope.schemaVersion == TidyConfig.currentSchemaVersion else {
             throw SchedulerFailureReason.invalidPolicyDocument
+        }
+        if envelope.revision == 0 {
+            let exactDefaults = SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion,
+                revision: 0, config: TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion))
+            guard origin == .freshDefaults, envelope == exactDefaults else {
+                throw SchedulerFailureReason.invalidPolicyDocument
+            }
         }
         let profiles = envelope.preferences?.profiles ?? []
         guard Set(profiles.map(\.id)).count == profiles.count else { throw SchedulerFailureReason.duplicateProfileID }
