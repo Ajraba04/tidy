@@ -1,6 +1,8 @@
 # Final local remediation checkpoint — 2026-09-18
 
-Status: **verified partial checkpoint; application NO-GO, full program INCOMPLETE**.
+Status: **historical verified partial checkpoint; application NO-GO, full program INCOMPLETE**.
+
+This records the 2026-09-18 source only. The 2026-09-19 continuation and its final evidence are tracked in [continued acceptance](headroom-acceptance.md); counts and unresolved items below are historical.
 
 Reviewed application/Core/test source: `ce89f22` on `codex/remediation-20260917` (includes the consolidated correction `6d707f0` and native Settings AX fix `4ef9956`). Later changes are verification-script corrections and evidence records. The source/spec reviewer approved the correction delta and the snapshot-replay follow-up. All mutation catalog entries remain denied.
 

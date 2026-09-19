@@ -101,6 +101,7 @@ struct RuntimeObservationControl: View {
     @State private var readyState = "pending"
     @State private var finalState = "pending"
     @State private var diagnostic = "none"
+    @State private var started = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -110,18 +111,23 @@ struct RuntimeObservationControl: View {
                         identifier: "runtime.observation.final")
             attestation("Observation diagnostic", value: diagnostic,
                         identifier: "runtime.observation.diagnostic")
-        }
-        .task {
-            guard RuntimeObservationCoordinator.supports(scenario) else { return }
-            await RuntimeObservationCoordinator.startIfNeeded(
-                services: services, scenario: scenario
-            ) { update in
-                switch update {
-                case .ready: readyState = "published"
-                case .final: finalState = "published"
-                case .failed(let message): diagnostic = message
+            Button("Start hidden observation") {
+                guard !started, RuntimeObservationCoordinator.supports(scenario) else { return }
+                started = true
+                Task { @MainActor in
+                    await RuntimeObservationCoordinator.startIfNeeded(
+                        services: services, scenario: scenario
+                    ) { update in
+                        switch update {
+                        case .ready: readyState = "published"
+                        case .final: finalState = "published"
+                        case .failed(let message): diagnostic = message
+                        }
+                    }
                 }
             }
+            .disabled(started)
+            .accessibilityIdentifier("runtime.observation.start")
         }
     }
 
@@ -188,11 +194,7 @@ enum RuntimeObservationCoordinator {
             let root = try validatedRoot(for: services.paths)
             Swift.print("TIDY_RUNTIME_ROOT=\(root.path)")
             fflush(stdout)
-            NSApp.hide(nil)
-            await Task.yield()
-            guard NSApp.isHidden else {
-                throw RuntimeObservationError.invalidRuntimeState("application did not become hidden")
-            }
+            try await hideApplication()
 
             try validateSettings(services: services, scenario: scenario)
             try Task.checkCancellation()
@@ -217,6 +219,20 @@ enum RuntimeObservationCoordinator {
             onUpdate(.failed("cancelled"))
         } catch {
             onUpdate(.failed(String(describing: error)))
+        }
+    }
+
+    @MainActor
+    private static func hideApplication() async throws {
+        NSApp.hide(nil)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while !NSApp.isHidden, clock.now < deadline {
+            try Task.checkCancellation()
+            try await clock.sleep(for: .milliseconds(25))
+        }
+        guard NSApp.isHidden else {
+            throw RuntimeObservationError.invalidRuntimeState("application did not become hidden")
         }
     }
 

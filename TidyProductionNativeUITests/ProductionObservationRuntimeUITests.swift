@@ -47,10 +47,25 @@ final class ProductionObservationRuntimeUITests: XCTestCase {
             .deletingLastPathComponent()
         let diagnostic = app.staticTexts["runtime.observation.diagnostic"]
         XCTAssertTrue(diagnostic.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertEqual(diagnostic.value as? String, "none")
+        let start = app.buttons["runtime.observation.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 15), app.debugDescription)
+        start.click()
 
         let readyURL = state.appendingPathComponent("runtime-ready.json")
-        XCTAssertTrue(waitForFile(readyURL, timeout: 30), "Ready document did not appear")
+        var readyAppeared = waitForFile(readyURL, timeout: 3)
+        if !readyAppeared {
+            let earlyDiagnostic = diagnostic.value as? String
+            if earlyDiagnostic != "none" {
+                XCTFail("Observation failed before ready: \(earlyDiagnostic ?? "<missing>")")
+                return
+            }
+            readyAppeared = waitForFile(readyURL, timeout: 27)
+        }
+        XCTAssertTrue(readyAppeared,
+                      "Ready document did not appear; diagnostic: "
+                      + "\((diagnostic.value as? String) ?? "<missing>")")
+        guard readyAppeared else { return }
+        XCTAssertEqual(diagnostic.value as? String, "none")
         let ready = try document(at: readyURL)
         validateCommon(ready, scenario: scenario)
 
