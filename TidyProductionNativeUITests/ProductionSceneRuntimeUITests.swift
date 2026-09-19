@@ -9,8 +9,8 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES",
                                "--tidy-runtime-cleanup-on-termination"]
+        registerCleanup(app)
         app.launch()
-        defer { terminateAndCleanup(app) }
 
         let attestation = app.staticTexts["runtime.synthetic.attestation"]
         if !attestation.waitForExistence(timeout: 10) {
@@ -42,7 +42,6 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     func testProductionSettingsAndSafeCleanSupportTwoWindowsKeyboardAndAX() throws {
         continueAfterFailure = false
         let app = launchReadyApp()
-        defer { terminateAndCleanup(app) }
 
         app.buttons["runtime.open.settings"].click()
         let settingsWindow = app.windows["Settings"]
@@ -87,7 +86,6 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     func testProductionFullHomeScanTraversesOnlySyntheticHomeAndPreservesWitness() throws {
         continueAfterFailure = false
         let app = launchReadyApp()
-        defer { terminateAndCleanup(app) }
 
         let witnessElement = app.staticTexts["runtime.synthetic.witness"]
         let witnessPath = try XCTUnwrap(witnessElement.value as? String)
@@ -119,7 +117,6 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     func testProductionFullHomeScanCancelSurvivesCloseAndReopen() throws {
         continueAfterFailure = false
         let app = launchReadyApp(scenarioArgument: "--tidy-runtime-cancel-queued")
-        defer { terminateAndCleanup(app) }
 
         let witnessPath = try XCTUnwrap(
             app.staticTexts["runtime.synthetic.witness"].value as? String)
@@ -174,7 +171,6 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     func testProductionFreshDefaultsQuickScanKeepsSettingsAbsent() throws {
         continueAfterFailure = false
         let app = launchReadyApp(scenarioArgument: "--tidy-runtime-fresh-defaults")
-        defer { terminateAndCleanup(app) }
 
         XCTAssertEqual(app.staticTexts["runtime.scenario"].value as? String,
                        "fresh-defaults")
@@ -215,8 +211,8 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES",
                                "--tidy-runtime-cleanup-on-termination",
                                "--tidy-runtime-future-settings"]
+        registerCleanup(app)
         app.launch()
-        defer { terminateAndCleanup(app) }
 
         XCTAssertTrue(app.staticTexts["Settings Recovery Required"]
             .waitForExistence(timeout: 15), app.debugDescription)
@@ -241,10 +237,18 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES",
                                "--tidy-runtime-cleanup-on-termination"]
         if let scenarioArgument { app.launchArguments.append(scenarioArgument) }
+        registerCleanup(app)
         app.launch()
         XCTAssertTrue(app.staticTexts["runtime.synthetic.attestation"]
             .waitForExistence(timeout: 15), app.debugDescription)
         return app
+    }
+
+    @MainActor
+    private func registerCleanup(_ app: XCUIApplication) {
+        addTeardownBlock {
+            await MainActor.run { Self.terminateAndCleanup(app) }
+        }
     }
 
     @MainActor
@@ -266,7 +270,7 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     }
 
     @MainActor
-    private func terminateAndCleanup(_ app: XCUIApplication) {
+    private static func terminateAndCleanup(_ app: XCUIApplication) {
         let homeElement = app.staticTexts["runtime.synthetic.home"]
         let homePath = homeElement.exists ? homeElement.value as? String : nil
         guard let homePath else {
