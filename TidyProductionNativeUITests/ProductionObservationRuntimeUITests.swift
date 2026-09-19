@@ -5,18 +5,6 @@ import XCTest
 
 final class ProductionObservationRuntimeUITests: XCTestCase {
     @MainActor
-    func testProductionHiddenOffBuildControl() throws {
-        try runBuildControl(argument: "--tidy-runtime-hidden-off",
-            scenario: "hidden-off", expectedTimerRunning: false)
-    }
-
-    @MainActor
-    func testProductionHiddenAuthorizedBuildControl() throws {
-        try runBuildControl(argument: "--tidy-runtime-hidden-authorized",
-            scenario: "hidden-authorized", expectedTimerRunning: true)
-    }
-
-    @MainActor
     func testProductionHiddenOffObservationRemainsIdleForFixedWindow() throws {
         try runObservedScenario(argument: "--tidy-runtime-hidden-off",
             scenario: "hidden-off", finalTimeout: 135) { ready, final in
@@ -30,15 +18,14 @@ final class ProductionObservationRuntimeUITests: XCTestCase {
     }
 
     @MainActor
-    func testProductionHiddenAuthorizedObservationKeepsOneTimerForFixedWindow() throws {
-        try runObservedScenario(argument: "--tidy-runtime-hidden-authorized",
-            scenario: "hidden-authorized", finalTimeout: 615) { ready, final in
-                XCTAssertEqual(boolean(ready, "timerRunning"), true)
-                XCTAssertGreaterThanOrEqual(integer(ready, "timerScheduledCount"), 1)
+    func testProductionHiddenNoAuthorityKeepsTimerOffForFixedWindow() throws {
+        try runObservedScenario(argument: "--tidy-runtime-hidden-no-authority",
+            scenario: "hidden-no-authority", finalTimeout: 615) { ready, final in
+                XCTAssertEqual(boolean(ready, "timerRunning"), false)
+                XCTAssertEqual(integer(ready, "timerScheduledCount"), 0)
                 XCTAssertEqual(integer(ready, "timerCancelledCount"), 0)
-                XCTAssertEqual(boolean(final, "timerRunning"), true)
-                XCTAssertEqual(integer(final, "timerScheduledCount"),
-                               integer(ready, "timerScheduledCount"))
+                XCTAssertEqual(boolean(final, "timerRunning"), false)
+                XCTAssertEqual(integer(final, "timerScheduledCount"), 0)
                 XCTAssertEqual(integer(final, "timerCancelledCount"), 0)
             }
     }
@@ -85,48 +72,12 @@ final class ProductionObservationRuntimeUITests: XCTestCase {
         try validateObservedToken(observed)
     }
 
-    @MainActor
-    private func runBuildControl(argument: String, scenario: String,
-                                 expectedTimerRunning: Bool) throws {
-        continueAfterFailure = false
-        let app = XCUIApplication()
-        app.launchArguments = ["-ApplePersistenceIgnoreState", "YES",
-                               "--tidy-runtime-cleanup-on-termination", argument]
-        registerCleanup(app)
-        app.launch()
-
-        let settings = app.staticTexts["runtime.synthetic.settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 15), app.debugDescription)
-        let state = URL(fileURLWithPath: try XCTUnwrap(settings.value as? String))
-            .deletingLastPathComponent()
-        let diagnostic = app.staticTexts["runtime.observation.diagnostic"]
-        XCTAssertTrue(diagnostic.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertEqual(diagnostic.value as? String, "none")
-
-        let readyURL = state.appendingPathComponent("runtime-ready.json")
-        XCTAssertTrue(waitForFile(readyURL, timeout: 30), "Ready document did not appear")
-        let ready = try document(at: readyURL)
-        validateCommon(ready, scenario: scenario)
-        XCTAssertEqual(boolean(ready, "timerRunning"), expectedTimerRunning)
-        if expectedTimerRunning {
-            XCTAssertGreaterThanOrEqual(integer(ready, "timerScheduledCount"), 1)
-        } else {
-            XCTAssertEqual(integer(ready, "timerScheduledCount"), 0)
-        }
-        XCTAssertEqual(integer(ready, "timerCancelledCount"), 0)
-
-        let observed = state.appendingPathComponent("runtime-observation-observed")
-        XCTAssertTrue(waitForFile(observed, timeout: 300),
-                      "External paired-build observer did not publish completion")
-        try validateObservedToken(observed)
-        XCTAssertEqual(diagnostic.value as? String, "none")
-    }
-
     private func validateCommon(_ document: [String: Any], scenario: String) {
         XCTAssertEqual(integer(document, "schema"), 1)
         XCTAssertEqual(string(document, "scenario"), scenario)
         XCTAssertGreaterThan(integer(document, "pid"), 0)
         XCTAssertEqual(integer(document, "settingsRevision"), 1)
+        XCTAssertEqual(string(document, "backgroundAuthority"), "unavailable")
         XCTAssertEqual(boolean(document, "applicationHidden"), true)
         XCTAssertEqual(integer(document, "sceneLeases"), 0)
         XCTAssertEqual(integer(document, "explicitWorkLeases"), 0)
@@ -252,7 +203,7 @@ final class ProductionObservationRuntimeUITests: XCTestCase {
 
     private static let documentKeys: Set<String> = [
         "schema", "scenario", "pid", "settingsRevision", "applicationHidden",
-        "timerRunning", "sceneLeases", "explicitWorkLeases", "scanSessions",
+        "backgroundAuthority", "timerRunning", "sceneLeases", "explicitWorkLeases", "scanSessions",
         "scanActiveWork", "allMutationsDenied", "timerScheduledCount",
         "timerCancelledCount", "observedMonotonicNanoseconds",
     ]
