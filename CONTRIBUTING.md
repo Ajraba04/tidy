@@ -22,7 +22,9 @@ python3 scripts/verification/check-project.py
 
 ## Building and testing
 
-Run `bash scripts/verification/verify.sh` for source/privacy checks, serialized core tests, all model tests, synthetic native UI tests and an arm64/x86_64 Release build. Results and exact tool versions go to `dist/verification`; set `TIDY_VERIFICATION_OUTPUT` to a new empty directory for another run. Native UI testing needs a working logged-in macOS test session. A startup failure or zero selected tests is a failure, not acceptance.
+Run `bash scripts/verification/verify.sh` for source/privacy checks, serialized core tests, all model tests, synthetic native UI tests, isolated production-scene UI tests and an arm64/x86_64 Release build. Results and exact tool versions go to `dist/verification`; set `TIDY_VERIFICATION_OUTPUT` to a new empty directory for another run. Native UI testing needs a working logged-in macOS test session. A startup failure or zero selected tests is a failure, not acceptance.
+
+`TidyProductionNativeUITests` launches the dedicated `TidyProductionRuntimeHost`. It compiles the real scenes and services with `TIDY_RUNTIME_TEST_HOST`, which selects newly allocated synthetic home/settings/journal paths and fixed test scenarios. The production `Tidy` target has no runtime path override. The generated-project gate requires this flag only on the dedicated host, checks its distinct bundle identifier and includes every native test source. Use this suite for production-scene automation so it cannot reach an ordinary installation or the user's home. Fixture evidence remains specific to the tested host, build configuration and scenarios.
 
 The three simulator response tests use synthetic JSON rather than starting the host CoreSimulator service. They prove parser behavior only; real service/adapter acceptance requires a provisioned disposable setup. Filesystem/effect tests use owned scratch witnesses. Compiler/SDK cache writes are reported separately from user-data effect isolation. Never exhaust the user's real disk or memory for a test.
 

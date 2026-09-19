@@ -67,8 +67,8 @@ bootstrap provenance. Its initializer and matching logic are file-private.
 `AppExecutionServices.bootstrap` obtains this value inside its existing detached settings load and
 passes it to the bridge that owns the shared scheduler. The bridge atomically acquires a short
 reservation from the same settings actor before scheduler preparation and releases it after commit.
-Competing settings load/update/rollback/import work is denied during that bounded installation
-window. This establishes serialization without adding a global watcher or changing external-file
+Competing settings load and persisted update/rollback/import-commit work is denied during that
+bounded installation window. This establishes serialization without adding a global watcher or changing external-file
 conflict semantics.
 
 Acquisition also reopens `SettingsFiles` and compares the current disk image with the captured image.

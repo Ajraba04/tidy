@@ -10,7 +10,7 @@ The [acceptance record](docs/verification/headroom-acceptance.md) separates impl
 
 | Surface | Intended scope | Current boundary |
 | --- | --- | --- |
-| Scan | Explicit read-only catalog/project scans; full-home scans only with separate one-run consent | Scope, lifetime, pressure and incremental-index remediation is in progress. A partial result is not a complete inventory. |
+| Scan | Explicit read-only catalog/project scans; full-home scans only with separate one-run consent | Fresh installs can run a Quick scan without first saving settings. Scope, pressure and cancellation stay enforced. Partial results remain labeled, and Continue requires a trustworthy event-history checkpoint. |
 | Headroom | Disk availability, memory pressure, swap activity, thermal and power signals | Measurements can be unavailable; missing values must not be reported as zero. Target readiness requires measured selected-volume identity/capacity. |
 | Safe | Regeneratable developer caches, logs, DerivedData and simulator caches | Inventory/review only; mutation unavailable pending each adapter's acceptance. |
 | Normal | Additional browser/cache, Trash, project-output, dependency, transcript and Git workflows | Promised adapter work remains incomplete and mutations are denied. |
@@ -19,6 +19,8 @@ The [acceptance record](docs/verification/headroom-acceptance.md) separates impl
 | Build Prep / Pressure Rescue / optional assistance | Project-aware ranking, target-limited preparation, manual graceful relief and separately authorized assistance | Full production workflows remain incomplete. Initial unattended mutation allowlist is empty. |
 
 Neither a cache label nor its age proves it safe to delete. Future accepted mutations must bind reviewed resource identities and descendants, protections, complete owner evidence, supported quiescence, fresh policy and durable recovery. Unknown or shared ownership withholds effects. Models, databases, Docker volumes, repository deletion and generic duplicate deletion remain outside permitted destructive scope.
+
+A missing settings file supplies validated in-memory defaults for an explicit scan. Corrupt or unsupported settings keep scans unavailable. If stored files differ when first-launch admission revalidates them, the scan is blocked and the files are preserved. Opening Tidy does not start a scan, create a saved settings file or grant background-work consent. Cleanup actions remain quarantined independently of scan availability.
 
 ## Memory and swap
 
@@ -52,7 +54,7 @@ cd TidyCore
 swift test --jobs 2 --no-parallel
 ```
 
-The repository-wide verifier includes generated-project membership, all model tests, a synthetic native UI target and both Release architectures:
+The repository-wide verifier includes generated-project membership, all model tests, synthetic native UI tests, isolated production-scene journeys and both Release architectures:
 
 ```bash
 bash scripts/verification/verify.sh
