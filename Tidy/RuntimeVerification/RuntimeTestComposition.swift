@@ -10,7 +10,7 @@ enum RuntimeTestScenario: String {
     case freshDefaults = "fresh-defaults"
     case futureSettings = "future-settings"
     case hiddenOff = "hidden-off"
-    case hiddenAuthorized = "hidden-authorized"
+    case hiddenNoAuthority = "hidden-no-authority"
     case performance50k = "performance-50k"
     case activeCancel20 = "active-cancel-20"
 }
@@ -32,7 +32,7 @@ enum RuntimeTestComposition {
         if arguments.contains("--tidy-runtime-fresh-defaults") { return .freshDefaults }
         if arguments.contains("--tidy-runtime-cancel-queued") { return .cancelQueued }
         if arguments.contains("--tidy-runtime-hidden-off") { return .hiddenOff }
-        if arguments.contains("--tidy-runtime-hidden-authorized") { return .hiddenAuthorized }
+        if arguments.contains("--tidy-runtime-hidden-no-authority") { return .hiddenNoAuthority }
         if arguments.contains("--tidy-runtime-performance-50k") { return .performance50k }
         if arguments.contains("--tidy-runtime-active-cancel-20") { return .activeCancel20 }
         return .acknowledged
@@ -66,9 +66,9 @@ enum RuntimeTestComposition {
             case .performance50k, .activeCancel20:
                 try seedPerformanceSettings(at: settings)
             case .hiddenOff:
-                try seedObservationSettings(at: settings, authorized: false)
-            case .hiddenAuthorized:
-                try seedObservationSettings(at: settings, authorized: true)
+                try seedObservationSettings(at: settings, headroomEnabled: false)
+            case .hiddenNoAuthority:
+                try seedObservationSettings(at: settings, headroomEnabled: true)
             case .freshDefaults:
                 break
             case .futureSettings:
@@ -101,7 +101,7 @@ enum RuntimeTestComposition {
         let settingsExists = fileManager.fileExists(atPath: paths.settings.path)
         let settingsState: String
         switch scenario {
-        case .acknowledged, .cancelQueued, .hiddenOff, .hiddenAuthorized,
+        case .acknowledged, .cancelQueued, .hiddenOff, .hiddenNoAuthority,
              .performance50k, .activeCancel20:
             settingsState = settingsExists ? "ready" : "missing"
         case .freshDefaults: settingsState = settingsExists ? "unexpected" : "absent"
@@ -200,12 +200,11 @@ enum RuntimeTestComposition {
         try writeSettings(envelope, to: url)
     }
 
-    private static func seedObservationSettings(at url: URL, authorized: Bool) throws {
+    private static func seedObservationSettings(at url: URL, headroomEnabled: Bool) throws {
         let config = TidyConfig(schemaVersion: 2, hasCompletedOnboarding: true)
         let preferences = PolicyPreferences(global: PolicyValues(fields: [
-            SettingID(rawValue: "feature.headroom"): .bool(authorized),
-            SettingID(rawValue: "monitor.backgroundEnabled"): .bool(authorized),
-            SettingID(rawValue: "monitor.suppressHiddenSampling"): .bool(!authorized),
+            SettingID(rawValue: "feature.headroom"): .bool(headroomEnabled),
+            SettingID(rawValue: "monitor.suppressHiddenSampling"): .bool(!headroomEnabled),
             SettingID(rawValue: "monitor.hiddenIntervalSeconds"): .integer(60),
         ]))
         let envelope = SettingsEnvelope(schemaVersion: 2, revision: 1, config: config,
@@ -436,7 +435,7 @@ struct RuntimeTestControlView: View {
                 .font(.title2.bold())
                 .accessibilityIdentifier("runtime.control.title")
             RuntimeTestAppearanceAttestation()
-            if scenario == .hiddenOff || scenario == .hiddenAuthorized {
+            if scenario == .hiddenOff || scenario == .hiddenNoAuthority {
                 RuntimeObservationControl(services: services, scenario: scenario)
             }
             if scenario == .performance50k || scenario == .activeCancel20 {
