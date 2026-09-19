@@ -63,3 +63,15 @@ Evidence: `/private/tmp/tidy-resume-verification-2i64nn35/production-native-ui.l
 and its `production-native-ui.xcresult` bundle. Earlier green3 description progress
 and contrast failure remain historical evidence; the screenshot-supported primary
 text correction is source-reviewed but still lacks a completed final native audit.
+
+
+### Later bounded continuation
+
+The subsequent resume diagnosed two audit-fixture defects and introduced a reviewed,
+strict geometry classification only for exact contrast issues wholly outside every
+app window. All findings are retained. Description/visible/partially visible findings
+remain failures. The fixture also arranges windows without overlap. This explicitly
+supersedes the earlier blanket-unfiltered handler policy; it does not weaken visible
+contrast acceptance. The final focused case still fails on the inactive auxiliary
+window's native title and never reaches Clean's audit. See
+[window-scope evidence](remediation-R13-audit-window-scope.md). No further test loop ran.
