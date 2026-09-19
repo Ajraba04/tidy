@@ -178,6 +178,92 @@ struct ScanScopeTests {
         }
     }
 
+    @Test("successful scope grants release captured identities and replay still denies")
+    @MainActor
+    func repeatedGrantConsumptionRetainsNoLedgerState() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let environment = try #require(rig.bridge.acknowledgedEnvelope).config
+            .makePolicyEnvironment(homeDirectory: rig.home.path, detectedTools: [])
+
+        for _ in 0..<32 {
+            let authorization = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+            #expect(rig.scopeAuthority.retainedGrantCountForTesting == 1)
+            try authorization.consumeForStart(ownerID: rig.ownerID, environment: environment)
+            #expect(rig.scopeAuthority.retainedGrantCountForTesting == 0)
+            #expect(throws: ScanScopeAuthorizationError.consumedConsent) {
+                try authorization.consumeForStart(ownerID: rig.ownerID, environment: environment)
+            }
+        }
+    }
+
+    @Test("register reaps expired abandoned scope grants")
+    @MainActor
+    func abandonedExpiredGrantsAreReapedOnNextRegistration() async throws {
+        let clock = ScanScopeTestClock()
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [], clock: clock)
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        _ = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        _ = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        #expect(rig.scopeAuthority.retainedGrantCountForTesting == 2)
+
+        clock.advance(nanoseconds: 11)
+        let current = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        #expect(rig.scopeAuthority.retainedGrantCountForTesting == 1)
+        let environment = try #require(rig.bridge.acknowledgedEnvelope).config
+            .makePolicyEnvironment(homeDirectory: rig.home.path, detectedTools: [])
+        try current.consumeForStart(ownerID: rig.ownerID, environment: environment)
+        #expect(rig.scopeAuthority.retainedGrantCountForTesting == 0)
+    }
+
+    @Test("successful full-home consent and grant release metadata while both replays deny")
+    @MainActor
+    func repeatedFullHomeStartRetainsNeitherLedger() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let environment = try #require(rig.bridge.acknowledgedEnvelope).config
+            .makePolicyEnvironment(homeDirectory: rig.home.path, detectedTools: [])
+
+        for _ in 0..<32 {
+            let consent = try rig.scopeAuthority.issueFullHomeConsent(ownerID: rig.ownerID)
+            #expect(rig.scopeAuthority.retainedConsentCountForTesting == 1)
+            let authorization = try rig.scopeAuthority.authorizeFullHome(
+                consent: consent, ownerID: rig.ownerID)
+            #expect(rig.scopeAuthority.retainedConsentCountForTesting == 0)
+            #expect(rig.scopeAuthority.retainedGrantCountForTesting == 1)
+            try authorization.consumeForStart(ownerID: rig.ownerID, environment: environment)
+            #expect(rig.scopeAuthority.retainedGrantCountForTesting == 0)
+            #expect(throws: ScanScopeAuthorizationError.consumedConsent) {
+                try rig.scopeAuthority.authorizeFullHome(consent: consent, ownerID: rig.ownerID)
+            }
+            #expect(throws: ScanScopeAuthorizationError.consumedConsent) {
+                try authorization.consumeForStart(ownerID: rig.ownerID, environment: environment)
+            }
+        }
+    }
+
+    @Test("full-home consent is consumed before failed root capture")
+    @MainActor
+    func fullHomeRootCaptureFailureStillConsumesConsent() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let consent = try rig.scopeAuthority.issueFullHomeConsent(ownerID: rig.ownerID)
+        let moved = rig.root.appendingPathComponent("moved-home", isDirectory: true)
+        try FileManager.default.moveItem(at: rig.home, to: moved)
+
+        #expect(throws: ScanScopeAuthorizationError.invalidRoot) {
+            try rig.scopeAuthority.authorizeFullHome(consent: consent, ownerID: rig.ownerID)
+        }
+        #expect(rig.scopeAuthority.retainedConsentCountForTesting == 0)
+        #expect(throws: ScanScopeAuthorizationError.consumedConsent) {
+            try rig.scopeAuthority.authorizeFullHome(consent: consent, ownerID: rig.ownerID)
+        }
+    }
+
     @Test("root replacement after authorization is rejected before traversal")
     @MainActor
     func rootReplacementInvalidatesGrant() async throws {
