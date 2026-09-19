@@ -4,10 +4,10 @@
 
 Build an external, test-only observer for the compile-scoped
 `TidyProductionRuntimeHost`. It records current-host diagnostics that remain
-independently feasible after the source remediation: hidden-off work, authorized
-hidden CPU/RSS, internal monitor/scan state, file descriptors, children, process
-traffic, repeated scan/cancel settling, paired-build overhead, and a bounded 50k
-whole-app scan. None of these observations may be relabeled as 8 GiB, Intel,
+independently feasible after the source remediation: hidden-off work, hidden work
+with Headroom enabled but background authority unavailable, internal monitor/scan
+state, file descriptors, children, process traffic, repeated scan/cancel settling,
+and a bounded 50k whole-app scan. None of these observations may be relabeled as 8 GiB, Intel,
 macOS 14, human VoiceOver, privacy-reason, package-install, or release acceptance.
 
 ## Architecture
@@ -44,14 +44,17 @@ the script and runtime host.
   diagnostics. This is a current-host zero-work diagnostic, not universal proof
   that frameworks perform no I/O.
 
-### Hidden authorized
+### Hidden with no background authority
 
-- Fixed launch flag: `--tidy-runtime-hidden-authorized`.
-- Fixed revision-one settings enable Headroom and background monitoring, keep
-  hidden suppression off, and use a fixed accepted hidden interval.
-- Ready attestation requires `timerRunning=true` with zero scene leases,
-  explicit-work leases, scan sessions, and scan work.
-- The observer records exactly ten minutes. It calculates CPU as a delta of the
+- Fixed launch flag: `--tidy-runtime-hidden-no-authority`.
+- Fixed valid revision-one settings enable Headroom, keep hidden suppression off,
+  and use a 60-second hidden interval. The production resolver must report
+  `monitor.backgroundEnabled` unavailable from local authority; it is never persisted.
+- Ready attestation requires `backgroundAuthority="unavailable"` and
+  `timerRunning=false` with zero scene leases, explicit-work leases, scan sessions,
+  and scan work.
+- The observer records exactly ten minutes and requires zero timer schedule/cancel
+  instrumentation. It calculates CPU as a delta of the
   process CPU counter, records RSS samples and physical footprint separately,
   samples children and FDs, and runs `nettop` with name resolution disabled.
 
@@ -97,10 +100,11 @@ or cleanup, it retains evidence and fails.
 The production-native XCTest target owns UI actions for twenty scan/cancel cycles
 and appearance/contrast/Reduce Motion. The external observer wraps the cycle run
 to record PID-aware FD/RSS/child samples. Representative traffic uses the native
-workflow suite while the observer follows each exact runtime-host PID. Five paired
-builds alternate baseline and fixed authorized-background order after a warm-up,
-use one isolated source archive and identical build command/cache state per pair,
-and report every duration plus median overhead.
+workflow suite while the observer follows each exact runtime-host PID. Paired
+authorized-background builds remain blocked because the production machine-local
+background-monitor authority workflow is not implemented. The harness fails that
+mode before launching an app or build rather than substituting an off/off or
+synthetic-authority comparison.
 
 ## Evidence and verdicts
 
@@ -110,4 +114,3 @@ environment values, command arguments unrelated to the fixed harness, and raw
 traffic payloads are excluded. Every report labels results as current-host
 diagnostics. A passing current-host number cannot close reference-hardware,
 supported-OS, human, privacy-purpose, installation, signing, or release gates.
-
