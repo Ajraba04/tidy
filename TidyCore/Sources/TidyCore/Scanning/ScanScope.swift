@@ -85,7 +85,6 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
         let policyRevision: UInt64
         let expiresAt: UInt64
         let rootIdentities: [String: ScanScopeRootIdentity]
-        var consumed: Bool
     }
     private let lock = NSLock()
     private let nowNanoseconds: @Sendable () -> UInt64
@@ -99,15 +98,17 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
                   policyRevision: UInt64, expiresAt: UInt64,
                   rootIdentities: [String: ScanScopeRootIdentity]) {
         lock.lock(); defer { lock.unlock() }
+        let now = nowNanoseconds()
+        grants = grants.filter { $0.value.expiresAt > now }
         grants[id] = Grant(authorityID: authorityID, ownerID: ownerID,
             homeDirectory: homeDirectory, policyRevision: policyRevision,
-            expiresAt: expiresAt, rootIdentities: rootIdentities, consumed: false)
+            expiresAt: expiresAt, rootIdentities: rootIdentities)
     }
 
     func consume(id: UUID, authorityID: UUID, ownerID: UUID, homeDirectory: String,
                  policyRevision: UInt64, expiresAt: UInt64) throws {
         lock.lock(); defer { lock.unlock() }
-        guard var grant = grants[id], !grant.consumed else {
+        guard let grant = grants[id] else {
             throw ScanScopeAuthorizationError.consumedConsent
         }
         guard grant.authorityID == authorityID, grant.ownerID == ownerID,
@@ -126,8 +127,12 @@ private final class ScanScopeGrantLedger: @unchecked Sendable {
             grants.removeValue(forKey: id)
             throw ScanScopeAuthorizationError.invalidRoot
         }
-        grant.consumed = true
-        grants[id] = grant
+        grants.removeValue(forKey: id)
+    }
+
+    func retainedCountForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return grants.count
     }
 }
 
@@ -140,7 +145,6 @@ public final class ScanScopeAuthority {
         let policyRevision: UInt64
         let home: String
         let expiresAt: UInt64
-        var consumed: Bool
     }
 
     private let id = UUID()
@@ -150,6 +154,11 @@ public final class ScanScopeAuthority {
     private let consentLifetimeNanoseconds: UInt64
     private let grantLedger: ScanScopeGrantLedger
     private var consents: [UUID: IssuedConsent] = [:]
+
+    internal var retainedGrantCountForTesting: Int {
+        grantLedger.retainedCountForTesting()
+    }
+    internal var retainedConsentCountForTesting: Int { consents.count }
 
     public init(bridge: ExecutionPolicyBridge, homeDirectory: String) {
         self.bridge = bridge
@@ -204,17 +213,16 @@ public final class ScanScopeAuthority {
         guard !overflow else { throw ScanScopeAuthorizationError.invalidPolicy }
         consents[token] = IssuedConsent(ownerID: ownerID,
             policyRevision: snapshot.envelope.revision, home: homeDirectory,
-            expiresAt: expiry, consumed: false)
+            expiresAt: expiry)
         return FullHomeScanConsent(id: token)
     }
 
     public func authorizeFullHome(consent: FullHomeScanConsent,
                                   ownerID: UUID) throws -> AuthorizedScanScope {
         let snapshot = try policySnapshot()
-        guard var issued = consents[consent.id] else {
+        guard let issued = consents[consent.id] else {
             throw ScanScopeAuthorizationError.consumedConsent
         }
-        guard !issued.consumed else { throw ScanScopeAuthorizationError.consumedConsent }
         guard issued.ownerID == ownerID, issued.home == homeDirectory else {
             throw ScanScopeAuthorizationError.foreignConsent
         }
@@ -226,8 +234,7 @@ public final class ScanScopeAuthority {
             consents.removeValue(forKey: consent.id)
             throw ScanScopeAuthorizationError.expiredConsent
         }
-        issued.consumed = true
-        consents[consent.id] = issued
+        consents.removeValue(forKey: consent.id)
         return try authorization(mode: .fullHome, roots: [homeDirectory],
             ownerID: ownerID, expiresAt: issued.expiresAt, snapshot: snapshot)
     }
@@ -375,6 +382,6 @@ public final class ScanScopeAuthority {
 
     private func reapExpiredConsents() {
         let now = nowNanoseconds()
-        consents = consents.filter { !$0.value.consumed && $0.value.expiresAt > now }
+        consents = consents.filter { $0.value.expiresAt > now }
     }
 }
