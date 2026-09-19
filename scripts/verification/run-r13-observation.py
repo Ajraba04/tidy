@@ -18,7 +18,6 @@ import plistlib
 import re
 import shutil
 import stat
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -36,7 +35,7 @@ ATTESTATION_KEYS = {
     "schema", "scenario", "pid", "settingsRevision", "timerRunning",
     "sceneLeases", "explicitWorkLeases", "scanSessions", "scanActiveWork",
     "allMutationsDenied", "timerScheduledCount", "timerCancelledCount",
-    "observedMonotonicNanoseconds", "applicationHidden",
+    "observedMonotonicNanoseconds", "applicationHidden", "backgroundAuthority",
 }
 SCENARIOS = {
     "hidden-off": {
@@ -45,11 +44,11 @@ SCENARIOS = {
         "timer": False,
         "testCase": "testProductionHiddenOffObservationRemainsIdleForFixedWindow",
     },
-    "hidden-authorized": {
-        "flag": "--tidy-runtime-hidden-authorized",
+    "hidden-no-authority": {
+        "flag": "--tidy-runtime-hidden-no-authority",
         "duration": 600,
-        "timer": True,
-        "testCase": "testProductionHiddenAuthorizedObservationKeepsOneTimerForFixedWindow",
+        "timer": False,
+        "testCase": "testProductionHiddenNoAuthorityKeepsTimerOffForFixedWindow",
     },
 }
 PERFORMANCE_SCENARIOS = {
@@ -74,7 +73,6 @@ TRAFFIC_CASES = (
     "testProductionFreshDefaultsQuickScanKeepsSettingsAbsent",
     "testProductionFutureSettingsRecoveryPreservesBytesAndWithholdsControls",
 )
-BUILD_PAIR_COUNT = 5
 TOOLS = {
     "ps": Path("/bin/ps"),
     "pgrep": Path("/usr/bin/pgrep"),
@@ -333,7 +331,8 @@ def parse_attestation(path: Path, scenario: str, pid: int, *,
     if not isinstance(value["timerRunning"], bool) \
             or not isinstance(value["allMutationsDenied"], bool) \
             or not isinstance(value["applicationHidden"], bool) \
-            or not isinstance(value["scenario"], str):
+            or not isinstance(value["scenario"], str) \
+            or not isinstance(value["backgroundAuthority"], str):
         raise ObservationError("runtime attestation scalar field has the wrong type")
     expected = SCENARIOS[scenario]
     if value["schema"] != 1 or value["scenario"] != scenario or value["pid"] != pid:
@@ -347,19 +346,17 @@ def parse_attestation(path: Path, scenario: str, pid: int, *,
         raise ObservationError("runtime attestation reports changed mutation authority")
     if not value["applicationHidden"]:
         raise ObservationError("runtime observation app is not hidden")
-    if scenario == "hidden-off":
-        if value["timerScheduledCount"] != 0 or value["timerCancelledCount"] != 0:
-            raise ObservationError("hidden-off monitor timer instrumentation is nonzero")
-    else:
-        if value["timerScheduledCount"] < 1 or value["timerCancelledCount"] != 0:
-            raise ObservationError("hidden-authorized monitor timer instrumentation is invalid")
+    if value["backgroundAuthority"] != "unavailable":
+        raise ObservationError("runtime observation authority state is unexpected")
+    if value["timerScheduledCount"] != 0 or value["timerCancelledCount"] != 0:
+        raise ObservationError("hidden monitor timer instrumentation is nonzero")
     if value["observedMonotonicNanoseconds"] < 0:
         raise ObservationError("runtime attestation monotonic time is invalid")
     if initial is not None:
         stable = ("scenario", "pid", "settingsRevision", "timerRunning", "sceneLeases",
                   "explicitWorkLeases", "scanSessions", "scanActiveWork",
                   "allMutationsDenied", "timerScheduledCount", "timerCancelledCount",
-                  "applicationHidden")
+                  "applicationHidden", "backgroundAuthority")
         if any(value[field] != initial[field] for field in stable):
             raise ObservationError("runtime final state changed during the observation window")
         minimum = SCENARIOS[scenario]["duration"] * 1_000_000_000
@@ -1473,269 +1470,10 @@ def observe_workflow_traffic(runtime_app: Path) -> Path:
     return evidence
 
 
-def archive_source(evidence: Path, revision: str) -> tuple[Path, dict[str, Any]]:
-    archive = evidence / "source.tar"
-    result = run_tool(["/usr/bin/git", "archive", "--format=tar", revision], timeout=60,
-                      stdout_path=archive, stderr_path=evidence / "git-archive.stderr",
-                      cwd=REPO_ROOT)
-    if result.returncode != 0:
-        raise ObservationError("git archive failed")
-    source = evidence / "source"
-    source.mkdir(mode=0o700)
-    extract = run_tool(["/usr/bin/tar", "-xf", str(archive), "-C", str(source)], timeout=60,
-                       stdout_path=evidence / "tar.stdout",
-                       stderr_path=evidence / "tar.stderr")
-    if extract.returncode != 0 or not (source / "Tidy.xcodeproj").is_dir():
-        raise ObservationError("isolated source archive extraction failed")
-    return source, {"revision": revision, "bytes": archive.stat().st_size,
-                    "sha256": sha256_file(archive)}
-
-
-def production_build_command(source: Path, derived_data: Path) -> list[str]:
-    return [
-        "/usr/bin/xcodebuild", "-project", str(source / "Tidy.xcodeproj"),
-        "-scheme", "Tidy", "-configuration", "Release",
-        "-destination", f"platform=macOS,arch={os.uname().machine}", "-jobs", "2",
-        "-derivedDataPath", str(derived_data), "build", "CODE_SIGNING_ALLOWED=NO",
-        f"ARCHS={os.uname().machine}", "ONLY_ACTIVE_ARCH=YES",
-    ]
-
-
-def validate_production_build(app: Path) -> dict[str, Any]:
-    app = app.resolve(strict=True)
-    info_path = (app / "Contents/Info.plist").resolve(strict=True)
-    if not is_relative_to(info_path, app):
-        raise ObservationError("paired build Info.plist escapes the app")
-    info = plistlib.loads(info_path.read_bytes())
-    if info.get("CFBundleIdentifier") != PRODUCTION_BUNDLE_ID:
-        raise ObservationError("paired build produced an unexpected bundle identifier")
-    executable_name = info.get("CFBundleExecutable")
-    if not isinstance(executable_name, str) or Path(executable_name).name != executable_name:
-        raise ObservationError("paired build produced an invalid executable name")
-    code_directory = (app / "Contents/MacOS").resolve(strict=True)
-    executable = (code_directory / executable_name).resolve(strict=True)
-    if not is_relative_to(executable, app) or not executable.is_file():
-        raise ObservationError("paired build executable is missing or escapes its app")
-    found: set[bytes] = set()
-    for path in code_directory.rglob("*"):
-        if path.is_file():
-            resolved = path.resolve(strict=True)
-            if not is_relative_to(resolved, app):
-                raise ObservationError("paired build code path escapes its app")
-            found.update(markers_in(resolved))
-    if found:
-        raise ObservationError("paired production build contains runtime-fixture markers")
-    return artifact_manifest(app)
-
-
-def run_production_build(source: Path, derived_data: Path, evidence: Path,
-                         label: str) -> dict[str, Any]:
-    if derived_data.exists():
-        raise ObservationError("paired build derived data was not empty")
-    if shutil.disk_usage(evidence).free < 4 * 1024 * 1024 * 1024:
-        raise ObservationError("paired build requires at least 4 GiB of free temporary space")
-    command = production_build_command(source, derived_data)
-    started = time.monotonic_ns()
-    result = run_tool(command, timeout=20 * 60,
-                      stdout_path=evidence / f"{label}.stdout",
-                      stderr_path=evidence / f"{label}.stderr", cwd=source)
-    ended = time.monotonic_ns()
-    record = {
-        "label": label,
-        "exit": result.returncode,
-        "durationNanoseconds": ended - started,
-        "durationSeconds": (ended - started) / 1_000_000_000,
-        "derivedDataWasInitiallyAbsent": True,
-        "command": [
-            "xcodebuild", "-project", "<isolated-source>/Tidy.xcodeproj",
-            "-scheme", "Tidy", "-configuration", "Release",
-            "-destination", f"platform=macOS,arch={os.uname().machine}", "-jobs", "2",
-            "-derivedDataPath", "<fresh-pair-derived-data>", "build",
-            "CODE_SIGNING_ALLOWED=NO", f"ARCHS={os.uname().machine}",
-            "ONLY_ACTIVE_ARCH=YES",
-        ],
-    }
-    if result.returncode == 0:
-        product = derived_data / "Build/Products/Release/Tidy.app"
-        record["productManifest"] = validate_production_build(product)
-        shutil.rmtree(derived_data)
-        record["derivedDataRemovedAfterValidation"] = not derived_data.exists()
-    return record
-
-
-def build_control_command(condition: str, app: Path, evidence: Path,
-                          label: str) -> list[str]:
-    scenario = "hidden-off" if condition == "baseline" else "hidden-authorized"
-    test_case = "testProductionHiddenOffBuildControl" if condition == "baseline" \
-        else "testProductionHiddenAuthorizedBuildControl"
-    derived_data = derived_data_for_runtime_app(app)
-    configuration = app.parent.name
-    return [
-        "/usr/bin/xcodebuild", "-project", str(REPO_ROOT / "Tidy.xcodeproj"),
-        "-scheme", "TidyProductionNativeUITests", "-configuration", configuration,
-        "-destination", f"platform=macOS,arch={os.uname().machine}", "-jobs", "2",
-        "-derivedDataPath", str(derived_data),
-        "-resultBundlePath", str(evidence / f"{label}-control.xcresult"),
-        f"-only-testing:TidyProductionNativeUITests/ProductionObservationRuntimeUITests/{test_case}",
-        "test-without-building", "CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES",
-    ]
-
-
-def launch_build_control(app: Path, executable: Path, condition: str,
-                         evidence: Path, label: str) -> dict[str, Any]:
-    scenario = "hidden-off" if condition == "baseline" else "hidden-authorized"
-    existing_pids = set(matching_runtime_pids(executable))
-    if existing_pids:
-        raise ObservationError("runtime host is already running before paired-build control")
-    existing_roots = fixture_root_snapshot()
-    stdout = (evidence / f"{label}-control.stdout").open("wb")
-    stderr = (evidence / f"{label}-control.stderr").open("wb")
-    runner = subprocess.Popen(build_control_command(condition, app, evidence, label),
-                              cwd=REPO_ROOT, stdin=subprocess.DEVNULL,
-                              stdout=stdout, stderr=stderr)
-    pid: int | None = None
-    identity: dict[str, Any] | None = None
-    root: Path | None = None
-    try:
-        pid, identity = wait_for_runtime_pid(executable, existing_pids, runner)
-        root, ready = wait_for_hidden_ready_root(existing_roots, scenario, pid)
-        return {"runner": runner, "stdout": stdout, "stderr": stderr,
-                "root": root, "pid": pid, "identity": identity, "ready": ready,
-                "scenario": scenario, "condition": condition,
-                "resultBundle": evidence / f"{label}-control.xcresult"}
-    except Exception:
-        if pid is not None and identity is not None and not process_is_gone(pid):
-            try:
-                terminate_pid_owned(pid, executable, identity["processStart"])
-            except (ObservationError, OSError):
-                pass
-        if runner.poll() is None:
-            runner.terminate()
-            try:
-                runner.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                pass
-        stdout.close()
-        stderr.close()
-        raise
-
-
-def stop_build_control(control: dict[str, Any]) -> dict[str, Any]:
-    root = control["root"]
-    runner = control["runner"]
-    completed = False
-    try:
-        publish_owned_signal(root, "runtime-observation-observed",
-                             b"TIDY_RUNTIME_OBSERVATION_OBSERVED_V1\n")
-        try:
-            exit_code = runner.wait(timeout=60)
-        except subprocess.TimeoutExpired as error:
-            raise ObservationError("paired-build control XCTest did not finish") from error
-        if exit_code != 0 or not control["resultBundle"].is_dir():
-            raise ObservationError("paired-build control XCTest failed")
-        test_case = "testProductionHiddenOffBuildControl" \
-            if control["condition"] == "baseline" \
-            else "testProductionHiddenAuthorizedBuildControl"
-        validate_xcresult(control["resultBundle"], [test_case],
-                          control["resultBundle"].parent,
-                          f"pair-control-{control['pid']}")
-        deadline = time.monotonic() + 15
-        while root.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if root.exists():
-            raise ObservationError("paired-build control did not remove its fixture root")
-        completed = True
-        return {"xcodebuildExit": exit_code, "resultBundlePresent": True,
-                "fixtureRootRemoved": True}
-    finally:
-        pid = control["pid"]
-        if not completed and not process_is_gone(pid):
-            try:
-                terminate_pid_owned(pid, Path(control["identity"]["executable"]),
-                                    control["identity"]["processStart"])
-            except (ObservationError, OSError):
-                pass
-        if runner.poll() is None:
-            runner.terminate()
-            try:
-                runner.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                pass
-        control["stdout"].close()
-        control["stderr"].close()
-
-
 def observe_paired_builds(runtime_app: Path) -> Path:
-    app, executable = validate_runtime_app(runtime_app)
-    evidence = Path(tempfile.mkdtemp(
-        prefix=EVIDENCE_PREFIX + "paired-builds-", dir="/private/tmp"))
-    os.chmod(evidence, 0o700)
-    evidence = validate_evidence_root(evidence)
-    artifact_start = artifact_manifest(app)
-    source_start = source_wip_state()
-    if source_start["statusEntryCount"] != 0:
-        raise ObservationError("paired builds require a clean frozen source worktree")
-    host = host_context()
-    source, source_archive = archive_source(evidence, source_start["head"])
-    for name, value in (("artifact-manifest-start.json", artifact_start),
-                        ("source-wip-start.json", source_start), ("host.json", host),
-                        ("source-archive.json", source_archive)):
-        (evidence / name).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    if matching_runtime_pids(executable):
-        raise ObservationError("runtime host is already running before paired builds")
-    warm = run_production_build(source, evidence / "warm-derived-data", evidence, "warm")
-    if warm["exit"] != 0:
-        raise ObservationError("paired-build warm-up failed")
-    pairs: list[dict[str, Any]] = []
-    for pair_index in range(1, BUILD_PAIR_COUNT + 1):
-        order = ("baseline", "background") if pair_index % 2 else ("background", "baseline")
-        pair: dict[str, Any] = {"pair": pair_index, "order": list(order), "runs": {}}
-        for condition in order:
-            label = f"pair-{pair_index}-{condition}"
-            control: dict[str, Any] | None = None
-            run: dict[str, Any] | None = None
-            try:
-                control = launch_build_control(app, executable, condition, evidence, label)
-                run = run_production_build(source, evidence / f"{label}-derived-data",
-                                           evidence, label)
-                run["runtimeReady"] = control["ready"]
-                pair["runs"][condition] = run
-                if run["exit"] != 0:
-                    raise ObservationError(f"paired production build failed: {label}")
-            finally:
-                if control is not None:
-                    completion = stop_build_control(control)
-                    if run is not None:
-                        run["controlCompletion"] = completion
-        pair["overheadSeconds"] = (
-            pair["runs"]["background"]["durationSeconds"]
-            - pair["runs"]["baseline"]["durationSeconds"])
-        pairs.append(pair)
-    artifact_end = artifact_manifest(app)
-    source_end = source_wip_state()
-    if artifact_end != artifact_start or source_end != source_start:
-        raise ObservationError("artifact or source WIP changed during paired builds")
-    overheads = [pair["overheadSeconds"] for pair in pairs]
-    baseline = [pair["runs"]["baseline"]["durationSeconds"] for pair in pairs]
-    background = [pair["runs"]["background"]["durationSeconds"] for pair in pairs]
-    summary = {
-        "schema": 1,
-        "mode": "paired-builds",
-        "sourceWIPState": source_start,
-        "sourceArchive": source_archive,
-        "artifactManifest": artifact_start,
-        "host": host,
-        "warmup": warm,
-        "pairCount": BUILD_PAIR_COUNT,
-        "pairs": pairs,
-        "baselineMedianSeconds": statistics.median(baseline),
-        "backgroundMedianSeconds": statistics.median(background),
-        "pairedOverheadMedianSeconds": statistics.median(overheads),
-        "claims": "bounded current-host paired-build diagnostic only",
-    }
-    (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n",
-                                            encoding="utf-8")
-    return evidence
+    raise ObservationError(
+        "paired builds require an accepted machine-local background-monitor authority; "
+        "that production workflow is unavailable, so no authorized-background arm exists")
 
 
 def make_fake_app(root: Path, bundle_id: str, markers: tuple[bytes, ...]) -> Path:
@@ -1775,7 +1513,7 @@ def run_self_test() -> None:
                 "explicitWorkLeases": 0, "scanSessions": 0, "scanActiveWork": 0,
                 "allMutationsDenied": True, "timerScheduledCount": 0,
                 "timerCancelledCount": 0, "observedMonotonicNanoseconds": 10,
-                "applicationHidden": True,
+                "applicationHidden": True, "backgroundAuthority": "unavailable",
             }
             ready_path = fixture / "ready.json"
             ready_path.write_text(json.dumps(ready), encoding="utf-8")

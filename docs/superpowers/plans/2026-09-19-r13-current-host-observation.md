@@ -27,7 +27,7 @@
 - Test: `TidyProductionNativeUITests/ProductionSceneRuntimeUITests.swift`
 
 **Interfaces:**
-- Produces: fixed `hidden-off` and `hidden-authorized` scenarios; one stdout root line; one atomic `state/runtime-ready.json`.
+- Produces: fixed `hidden-off` and `hidden-no-authority` scenarios; one stdout root line; one atomic `state/runtime-ready.json`.
 - Ready JSON fields: `schema`, `scenario`, `pid`, `settingsRevision`, `timerRunning`, `sceneLeases`, `explicitWorkLeases`, `scanSessions`, `scanActiveWork`, `allMutationsDenied`.
 
 - [ ] **Step 1: Add failing native readiness assertions**
@@ -75,7 +75,7 @@ Revalidate PID/start/executable before termination. Revalidate root prefix, no s
 
 - [ ] **Step 5: Run self-tests and the two fixed observations**
 
-Run hidden-off for the fixed two-minute window and hidden-authorized for the fixed ten-minute window without other UI/build load. Generate redacted summaries.
+Run hidden-off for the fixed two-minute window and Headroom-enabled/background-authority-unavailable for the fixed ten-minute window without other UI/build load. Generate redacted summaries. Require both to keep the timer off and report the production authority unavailable.
 
 ### Task 3: Representative traffic and twenty cycles
 
@@ -104,7 +104,7 @@ Follow only exact runtime bundle PIDs, start a new bounded nettop capture for ea
 
 Require every exact case, zero skips, fixture cleanup, and a successful loopback observer control. Do not claim universal zero network.
 
-### Task 4: 50k scan and paired builds
+### Task 4: 50k scan and paired-build dependency
 
 **Files:**
 - Modify: `Tidy/RuntimeVerification/RuntimeTestComposition.swift`
@@ -113,7 +113,7 @@ Require every exact case, zero skips, fixture cleanup, and a successful loopback
 - Modify: `docs/verification/remediation-R13-current-host-diagnostics.md`
 
 **Interfaces:**
-- Produces: complete 50k useful/terminal monotonic timing, scan peak footprint/RSS, UI/worker cancel timing, and five paired build durations.
+- Produces: complete 50k useful/terminal monotonic timing, scan peak footprint/RSS, and UI/worker cancel timing. The paired-build mode reports its missing production authority dependency without launching work.
 
 - [ ] **Step 1: Add fixed bounded 50k fixture and timing attestation**
 
@@ -125,9 +125,8 @@ Reject partial/incomplete coverage. Record useful and total duration, peak physi
 
 - [ ] **Step 3: Run five alternating build pairs**
 
-Create one isolated `git archive` source tree. Warm once, then alternate baseline/background order while using identical commands, two jobs, and pair-specific derived-data directories. Record raw durations and median overhead.
+Fail the paired-build mode before launch while `monitor.backgroundEnabled` has no accepted machine-local authority workflow. Do not substitute persisted authority, a compile-only override, or an off/off comparison. Five paired builds become feasible only after the production workflow can create the authorized background arm.
 
 - [ ] **Step 4: Final verification and documentation**
 
 Run script self-tests, project/privacy/personal-data gates, all exact native cases, and the repository verifier. State which current-host diagnostics meet thresholds and list every reference/human/platform gate that remains open.
-
