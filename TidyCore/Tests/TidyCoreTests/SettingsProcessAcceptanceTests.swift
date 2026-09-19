@@ -43,6 +43,42 @@ private func a2pWrite(_ data: Data, _ url: URL) throws {
         offset += n
     }
 }
+private func a2pPublishRelease(_ control: URL, _ name: String) throws {
+    guard name == "resume" || name == "retry" else { throw A2PError.invalid }
+    let directory = open(control.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard directory >= 0 else { throw A2PError.invalid }
+    defer { close(directory) }
+    var directoryInfo = stat()
+    guard fstat(directory, &directoryInfo) == 0, directoryInfo.st_uid == getuid(),
+          (directoryInfo.st_mode & S_IFMT) == S_IFDIR,
+          directoryInfo.st_mode & 0o777 == 0o700 else { throw A2PError.invalid }
+
+    let temporary = ".release-\(UUID().uuidString)"
+    let fd = openat(directory, temporary,
+                    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { throw A2PError.invalid }
+    defer { _ = unlinkat(directory, temporary, 0) }
+    var fileOpen = true
+    defer { if fileOpen { close(fd) } }
+    guard fchmod(fd, 0o600) == 0 else { throw A2PError.invalid }
+    var byte: UInt8 = 82
+    while true {
+        let count = Darwin.write(fd, &byte, 1)
+        if count < 0 && errno == EINTR { continue }
+        guard count == 1 else { throw A2PError.invalid }
+        break
+    }
+    var fileInfo = stat()
+    guard fstat(fd, &fileInfo) == 0, fileInfo.st_uid == getuid(),
+          (fileInfo.st_mode & S_IFMT) == S_IFREG, fileInfo.st_size == 1,
+          fileInfo.st_mode & 0o777 == 0o600 else { throw A2PError.invalid }
+    let closeResult = close(fd)
+    fileOpen = false
+    guard closeResult == 0 else { throw A2PError.invalid }
+    guard renameatx_np(directory, temporary, directory, name, UInt32(RENAME_EXCL)) == 0 else {
+        throw A2PError.invalid
+    }
+}
 private func a2pRoot() throws -> URL {
     guard let p = realpath("/private/tmp", nil) else { throw A2PError.invalid }
     defer { free(p) }
@@ -198,7 +234,7 @@ private final class A2PRun {
         throw A2PError.timeout
     }
     func release(_ control: URL, _ name: String) throws {
-        try a2pWrite(Data([82]), control.appendingPathComponent(name))
+        try a2pPublishRelease(control, name)
     }
     func snapshot() throws -> [String: A2PFile] {
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
@@ -266,6 +302,23 @@ private func a2pMetadata(_ files: [String: A2PFile]) throws -> String {
 
 @Suite(.serialized)
 struct SettingsProcessAcceptanceTests {
+    @Test func releaseSignalPublicationIsAtomicAndNoReplace() throws {
+        let root = try a2pRoot()
+        let control = root.appendingPathComponent(UUID().uuidString)
+        guard mkdir(control.path, 0o700) == 0 else { throw A2PError.invalid }
+
+        try a2pPublishRelease(control, "resume")
+        let published = try a2pFile(control.appendingPathComponent("resume"))
+        #expect(published.data == Data([82]))
+        #expect(published.mode == 0o600)
+
+        #expect(throws: A2PError.self) {
+            try a2pPublishRelease(control, "resume")
+        }
+        #expect(try a2pFile(control.appendingPathComponent("resume")) == published)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: control.path) == ["resume"])
+    }
+
     @Test(arguments: ["bootstrap-hold", "stable-hold"])
     func independentWritersContendThenRejectStaleLoadedBytes(_ mode: String) async throws {
         try await withA2P { run in
