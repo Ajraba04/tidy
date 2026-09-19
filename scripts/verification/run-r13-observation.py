@@ -163,6 +163,29 @@ def source_wip_state() -> dict[str, Any]:
     }
 
 
+def host_context() -> dict[str, Any]:
+    commands = {
+        "swVers": ["/usr/bin/sw_vers"],
+        "architecture": ["/usr/bin/uname", "-m"],
+        "xcode": ["/usr/bin/xcodebuild", "-version"],
+        "python": [sys.executable, "--version"],
+    }
+    output: dict[str, str] = {}
+    for name, arguments in commands.items():
+        result = run_tool(arguments, timeout=10)
+        if result.returncode != 0:
+            raise ObservationError(f"host context command failed: {name}")
+        text = (result.stdout + result.stderr).decode("utf-8", errors="strict").strip()
+        output[name] = text
+    return {
+        "commands": output,
+        "observerTools": {
+            name: {"path": str(path), "sha256": sha256_file(path)}
+            for name, path in sorted(TOOLS.items())
+        },
+    }
+
+
 def validate_runtime_app(app: Path) -> tuple[Path, Path]:
     app = app.resolve(strict=True)
     if app.suffix != ".app" or not app.is_dir():
@@ -602,7 +625,7 @@ def remove_owned_root(root: Path) -> None:
 
 def summarize(scenario: str, app: Path, executable: Path, ready: dict[str, Any],
               final: dict[str, Any], positive_control: dict[str, Any],
-              source_state: dict[str, Any], artifact: dict[str, Any],
+              source_state: dict[str, Any], artifact: dict[str, Any], host: dict[str, Any],
               samples: list[dict[str, Any]], children: set[int], nettop_exit: int,
               footprint_exit: int, evidence: Path) -> dict[str, Any]:
     if not samples:
@@ -622,6 +645,7 @@ def summarize(scenario: str, app: Path, executable: Path, ready: dict[str, Any],
         "sourceRevision": source_state["head"],
         "sourceWIPState": source_state,
         "artifactManifest": artifact,
+        "host": host,
         "runtimeApp": str(app),
         "runtimeExecutable": str(executable),
         "pid": ready["pid"],
@@ -690,10 +714,12 @@ def observe(scenario: str, runtime_app: Path) -> Path:
     evidence = validate_evidence_root(evidence)
     artifact_start = artifact_manifest(app)
     source_start = source_wip_state()
+    host = host_context()
     (evidence / "artifact-manifest-start.json").write_text(
         json.dumps(artifact_start, indent=2) + "\n", encoding="utf-8")
     (evidence / "source-wip-start.json").write_text(
         json.dumps(source_start, indent=2) + "\n", encoding="utf-8")
+    (evidence / "host.json").write_text(json.dumps(host, indent=2) + "\n", encoding="utf-8")
     positive_control = run_nettop_positive_control(evidence)
     stderr_stream = (evidence / "runtime.stderr").open("wb")
     process = subprocess.Popen([
@@ -735,7 +761,7 @@ def observe(scenario: str, runtime_app: Path) -> Path:
         if source_end != source_start:
             raise ObservationError("source WIP state changed during observation")
         summary = summarize(scenario, app, executable, ready, final, positive_control,
-                            source_start, artifact_start,
+                            source_start, artifact_start, host,
                             samples, children,
                             nettop_exit, footprint_exit, evidence)
         (evidence / "summary.md").write_text(markdown_summary(summary), encoding="utf-8")
