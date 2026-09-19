@@ -153,15 +153,34 @@ final class HeadroomViewModelTests: XCTestCase {
         let monitor = makeMonitor()
         let baselineLeases = await monitor.activeSceneLeaseCountForTesting()
         let baselineGenerations = await monitor.sceneLeaseGenerationCountForTesting()
+        let expectedAddedScenes = 200
 
-        for _ in 0..<100 {
-            var headroom: HeadroomViewModel? = HeadroomViewModel(monitor: monitor, cardOrder: [])
-            var menu: StatsRefresher? = StatsRefresher(monitor: monitor)
-            headroom?.onAppear()
-            menu?.onPopoverAppear()
-            headroom = nil
-            menu = nil
+        var headroomModels: [HeadroomViewModel]? = (0..<100).map { _ in
+            HeadroomViewModel(monitor: monitor, cardOrder: [])
         }
+        var menuModels: [StatsRefresher]? = (0..<100).map { _ in
+            StatsRefresher(monitor: monitor)
+        }
+        headroomModels?.forEach { $0.onAppear() }
+        menuModels?.forEach { $0.onPopoverAppear() }
+
+        // Establish that every queued visibility update reached the actor before
+        // testing deinit cleanup. Without this barrier the baseline could match
+        // transiently before the visibility tasks ran, then rise after the test
+        // had already accepted the baseline as its cleanup result.
+        try await waitUntil(timeout: 5) {
+            let leases = await monitor.activeSceneLeaseCountForTesting()
+            let generations = await monitor.sceneLeaseGenerationCountForTesting()
+            return leases == baselineLeases + expectedAddedScenes &&
+                generations == baselineGenerations + expectedAddedScenes
+        }
+        let activeLeases = await monitor.activeSceneLeaseCountForTesting()
+        let activeGenerations = await monitor.sceneLeaseGenerationCountForTesting()
+        XCTAssertEqual(activeLeases, baselineLeases + expectedAddedScenes)
+        XCTAssertEqual(activeGenerations, baselineGenerations + expectedAddedScenes)
+
+        headroomModels = nil
+        menuModels = nil
 
         try await waitUntil(timeout: 5) {
             let leases = await monitor.activeSceneLeaseCountForTesting()
