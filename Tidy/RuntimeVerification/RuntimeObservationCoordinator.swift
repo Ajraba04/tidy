@@ -9,7 +9,6 @@ private enum RuntimeObservationError: Error, CustomStringConvertible {
     case invalidFixtureRoot
     case invalidSettings(String)
     case invalidRuntimeState(String)
-    case instrumentationTimeout
     case counterOverflow
     case publication(String)
 
@@ -19,7 +18,6 @@ private enum RuntimeObservationError: Error, CustomStringConvertible {
         case .invalidFixtureRoot: return "The runtime observation fixture root is unsafe."
         case .invalidSettings(let detail): return "Runtime observation settings are invalid: \(detail)"
         case .invalidRuntimeState(let detail): return "Runtime observation state is invalid: \(detail)"
-        case .instrumentationTimeout: return "The authorized hidden monitor did not schedule in time."
         case .counterOverflow: return "The runtime observation counter overflowed."
         case .publication(let detail): return "Runtime observation publication failed: \(detail)"
         }
@@ -28,19 +26,19 @@ private enum RuntimeObservationError: Error, CustomStringConvertible {
 
 private enum RuntimeObservationScenario: String, Sendable {
     case hiddenOff = "hidden-off"
-    case hiddenAuthorized = "hidden-authorized"
+    case hiddenNoAuthority = "hidden-no-authority"
 
     var duration: Duration {
         switch self {
         case .hiddenOff: return .seconds(120)
-        case .hiddenAuthorized: return .seconds(600)
+        case .hiddenNoAuthority: return .seconds(600)
         }
     }
 
     var durationNanoseconds: UInt64 {
         switch self {
         case .hiddenOff: return 120_000_000_000
-        case .hiddenAuthorized: return 600_000_000_000
+        case .hiddenNoAuthority: return 600_000_000_000
         }
     }
 }
@@ -50,6 +48,7 @@ private struct RuntimeObservationDocument: Codable, Equatable, Sendable {
     let scenario: String
     let pid: Int
     let settingsRevision: UInt64
+    let backgroundAuthority: String
     let applicationHidden: Bool
     let timerRunning: Bool
     let sceneLeases: Int
@@ -73,21 +72,11 @@ private final class RuntimeObservationInstrumentation: MonitorInstrumentation, @
     private var scheduled = 0
     private var cancelled = 0
     private var overflowed = false
-    private let scheduledEvents: AsyncStream<Void>
-    private let scheduledContinuation: AsyncStream<Void>.Continuation
-
-    init() {
-        let pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        scheduledEvents = pair.stream
-        scheduledContinuation = pair.continuation
-    }
-
     func timerScheduled() {
         lock.lock()
         let (next, didOverflow) = scheduled.addingReportingOverflow(1)
         if didOverflow { overflowed = true } else { scheduled = next }
         lock.unlock()
-        scheduledContinuation.yield(())
     }
 
     func timerCancelled() {
@@ -103,27 +92,6 @@ private final class RuntimeObservationInstrumentation: MonitorInstrumentation, @
         }
     }
 
-    func waitForFirstScheduled(within timeout: Duration) async -> Bool {
-        if snapshot().scheduled > 0 { return true }
-        let events = scheduledEvents
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                var iterator = events.makeAsyncIterator()
-                return await iterator.next() != nil
-            }
-            group.addTask {
-                do {
-                    try await ContinuousClock().sleep(for: timeout)
-                    return false
-                } catch {
-                    return false
-                }
-            }
-            let result = await group.next() ?? false
-            group.cancelAll()
-            return result
-        }
-    }
 }
 
 @MainActor
@@ -227,11 +195,6 @@ enum RuntimeObservationCoordinator {
             }
 
             try validateSettings(services: services, scenario: scenario)
-            if scenario == .hiddenAuthorized {
-                guard await instrumentation.waitForFirstScheduled(within: .seconds(15)) else {
-                    throw RuntimeObservationError.instrumentationTimeout
-                }
-            }
             try Task.checkCancellation()
             let clock = ContinuousClock()
             let monotonicOrigin = clock.now
@@ -266,18 +229,25 @@ enum RuntimeObservationCoordinator {
             throw RuntimeObservationError.invalidSettings("revision 1 is not settled")
         }
         let enabled = policy.allowedFeatures.contains("headroom")
-        let background = bool(policy, "monitor.backgroundEnabled")
+        let backgroundUnavailable = authorityUnavailable(policy, "monitor.backgroundEnabled")
         let suppressHidden = bool(policy, "monitor.suppressHiddenSampling")
         let hiddenInterval = integer(policy, "monitor.hiddenIntervalSeconds")
-        let expected: (Bool, Bool, Bool)
+        let expected: (enabled: Bool, suppressHidden: Bool)
         switch scenario {
-        case .hiddenOff: expected = (false, false, true)
-        case .hiddenAuthorized: expected = (true, true, false)
+        case .hiddenOff: expected = (false, true)
+        case .hiddenNoAuthority: expected = (true, false)
         }
-        guard enabled == expected.0, background == expected.1,
-              suppressHidden == expected.2, hiddenInterval == 60 else {
+        guard enabled == expected.enabled, backgroundUnavailable,
+              suppressHidden == expected.suppressHidden, hiddenInterval == 60 else {
             throw RuntimeObservationError.invalidSettings("fixed hidden policy does not match")
         }
+    }
+
+    private static func authorityUnavailable(_ policy: EffectivePolicy, _ rawID: String) -> Bool {
+        guard let field = policy.fields[SettingID(rawValue: rawID)] else { return false }
+        return field.value == .unavailable(.authorityUnavailable)
+            && field.reason == .authorityUnavailable
+            && field.sources == [.localAuthority]
     }
 
     private static func bool(_ policy: EffectivePolicy, _ rawID: String) -> Bool? {
@@ -317,8 +287,12 @@ enum RuntimeObservationCoordinator {
         let allDenied = CleanCatalog.allItems.allSatisfy {
             CapabilityRegistry.denialReason(for: $0.action, itemID: $0.id) != nil
         }
+        let backgroundUnavailable = services.configStore.acknowledgedEffectivePolicy.map {
+            authorityUnavailable($0, "monitor.backgroundEnabled")
+        } ?? false
         return RuntimeObservationDocument(schema: 1, scenario: scenario.rawValue,
             pid: Int(getpid()), settingsRevision: services.configStore.acknowledgedSettingsRevision,
+            backgroundAuthority: backgroundUnavailable ? "unavailable" : "unexpected",
             applicationHidden: NSApp.isHidden, timerRunning: timerRunning, sceneLeases: sceneLeases,
             explicitWorkLeases: explicitWorkLeases, scanSessions: scan.sessions,
             scanActiveWork: scan.activeWork, allMutationsDenied: allDenied,
@@ -329,21 +303,17 @@ enum RuntimeObservationCoordinator {
     private static func validateReady(_ value: RuntimeObservationDocument,
                                       scenario: RuntimeObservationScenario) throws {
         guard value.schema == 1, value.scenario == scenario.rawValue, value.pid == Int(getpid()),
-              value.settingsRevision == 1, value.applicationHidden, value.sceneLeases == 0,
+              value.settingsRevision == 1, value.backgroundAuthority == "unavailable",
+              value.applicationHidden, value.sceneLeases == 0,
               value.explicitWorkLeases == 0, value.scanSessions == 0,
               value.scanActiveWork == 0, value.allMutationsDenied else {
             throw RuntimeObservationError.invalidRuntimeState("ready ownership state is not idle")
         }
         switch scenario {
-        case .hiddenOff:
+        case .hiddenOff, .hiddenNoAuthority:
             guard !value.timerRunning, value.timerScheduledCount == 0,
                   value.timerCancelledCount == 0 else {
-                throw RuntimeObservationError.invalidRuntimeState("hidden-off timer started")
-            }
-        case .hiddenAuthorized:
-            guard value.timerRunning, value.timerScheduledCount >= 1,
-                  value.timerCancelledCount == 0 else {
-                throw RuntimeObservationError.invalidRuntimeState("authorized timer is not stable")
+                throw RuntimeObservationError.invalidRuntimeState("hidden timer started without authority")
             }
         }
     }
@@ -355,6 +325,8 @@ enum RuntimeObservationCoordinator {
             .addingReportingOverflow(scenario.durationNanoseconds)
         guard value.schema == ready.schema, value.scenario == ready.scenario,
               value.pid == ready.pid, value.settingsRevision == ready.settingsRevision,
+              value.backgroundAuthority == "unavailable",
+              value.backgroundAuthority == ready.backgroundAuthority,
               value.applicationHidden, value.applicationHidden == ready.applicationHidden,
               value.sceneLeases == ready.sceneLeases,
               value.explicitWorkLeases == ready.explicitWorkLeases,
@@ -365,16 +337,10 @@ enum RuntimeObservationCoordinator {
             throw RuntimeObservationError.invalidRuntimeState("final ownership state changed")
         }
         switch scenario {
-        case .hiddenOff:
+        case .hiddenOff, .hiddenNoAuthority:
             guard !value.timerRunning, value.timerScheduledCount == 0,
                   value.timerCancelledCount == 0 else {
-                throw RuntimeObservationError.invalidRuntimeState("hidden-off timer changed")
-            }
-        case .hiddenAuthorized:
-            guard value.timerRunning,
-                  value.timerScheduledCount == ready.timerScheduledCount,
-                  value.timerCancelledCount == 0 else {
-                throw RuntimeObservationError.invalidRuntimeState("authorized timer transitioned")
+                throw RuntimeObservationError.invalidRuntimeState("hidden timer changed without authority")
             }
         }
     }
