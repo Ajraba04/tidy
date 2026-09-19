@@ -3,15 +3,49 @@ import TidyCore
 
 @main
 struct TidyApp: App {
+    private static let runtimeVerificationBundleIdentifier =
+        "io.github.ajraba04.Tidy.ProductionRuntimeVerification"
+#if TIDY_RUNTIME_TEST_HOST
+    @NSApplicationDelegateAdaptor(RuntimeTestAppDelegate.self)
+    private var runtimeTestAppDelegate
+#endif
     @State private var bootstrap: AppBootstrapState
     private let productionPaths: AppStoragePaths?
+#if TIDY_RUNTIME_TEST_HOST
+    private let runtimeScenario: RuntimeTestScenario
+#endif
 
     init() {
         _bootstrap = State(initialValue: AppBootstrapState())
-        productionPaths = Self.resolveProductionPaths()
+#if TIDY_RUNTIME_TEST_HOST
+        NSWindow.allowsAutomaticWindowTabbing = false
+        let arguments = ProcessInfo.processInfo.arguments
+        let scenario = RuntimeTestComposition.scenario(processArguments: arguments)
+        runtimeScenario = scenario
+        if Bundle.main.bundleIdentifier == Self.runtimeVerificationBundleIdentifier {
+            productionPaths = RuntimeTestComposition.makePaths(scenario: scenario,
+                cleanupOnTermination: arguments.contains(
+                    "--tidy-runtime-cleanup-on-termination"))
+        } else {
+            productionPaths = nil
+        }
+#else
+        productionPaths = Bundle.main.bundleIdentifier
+            == Self.runtimeVerificationBundleIdentifier ? nil : Self.resolveProductionPaths()
+#endif
     }
 
     var body: some Scene {
+#if TIDY_RUNTIME_TEST_HOST
+        WindowGroup("Tidy Production Runtime Verification",
+                    id: RuntimeTestComposition.controlWindowID) {
+            withServices { services in
+                RuntimeTestControlView(services: services, scenario: runtimeScenario)
+            }
+        }
+        .defaultSize(width: 620, height: 540)
+#endif
+
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
             withServices { services in
                 VStack(alignment: .leading, spacing: 0) {
@@ -132,10 +166,24 @@ struct TidyApp: App {
     }
 
     private var recoveryUnavailable: some View {
-        ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
-            description: Text(bootstrap.services?.persistenceError
-                ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
-            .frame(minWidth: 320, minHeight: 200)
+        VStack {
+            ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
+                description: Text(bootstrap.services?.persistenceError
+                    ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
+#if TIDY_RUNTIME_TEST_HOST
+            if let services = bootstrap.services {
+                Text("load:\(String(describing: services.settingsLoad.disposition)) "
+                     + "recovery:\(String(describing: services.settingsLoad.recoveryReason)) "
+                     + "journal:\(String(describing: services.initialJournalAdmission)) "
+                     + "settings:\(services.paths.settings.path)")
+                    .font(.caption.monospaced())
+                    .accessibilityIdentifier("runtime.bootstrap.diagnostic")
+                RuntimeTestRecoveryAttestationView(services: services,
+                    scenario: runtimeScenario)
+            }
+#endif
+        }
+        .frame(minWidth: 320, minHeight: 200)
     }
 
     private var storageUnavailable: some View {
