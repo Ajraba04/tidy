@@ -23,7 +23,7 @@ python3 scripts/verification/privacy-api-inventory.py \
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 700 \
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 701 \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
   --require-case 'successful scope grants release captured identities and replay still denies' \
@@ -31,6 +31,7 @@ python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --
   --require-case 'successful full-home consent and grant release metadata while both replays deny' \
   --require-case 'full-home consent is consumed before failed root capture' \
   --require-case 'revisionZeroRequiresExactFreshDefaultOrigin' \
+  --require-case 'releaseSignalPublicationIsAtomicAndNoReplace' \
   --require-case 'everySupportedSchema2RootShapeIsFixtureBackedAndReadOnlyOnLoad(name:)' \
   --require-case 'corruptAndFutureDowngradeRecoveryPreserveSettingsAuthorityAndRecoveryBytes(name:)' \
   --require-case 'importAndSelectiveResetPreserveIndependentAuthorityAndRecoveryWitnesses' \
