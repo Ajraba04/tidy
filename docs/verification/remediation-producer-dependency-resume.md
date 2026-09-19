@@ -4,9 +4,12 @@ Date: 2026-09-19
 
 Revision inspected: `b4acfff2a78343884457b14ee5d9efba3df91e12`
 
-Scope: read-only dependency investigation plus this report. No build, test, Xcode
-project action, process termination, permission change, security change, or
-production/test/source edit was performed.
+Scope: read-only dependency investigation plus this report. No product build,
+product test, Xcode project action, process termination, permission change,
+security change, or production/test/source edit was performed. The later
+`F_SETLEASE` addendum includes one unentitled program compiled and run only against
+an owned file under `/private/tmp`; the program, binary, and fixture were removed
+after the probe.
 
 Implementation follow-up: the bounded R05 revision-zero explicit scan unit identified below was
 subsequently implemented and focused-verified in the same resume; see
@@ -191,6 +194,121 @@ If Apple later publishes a qualifying interface, the concrete engineering unit i
 to implement those two producer-backed providers plus the real matrix above. Until
 then, adding more process heuristics or another Tidy lock would add code without
 advancing acceptance.
+
+## Addendum: Darwin `F_SETLEASE` is not an R02 dependency exit
+
+### Version and evidence boundary
+
+The installed Xcode 27.0 SDK does publicly declare `F_SETLEASE = 106`,
+`F_GETLEASE = 107`, and `F_SETLEASE_ARG(t, oc)`. The installed `fcntl(2)` manual
+does not document either lease command. A public header declaration therefore
+establishes that the command numbers compile; it does not establish that an
+ordinary third-party app is authorized to acquire a lease or that the lease has
+the R02 ownership semantics.
+
+The installed host is macOS 27.0 build `26A428` with Darwin
+`xnu-13432.1.9~1/RELEASE_ARM64_T6000`. Apple's current published open-source XNU
+tag inspected for this addendum is [`xnu-12377.1.9`](https://github.com/apple-oss-distributions/xnu/tree/xnu-12377.1.9),
+commit `f6217f891ac0bb64f3d375211650a4c1ff8ca1ea`. It is older than the installed
+kernel, so its internal implementation is cited as version-specific primary
+evidence rather than silently projected onto `xnu-13432.1.9`. The current-host
+probe below separately checks the decisive availability gate on the installed
+release kernel.
+
+Apple's public XNU header declares the commands, while the syscall implementation
+limits them to local regular files and directories and permits only a read lease
+on a directory. It interprets the upper 30 argument bits as the caller's expected
+open/write count, specifically so a process can account for its own opens; this is
+a count supplied by the caller, not an enumeration or identity mapping of all
+producers. `F_GETLEASE` returns only `F_RDLCK`, `F_WRLCK`, or `F_UNLCK`, with no
+lease holder, producer, or shared-owner identity. [Header constants](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/sys/fcntl.h#L376-L379),
+[syscall parsing and supported vnode types](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/kern/kern_descrip.c#L5083-L5183),
+[lease query result](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L12995-L13025).
+
+Apple's APFS overview documents APFS storage features, but does not document these
+commands as an APFS app API or a producer-ownership service. The XNU implementation
+is a generic VFS facility for local mounts. This documentation absence is not used
+as proof that no private facility exists; it means the public APFS material does
+not supply the supported contract R02 requires. [About Apple File System](https://developer.apple.com/documentation/foundation/about-apple-file-system),
+[Apple File System Programming Guide](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/Introduction/Introduction.html).
+
+### Availability to an ordinary app
+
+In published XNU `xnu-12377.1.9`, every `F_SETLEASE` acquisition or release calls
+`allow_setlease`, which requires the private entitlement
+`com.apple.private.vfs.file-leases`; only development/debug kernels contain an
+entitlement-override sysctl. The official XNU lease tests are correspondingly code
+signed with a plist that grants that private entitlement. [Entitlement gate](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L12730-L12773),
+[`vnode_setlease` `EPERM` path](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L12970-L12993),
+[test signing rule](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/tests/Makefile#L1684-L1686),
+[test entitlement](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/tests/file_leases.entitlements#L1-L8).
+
+Tidy's application entitlement plist is empty. A bounded current-host probe compiled
+against the installed public SDK, opened an owned scratch regular file read-only,
+and made no signal or process-control calls. On the installed release kernel:
+
+```text
+fcntl(fd, F_SETLEASE, F_WRLCK) = -1, errno = 1 (EPERM)
+fcntl(fd, F_GETLEASE)          = 2  (F_UNLCK), errno = 0
+```
+
+No lease was acquired, and the descriptor, file, source, binary, and scratch
+directory were closed or removed. This directly establishes that the installed
+public declaration does not make lease acquisition available to this ordinary,
+unentitled app context. The successful `F_GETLEASE` query does not help: it reports
+only the aggregate lease type and provides neither authority nor ownership proof.
+
+### Exclusion, existing descriptors, and directory coverage
+
+The published lease is kernel-enforced while it remains in force, so it is more
+than an advisory record lock that unrelated writers can simply ignore. It is still
+a deliberately breakable lease rather than mandatory exclusion held for the
+entire requested effect:
+
+- Acquisition checks existing opens. A read lease fails with `EAGAIN` when write
+  opens beyond the supplied expected count or a writable mapping exists; a write
+  lease fails when the vnode use count exceeds the supplied expected count.
+  Apple's tests cover an existing `O_RDWR` descriptor defeating a read lease and
+  an existing open elsewhere defeating a write lease. [Open-conflict implementation](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L12802-L12829),
+  [open-conflict tests](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/tests/file_leases.c#L690-L738).
+- A conflicting operation sends `NOTE_LEASE_RELEASE` or
+  `NOTE_LEASE_DOWNGRADE`. A normal conflicting open waits, but the published
+  default break timeout is 60 seconds, after which the kernel forcibly releases
+  or downgrades the lease and lets the breaker continue. An `O_NONBLOCK` open
+  returns `EWOULDBLOCK` instead of waiting. Apple's own test states that the
+  kernel forcibly breaks an unreleased lease after the timeout. [Break events and
+  nonblocking behavior](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L13205-L13303),
+  [forced timeout](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L13063-L13100),
+  [official timeout test](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/tests/file_leases.c#L1040-L1055).
+- Directory write leases are unsupported. A directory read lease covers namespace
+  and attribute/content changes involving its immediate files, not an arbitrarily
+  deep subtree. XNU obtains and breaks the immediate parent directory lease. For
+  a write through an already-open descendant file descriptor, it performs that
+  parent-directory break only after the write has succeeded and discards a break
+  error because the write is already complete. One lease on the DerivedData root
+  therefore cannot act as pre-effect exclusion for all descendant writes.
+  [directory lease tests and immediate-file scope](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/tests/file_leases.c#L1060-L1142),
+  [immediate-parent lookup](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L13342-L13379),
+  [post-write parent break](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_vnops.c#L1472-L1482).
+- A lease follows a `fileglob` shared by duplicated or fork-inherited descriptors,
+  rather than constituting a producer manifest. XNU also revokes all leases when
+  reclaiming a vnode, including force-unmount cases. [Lease/fileglob ownership](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L12775-L12793),
+  [vnode reclaim revocation](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/bsd/vfs/vfs_subr.c#L6855-L6871).
+
+### R02 result
+
+`F_SETLEASE` is not an implementable production authority for Tidy on the installed
+supported surface. The current release kernel denies acquisition to the ordinary
+unentitled app, and the published Apple tests require a private entitlement. Even
+in a hypothetical entitled context, the published primitive is requester-held,
+breakable after notification/timeout, per-vnode or immediate-parent in coverage,
+revocable on vnode reclaim, and unable to report the complete Xcode producer and
+shared-owner mapping. It cannot establish the approved R02 condition that every
+producer must honor a producer-owned exclusion lease across every unlink.
+
+This addendum rules out the public-header lead without changing the accepted
+contract: R02 remains unavailable, and the concrete dependency exit in the prior
+section remains unchanged. No production or test source was changed.
 
 ## Dependency consequences and work that remains independently implementable
 
