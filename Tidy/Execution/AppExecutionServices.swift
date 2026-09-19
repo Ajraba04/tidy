@@ -167,10 +167,17 @@ final class AppExecutionServices {
         self.runLogURL = runLogURL
         self.optionalRunHistory = try? OptionalRunHistoryStore(
             directory: runLogURL.deletingLastPathComponent())
+        #if TIDY_RUNTIME_TEST_HOST
+        let monitorInstrumentation: any MonitorInstrumentation =
+            RuntimeObservationCoordinator.monitorInstrumentation
+        #else
+        let monitorInstrumentation: any MonitorInstrumentation = NoOpMonitorInstrumentation()
+        #endif
         self.systemMonitor = SystemMonitor(
             configuration: .resolve(self.configStore.effectivePolicy),
             configurationRevision: envelope.revision,
-            volumes: [paths.home])
+            volumes: [paths.home],
+            instrumentation: monitorInstrumentation)
         let monitor = self.systemMonitor
         let configStore = self.configStore
         let optionalRunHistory = self.optionalRunHistory
