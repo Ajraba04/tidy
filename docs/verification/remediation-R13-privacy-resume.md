@@ -55,11 +55,13 @@ python3 -m py_compile scripts/verification/privacy-api-inventory.py
 python3 scripts/verification/privacy-api-inventory.py
 ```
 
-The inventory was refreshed after the R05 scan source froze at `dbf9c72`; its exact generated table
-matches the committed evidence table. The runtime-verification source present at this checkpoint
-contains no direct required-reason token; it composes production services against disposable `/tmp`
-storage and remains test evidence only. The controller will rerun the inventory at final whole-branch
-freeze in case the concurrently finishing runtime-host stream adds or moves a relevant token.
+The inventory was first refreshed after the R05 scan source froze at `dbf9c72`, then refreshed again
+after the runtime-host source froze at `be8e34d`; its exact generated table matches the committed
+evidence table. The runtime host added one direct file-timestamp API row:
+`RuntimeTestComposition.lstat` reads the disposable fixture root's type, owner, and mode before
+test-only cleanup. That `/tmp` root is neither a demonstrated Apple container nor a user-granted
+document, so no current reason is asserted. The runtime target has no code-signing entitlements,
+skips installation, and remains guarded test evidence rather than production privacy acceptance.
 
 ## Remaining R13/R14 gates
 

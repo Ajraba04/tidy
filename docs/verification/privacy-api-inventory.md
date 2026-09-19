@@ -40,7 +40,7 @@ No privacy-manifest reason or category change is justified by this review. Its b
 | `AppExecutionServices` and `ScanScopeAuthority`: `ProcessInfo.systemUptime` | monotonic nanoseconds derived from uptime | Epoch live scheduler observations and expire one-run scan consent | `35F9.1` accurately covers elapsed-time/timer calculations and is declared. |
 | `SystemMonitor`: `kern.boottime` | boot timestamp identity | Reject page-out deltas that cross a reboot | The current Apple accessed-API catalogue does not name this sysctl string. It remains a separate privacy/platform review row; `35F9.1` is not stretched to claim this identity use. |
 | `ProcessIdentity`: `kern.bootsessionuuid` | boot-session UUID | Prevent process-instance evidence from transferring across boots | Also not named in the current Apple accessed-API catalogue; retained as a separate sensitive identity review row. |
-| Dedicated runtime-verification target | production services use the same APIs against a disposable `/tmp` synthetic home/state root | Exercise production scenes without real-home mutation; target has no code-signing entitlements and skips installation | Useful guarded test evidence only. Synthetic storage does not establish the production app's reason eligibility, packaged manifest, permissions, or runtime behavior. |
+| Dedicated runtime-verification target: `RuntimeTestComposition.lstat` | fixture-root type, owner UID, and mode | Before test-only cleanup, require the exact owned mode-0700 disposable `/tmp` root; production services then use the same APIs against its synthetic home/state subtree | Apple lists `lstat` in file timestamps even though this call reads no timestamp. The guarded temporary root is neither a demonstrated Apple container nor a user-granted document, so no current reason is asserted. The target has no code-signing entitlements, skips installation, and must remain absent from distributed artifacts. |
 
 ## Direct source inventory
 
@@ -49,6 +49,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | Source | Direct API category | Matched tokens and lines |
 |---|---|---|
 | `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@613 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@136 |
 | `TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@25,37; `URLResourceValues.contentModificationDate`@46 |
 | `TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@16,24; `URLResourceValues.contentModificationDate`@35 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | File timestamp | `fstat`@45; `lstat`@45 |
@@ -69,7 +70,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift` | File timestamp | `fstat`@1251,1291,1362; `fstatat`@1348; `lstat`@1232,1259 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift` | File timestamp | `lstat`@213,228 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift` | File timestamp | `stat`@335 |
-| `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@158 |
+| `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@167 |
 
 ## Reproduction and limits
 
