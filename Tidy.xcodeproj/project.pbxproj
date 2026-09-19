@@ -32,7 +32,9 @@
 		4643358B0F73C356ECC7893B /* CleanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42925DD100B3A03F6F881D4D /* CleanView.swift */; };
 		4661B0E8B32542EF9F4096BA /* PlanReviewRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA332992BD15FAEAD38FEA8 /* PlanReviewRow.swift */; };
 		49B3E7F68BAE4FE24489D08D /* StatsRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8D749E1FE44ADA52B46952 /* StatsRefresher.swift */; };
+		4C57447439E2B3F47039C0BE /* RuntimeObservationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B66E503D9F0A01F14D98B1 /* RuntimeObservationCoordinator.swift */; };
 		507DBCEEE0ED75A3AEC93E9E /* ScanSectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD22FC9B5E7BCC4352D4017 /* ScanSectionViews.swift */; };
+		5C69D08C8B6F956E30C6C207 /* RuntimeObservationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B66E503D9F0A01F14D98B1 /* RuntimeObservationCoordinator.swift */; };
 		5CA268FAB2ACE1023C9400C6 /* CleanResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71666B128385B894BE12AAD /* CleanResultsView.swift */; };
 		66FEE426C5A2E85A08B3856E /* CleanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42925DD100B3A03F6F881D4D /* CleanView.swift */; };
 		6AB27F8D431DA04E9CBE1451 /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
@@ -153,6 +155,7 @@
 		A098A6340FF1565394D03EA9 /* HeadroomViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadroomViewModelTests.swift; sourceTree = "<group>"; };
 		A1830BC7E92D3BC8367D7CA3 /* ConfirmationLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationLifecycleTests.swift; sourceTree = "<group>"; };
 		A6B7D74A8EB44802249FCF97 /* TidyNativeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TidyNativeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B6B66E503D9F0A01F14D98B1 /* RuntimeObservationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeObservationCoordinator.swift; sourceTree = "<group>"; };
 		B7A92F89D44FA1B72DC2B8F0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B9519BCE2FEACF5EC9C7E8B7 /* TestHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHostApp.swift; sourceTree = "<group>"; };
 		BB5BFFC976EF0D4C4F456C0F /* RuntimeTestAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeTestAppearance.swift; sourceTree = "<group>"; };
@@ -362,6 +365,7 @@
 		86DD754657E7CC6BD74EE645 /* RuntimeVerification */ = {
 			isa = PBXGroup;
 			children = (
+				B6B66E503D9F0A01F14D98B1 /* RuntimeObservationCoordinator.swift */,
 				BB5BFFC976EF0D4C4F456C0F /* RuntimeTestAppearance.swift */,
 				F5B25FBF7AF0C67F87CE9B53 /* RuntimeTestComposition.swift */,
 			);
@@ -621,6 +625,7 @@
 				4661B0E8B32542EF9F4096BA /* PlanReviewRow.swift in Sources */,
 				D65E88E0B18491210BE597A7 /* PlanSelectionModel.swift in Sources */,
 				11E97809427040AFD975A285 /* RunReportPresentation.swift in Sources */,
+				4C57447439E2B3F47039C0BE /* RuntimeObservationCoordinator.swift in Sources */,
 				A192C8D25845315F1DB09A0C /* RuntimeTestAppearance.swift in Sources */,
 				F3C4F5282971CC85E85B0006 /* RuntimeTestComposition.swift in Sources */,
 				0F73FAAF28AF854AC46D24A6 /* ScanReportView.swift in Sources */,
@@ -656,6 +661,7 @@
 				B6BEACB16AE4A0DB51BF0C72 /* PlanReviewRow.swift in Sources */,
 				6AB27F8D431DA04E9CBE1451 /* PlanSelectionModel.swift in Sources */,
 				8184B2352CED6F8F592AA8EE /* RunReportPresentation.swift in Sources */,
+				5C69D08C8B6F956E30C6C207 /* RuntimeObservationCoordinator.swift in Sources */,
 				71786BE9080E11BA2B489E9C /* RuntimeTestAppearance.swift in Sources */,
 				FA7D1048881280A99117BEE9 /* RuntimeTestComposition.swift in Sources */,
 				D234437FBCDC2BF4EF88FA08 /* ScanReportView.swift in Sources */,

@@ -42,14 +42,17 @@ No privacy-manifest reason or category change is justified by this review. Its b
 | `ProcessIdentity`: `kern.bootsessionuuid` | boot-session UUID | Prevent process-instance evidence from transferring across boots | Also not named in the current Apple accessed-API catalogue; retained as a separate sensitive identity review row. |
 | Dedicated runtime-verification target: `RuntimeTestComposition.lstat` | fixture-root type, owner UID, and mode | Before test-only cleanup, require the exact owned mode-0700 disposable `/tmp` root; production services then use the same APIs against its synthetic home/state subtree | Apple lists `lstat` in file timestamps even though this call reads no timestamp. The guarded temporary root is neither a demonstrated Apple container nor a user-granted document, so no current reason is asserted. The target has no code-signing entitlements, skips installation, and must remain absent from distributed artifacts. |
 
+| Dedicated runtime-verification target: `RuntimeObservationCoordinator.lstat/fstat` | Root/state/staging file type, owner, mode, link count and size | Validate owned synthetic observation storage and atomically publish fixed ready/final state records | Guarded test-only storage validation; no reason is asserted for temporary roots. This code and its measurement controls must remain absent from the normal distributed artifact. |
+
 ## Direct source inventory
 
 The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ files in the app and core source roots, including conditionally compiled runtime-host source. It intentionally does not infer private framework implementation from ordinary `FileManager` methods. Generic `fgetattrlist` is reported in both categories because Apple lists it in both. `kern.boottime` and `kern.bootsessionuuid` are separate review rows because Apple's current required-reason list names neither.
 
 | Source | Direct API category | Matched tokens and lines |
 |---|---|---|
-| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@613 |
-| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@136 |
+| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@620 |
+| `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@428,455; `lstat`@406 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@147 |
 | `TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@25,37; `URLResourceValues.contentModificationDate`@46 |
 | `TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@16,24; `URLResourceValues.contentModificationDate`@35 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | File timestamp | `fstat`@45; `lstat`@45 |
