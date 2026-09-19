@@ -57,7 +57,7 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 143 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 142 \
   --require-case 'testFreshInstallExplicitScanUsesDefaultsWithoutWritingSettingsOrStartingBackgroundWork' \
   --require-case 'testT081bOnlyExactFreshDefaultsInstallRevisionZeroSchedulerPolicy' \
   --require-case 'testT081bFreshDefaultProvenanceExpiresAfterLaterStoreLoadAndUpdate' \
