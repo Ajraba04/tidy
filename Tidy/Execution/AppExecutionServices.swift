@@ -13,8 +13,8 @@ enum AppBootstrapStage: String, Sendable {
     case beforeCoordinatorConstruction, afterCoordinatorConstruction
 }
 
-/// Thrown by `AppExecutionServices.beginScan` when the T08.1b scheduler façade is genuinely not
-/// installed yet (a fresh install that has never saved settings) rather than merely busy/paused.
+/// Thrown by `AppExecutionServices.beginScan` when the T08.1b scheduler façade could not install
+/// a valid policy, such as recovery-read-only settings, rather than merely being busy or paused.
 enum ScanAvailabilityError: Error, Equatable {
     case policyNotInstalled
 }
@@ -72,6 +72,7 @@ func schedulerLiveObservation(from snapshot: SystemSnapshot) -> SchedulerLiveObs
 
 private struct AppBootstrapWorkerResult: Sendable {
     let load: SettingsLoadResult
+    let settingsBootstrap: SettingsSchedulerBootstrap
     let coordinator: ExecutionCoordinator
     let journalAdmission: MutationAdmission
 }
@@ -157,7 +158,8 @@ final class AppExecutionServices {
         let envelope = worker.load.envelope ?? SettingsEnvelope(schemaVersion: 2, revision: 0,
             config: TidyConfig(schemaVersion: 2))
         self.policyBridge = ExecutionPolicyBridge(coordinator: worker.coordinator,
-            settings: settings, loaded: worker.load, homeDirectory: paths.home.path,
+            settings: settings, bootstrap: worker.settingsBootstrap,
+            homeDirectory: paths.home.path,
             detectedTools: [])
         self.configStore = AppConfigStore(loaded: envelope, bridge: policyBridge)
         self.engine = CleanEngine(sizeScanner: SizeScanner())
@@ -250,12 +252,10 @@ final class AppExecutionServices {
     /// independent of any window's subscription lifetime, so a closed Scan window never strands
     /// (or prematurely finishes) the running scan.
     ///
-    /// A revision-zero/fresh-install envelope deliberately leaves the scheduler façade
-    /// `.unavailable` until a real settings save completes (T08.1b) — this call awaits any
-    /// pending initial install first, and if the façade is still unavailable afterward, throws
-    /// `ScanAvailabilityError.policyNotInstalled` rather than silently starting nothing. Unlike
-    /// Clean review, Scan has no honest legacy shape to fall back to (the legacy path only
-    /// returns empty rows), so a visible "not available yet" state is the only truthful option.
+    /// This call awaits the initial scheduler install. Exact in-memory defaults from a missing
+    /// settings file may install read-only explicit-scan policy; recovery, malformed, migrated,
+    /// and arbitrary stored revision-zero documents remain unavailable. If installation is still
+    /// unavailable, this throws rather than silently starting nothing.
     func issueFullHomeScanConsent(ownerID: UUID) throws -> FullHomeScanConsent {
         try scanScopeAuthority.issueFullHomeConsent(ownerID: ownerID)
     }
@@ -642,7 +642,8 @@ final class AppExecutionServices {
         -> AppExecutionServices {
         let worker = await Task.detached {
             observe(.beforeSettingsLoad)
-            let load = await settings.load()
+            let settingsBootstrap = await settings.loadForSchedulerBootstrap()
+            let load = settingsBootstrap.result
             observe(.afterSettingsLoad)
             let config = load.envelope?.config ?? TidyConfig(schemaVersion: 2)
             let environment = config.makePolicyEnvironment(homeDirectory: paths.home.path,
@@ -652,8 +653,8 @@ final class AppExecutionServices {
                 journalDirectory: paths.journal)
             observe(.afterCoordinatorConstruction)
             let admission = await coordinator.mutationAdmission()
-            return AppBootstrapWorkerResult(load: load, coordinator: coordinator,
-                journalAdmission: admission)
+            return AppBootstrapWorkerResult(load: load, settingsBootstrap: settingsBootstrap,
+                coordinator: coordinator, journalAdmission: admission)
         }.value
         let services = AppExecutionServices(paths: paths, settings: settings, worker: worker,
             scanLifecycleHook: scanLifecycleHook, scanTraversalLimits: scanTraversalLimits)

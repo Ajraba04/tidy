@@ -6,6 +6,11 @@ import XCTest
 
 private enum A3Failure: Error { case timeout, setup }
 
+private final class WeakSettingsStoreBox {
+    weak var value: SettingsStore?
+    init(_ value: SettingsStore) { self.value = value }
+}
+
 private struct A3Scratch {
     let root: URL
     var home: URL { root.appendingPathComponent("home", isDirectory: true) }
@@ -1433,6 +1438,7 @@ private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
         case presentationAdmission
         case queuedPermit
         case durablySavedBeforeCommit
+        case freshBootstrapPreparing
     }
 
     private var blocked: Set<Point> = []
@@ -1483,6 +1489,8 @@ private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
 
     func receive(_ event: SchedulerTestEvent) async {
         switch event {
+        case .invalidationClaiming(revision: 0):
+            await hit(.freshBootstrapPreparing)
         case .presentationPrepared:
             await hit(.presentationPrepared)
         case .enqueued:
@@ -1540,9 +1548,13 @@ extension SharedSettingsWiringTests {
     }
 
     private func t081Bridge(_ scratch: A3Scratch, _ services: AppExecutionServices,
+                            loaded: SettingsLoadResult? = nil,
+                            bootstrap: SettingsSchedulerBootstrap? = nil,
                             hook: T081BridgeGate) -> ExecutionPolicyBridge {
         ExecutionPolicyBridge(coordinator: services.coordinator, settings: services.settings,
-            loaded: services.settingsLoad, homeDirectory: scratch.home.path, detectedTools: [],
+            loaded: loaded ?? services.settingsLoad,
+            bootstrap: bootstrap,
+            homeDirectory: scratch.home.path, detectedTools: [],
             pendingByteLimit: 32 * 1_048_576, schedulerTestHook: hook, testHook: hook)
     }
 
@@ -1841,14 +1853,66 @@ extension SharedSettingsWiringTests {
         }
     }
 
-    func testT081bInitialZeroRevisionAndRecoveryKeepFacadeUnavailable() async throws {
+    func testT081bOnlyExactFreshDefaultsInstallRevisionZeroSchedulerPolicy() async throws {
         try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            let session = try await bridge.explicitSessions.beginSession(
+                requirements: self.t081HeadroomRequirements())
+            await bridge.explicitSessions.finish(session: session)
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope?.revision, 0)
+
+            let replay = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await replay.drain()
+            XCTAssertNil(replay.acknowledgedScanEnvelope,
+                "Absent-file bootstrap provenance must be single-use")
+
+            var issuingStore: SettingsStore? = SettingsStore(url: scratch.root
+                .appendingPathComponent("foreign/config.json"))
+            let foreignBootstrap = await issuingStore!.loadForSchedulerBootstrap()
+            let retainedIssuingStore = WeakSettingsStoreBox(issuingStore!)
+            issuingStore = nil
+            XCTAssertNotNil(retainedIssuingStore.value,
+                "Bootstrap evidence must retain its issuing actor, not only its address")
+            let foreign = self.t081Bridge(scratch, services,
+                loaded: foreignBootstrap.result, bootstrap: foreignBootstrap,
+                hook: T081BridgeGate())
+            await foreign.drain()
+            XCTAssertNil(foreign.acknowledgedScanEnvelope,
+                "Bootstrap provenance from another SettingsStore must not transfer")
+        }
+
+        try await run(seed: t081Envelope(revision: 0)) { scratch, services, _ in
+            XCTAssertEqual(services.settingsLoad.disposition, .loaded)
             let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
             await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
             do {
                 _ = try await bridge.explicitSessions.beginSession(
                     requirements: self.t081HeadroomRequirements())
-                XCTFail("revision-zero defaults installed a scheduler policy")
+                XCTFail("stored revision-zero settings installed scheduler policy")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+
+        try await run { scratch, services, _ in
+            let forged = SettingsLoadResult(disposition: .newDefaults,
+                envelope: SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion,
+                    revision: 0,
+                    config: TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion)),
+                recoveryReason: nil)
+            let bridge = self.t081Bridge(scratch, services, loaded: forged,
+                hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("caller-forged defaults installed scheduler policy")
             } catch let error as WorkSchedulerError {
                 XCTAssertEqual(error, .admissionUnavailable)
             }
@@ -1865,6 +1929,117 @@ extension SharedSettingsWiringTests {
             } catch let error as WorkSchedulerError {
                 XCTAssertEqual(error, .admissionUnavailable)
             }
+        }
+
+        try await run(seed: Data(#"{"schemaVersion":999,"revision":0,"config":{}}"#.utf8)) {
+          scratch, services, _ in
+            XCTAssertEqual(services.settingsLoad.disposition, .recoveryReadOnly)
+            XCTAssertEqual(services.settingsLoad.recoveryReason, .unsupportedSchema(999))
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+        }
+    }
+
+    func testT081bFreshDefaultsFirstSaveClosesAdmissionThenInstallsRevisionOne() async throws {
+        try await run { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let requirements = try self.t081HeadroomRequirements()
+            let initial = try await sessions.beginSession(requirements: requirements)
+            await sessions.finish(session: initial)
+
+            await hook.block(.invalidatingAdmission)
+            let id = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 0,
+                id: id, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("first durable settings save was not admitted")
+            }
+            await hook.wait(for: .invalidatingAdmission)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: scratch.paths.settings.path))
+            do {
+                _ = try await sessions.beginSession(requirements: requirements)
+                XCTFail("session crossed the first-save admission barrier")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUpdating)
+            }
+
+            await hook.release(.invalidatingAdmission)
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("first settings save did not become durable")
+            }
+            XCTAssertEqual(saved.revision, 1)
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope, saved)
+            let snapshot = await sessions.snapshot()
+            XCTAssertEqual(snapshot.settingsRevision, 1)
+            let after = try await sessions.beginSession(requirements: requirements)
+            await sessions.finish(session: after)
+        }
+    }
+
+    func testT081bFreshDefaultProvenanceExpiresAfterLaterStoreLoadAndUpdate() async throws {
+        try await run { scratch, services, _ in
+            let stale = await services.settings.loadForSchedulerBootstrap()
+            _ = await services.settings.load()
+            let bridge = self.t081Bridge(scratch, services, loaded: stale.result,
+                bootstrap: stale, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A later load must invalidate absent-file provenance")
+        }
+
+        try await run { scratch, services, _ in
+            let stale = await services.settings.loadForSchedulerBootstrap()
+            _ = try await services.settings.update(expectedRevision: 0,
+                change: .transcriptAgeDays(60))
+            let bridge = self.t081Bridge(scratch, services, loaded: stale.result,
+                bootstrap: stale, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A later update must invalidate absent-file provenance")
+        }
+
+        try await run { scratch, services, _ in
+            await services.settings.forceSchedulerBootstrapGenerationForTesting(UInt64.max)
+            let exhausted = await services.settings.loadForSchedulerBootstrap()
+            XCTAssertEqual(exhausted.result.disposition, .recoveryReadOnly)
+            XCTAssertEqual(exhausted.result.recoveryReason, .unavailable)
+            let bridge = self.t081Bridge(scratch, services, loaded: exhausted.result,
+                bootstrap: exhausted, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "Bootstrap generation exhaustion must fail closed")
+        }
+    }
+
+    func testT081bFreshBootstrapReservationSerializesSettingsAccess() async throws {
+        try await run { scratch, services, _ in
+            let hook = T081BridgeGate()
+            await hook.block(.freshBootstrapPreparing)
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: hook)
+            let installing = Task { @MainActor in await bridge.drain() }
+            await hook.wait(for: .freshBootstrapPreparing)
+
+            let blockedLoad = await services.settings.load()
+            XCTAssertEqual(blockedLoad.disposition, .recoveryReadOnly)
+            XCTAssertEqual(blockedLoad.recoveryReason, .unavailable)
+            do {
+                _ = try await services.settings.update(expectedRevision: 0,
+                    change: .transcriptAgeDays(60))
+                XCTFail("Settings update crossed the bootstrap reservation")
+            } catch let error as SettingsStoreError {
+                XCTAssertEqual(error, .unavailable)
+            }
+
+            await hook.release(.freshBootstrapPreparing)
+            await installing.value
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope?.revision, 0)
         }
     }
 

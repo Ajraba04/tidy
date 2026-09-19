@@ -123,6 +123,36 @@ private struct Rig {
 
 @Suite(.serialized)
 struct WorkSchedulerTests {
+    @Test func revisionZeroRequiresExactFreshDefaultOrigin() async throws {
+        let exact = SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion, revision: 0,
+            config: TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion))
+
+        let ordinary = try Rig.make()
+        let ordinaryResult = try await ordinary.prepare(exact)
+        #expect(ordinaryResult == .failedClosed(.invalidPolicyDocument))
+
+        let allowed = try Rig.make()
+        let admission = try allowed.controller.beginAdmissionTransition(using: allowed.owner)
+        let prepared = await allowed.controller.prepare(admission, candidate: exact,
+            observation: .unknown, origin: .freshDefaults, using: allowed.owner)
+        let token = try #require(prepared.token)
+        #expect(await allowed.controller.commit(token, acknowledgedEnvelope: exact,
+            using: allowed.owner) == .committed(settingsRevision: 0))
+        #expect((await allowed.scheduler.snapshot()).settingsRevision == 0)
+        #expect(await allowed.controller.updateObservation(epoch: 1, observation: .nominal,
+            acknowledgedEnvelope: exact, using: allowed.owner) == .applied)
+
+        var changedConfig = TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion)
+        changedConfig.gitRoots = ["/private/forged"]
+        let forged = SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion, revision: 0,
+            config: changedConfig)
+        let rejected = try Rig.make()
+        let rejectedAdmission = try rejected.controller.beginAdmissionTransition(using: rejected.owner)
+        #expect(await rejected.controller.prepare(rejectedAdmission, candidate: forged,
+            observation: .unknown, origin: .freshDefaults, using: rejected.owner)
+            == .failedClosed(.invalidPolicyDocument))
+    }
+
     @Test func tenSessionsShareOneExactAggregateCap() async throws {
         let rig = try Rig.make(); try await rig.install(envelope(1, workers: 4))
         let gate = Gate(); var sessions: [WorkSession] = []
