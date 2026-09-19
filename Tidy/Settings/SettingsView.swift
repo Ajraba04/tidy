@@ -1562,7 +1562,9 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.section." + section.rawValue)
                 }
             }.pickerStyle(.segmented)
-            TextField("Search settings", text: $query).accessibilityIdentifier("settings.search")
+            TextField("Search settings", text: $query)
+                .accessibilityLabel("Search settings")
+                .accessibilityIdentifier("settings.search")
             Toggle("Show Advanced", isOn: Binding(get: { revealsAdvanced }, set: { value in
                 showsAdvanced = value
                 _ = model.submit(id: SettingID(rawValue: "ui.advancedSettings"),
