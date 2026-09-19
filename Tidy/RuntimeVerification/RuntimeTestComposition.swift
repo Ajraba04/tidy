@@ -11,6 +11,8 @@ enum RuntimeTestScenario: String {
     case futureSettings = "future-settings"
     case hiddenOff = "hidden-off"
     case hiddenAuthorized = "hidden-authorized"
+    case performance50k = "performance-50k"
+    case activeCancel20 = "active-cancel-20"
 }
 
 /// Exists only in the dedicated runtime-verification target. The distributed
@@ -31,6 +33,8 @@ enum RuntimeTestComposition {
         if arguments.contains("--tidy-runtime-cancel-queued") { return .cancelQueued }
         if arguments.contains("--tidy-runtime-hidden-off") { return .hiddenOff }
         if arguments.contains("--tidy-runtime-hidden-authorized") { return .hiddenAuthorized }
+        if arguments.contains("--tidy-runtime-performance-50k") { return .performance50k }
+        if arguments.contains("--tidy-runtime-active-cancel-20") { return .activeCancel20 }
         return .acknowledged
     }
 
@@ -59,6 +63,8 @@ enum RuntimeTestComposition {
             switch scenario {
             case .acknowledged, .cancelQueued:
                 try seedAcknowledgedSettings(at: settings)
+            case .performance50k, .activeCancel20:
+                try seedPerformanceSettings(at: settings)
             case .hiddenOff:
                 try seedObservationSettings(at: settings, authorized: false)
             case .hiddenAuthorized:
@@ -70,7 +76,8 @@ enum RuntimeTestComposition {
                 try fileManager.setAttributes([.posixPermissions: 0o600],
                                               ofItemAtPath: settings.path)
             }
-            try seedSyntheticHome(at: home, fileManager: fileManager)
+            try seedSyntheticHome(at: home, fileManager: fileManager,
+                performance50k: scenario == .performance50k || scenario == .activeCancel20)
             return AppStoragePaths(home: home, settings: settings, journal: journal)
         } catch {
             _ = removeOwnedRoot(root)
@@ -94,7 +101,8 @@ enum RuntimeTestComposition {
         let settingsExists = fileManager.fileExists(atPath: paths.settings.path)
         let settingsState: String
         switch scenario {
-        case .acknowledged, .cancelQueued, .hiddenOff, .hiddenAuthorized:
+        case .acknowledged, .cancelQueued, .hiddenOff, .hiddenAuthorized,
+             .performance50k, .activeCancel20:
             settingsState = settingsExists ? "ready" : "missing"
         case .freshDefaults: settingsState = settingsExists ? "unexpected" : "absent"
         case .futureSettings:
@@ -205,6 +213,16 @@ enum RuntimeTestComposition {
         try writeSettings(envelope, to: url)
     }
 
+    private static func seedPerformanceSettings(at url: URL) throws {
+        let config = TidyConfig(schemaVersion: 2, hasCompletedOnboarding: true)
+        let preferences = PolicyPreferences(global: PolicyValues(fields: [
+            SettingID(rawValue: "scan.cacheEnabled"): .bool(false),
+        ]))
+        let envelope = SettingsEnvelope(schemaVersion: 2, revision: 1, config: config,
+                                        preferences: preferences)
+        try writeSettings(envelope, to: url)
+    }
+
     private static func writeSettings(_ envelope: SettingsEnvelope, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -214,20 +232,28 @@ enum RuntimeTestComposition {
                                                ofItemAtPath: url.path)
     }
 
-    private static func seedSyntheticHome(at home: URL, fileManager: FileManager) throws {
+    private static func seedSyntheticHome(at home: URL, fileManager: FileManager,
+                                          performance50k: Bool) throws {
         let workspace = home.appendingPathComponent("SyntheticWorkspace", isDirectory: true)
         try createPrivateDirectory(workspace, fileManager: fileManager)
         try witnessBytes.write(to: witnessURL(home: home))
 
         let payload = Data(repeating: 0x54, count: 4_096)
-        for directoryIndex in 0..<80 {
+        if performance50k { try requirePerformanceHeadroom(at: home) }
+        let directoryCount = performance50k ? 500 : 80
+        let filesPerDirectory = performance50k ? 100 : 64
+        for directoryIndex in 0..<directoryCount {
             let directory = workspace.appendingPathComponent(
-                String(format: "batch-%02d", directoryIndex), isDirectory: true)
+                String(format: "batch-%03d", directoryIndex), isDirectory: true)
             try createPrivateDirectory(directory, fileManager: fileManager)
-            for fileIndex in 0..<64 {
+            for fileIndex in 0..<filesPerDirectory {
                 let file = directory.appendingPathComponent(
-                    String(format: "entry-%02d.bin", fileIndex))
-                try payload.write(to: file)
+                    String(format: "entry-%03d.bin", fileIndex))
+                if performance50k {
+                    try createEmptyFile(file)
+                } else {
+                    try payload.write(to: file)
+                }
             }
         }
 
@@ -239,6 +265,27 @@ enum RuntimeTestComposition {
         for fileIndex in 0..<32 {
             try payload.write(to: quickRoot.appendingPathComponent(
                 String(format: "quick-%02d.bin", fileIndex)))
+        }
+    }
+
+    private static func requirePerformanceHeadroom(at url: URL) throws {
+        var info = statfs()
+        guard statfs(url.path, &info) == 0, info.f_bavail >= 0, info.f_bsize > 0 else {
+            throw POSIXError(.EIO)
+        }
+        let (available, overflow) = UInt64(info.f_bavail)
+            .multipliedReportingOverflow(by: UInt64(info.f_bsize))
+        guard !overflow, available >= 2_147_483_648 else { throw POSIXError(.ENOSPC) }
+    }
+
+    private static func createEmptyFile(_ url: URL) throws {
+        let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                              0o600)
+        guard descriptor >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        guard close(descriptor) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
 }
@@ -270,6 +317,9 @@ private actor RuntimeTestPermitHoldGate {
 
     func release() {
         released = true
+        let enteredWaiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in enteredWaiters { waiter.resume() }
         let waiters = releaseWaiters
         releaseWaiters.removeAll()
         for waiter in waiters { waiter.resume() }
@@ -327,6 +377,7 @@ private final class RuntimeTestQueuedCancellationBlocker {
     func releaseAndAttest() async -> String {
         if !released {
             released = true
+            if let blockerSession { await sessions.cancel(session: blockerSession) }
             await gate?.release()
             for task in tasks { await task.value }
             if let blockerSession { await sessions.finish(session: blockerSession) }
@@ -387,6 +438,9 @@ struct RuntimeTestControlView: View {
             RuntimeTestAppearanceAttestation()
             if scenario == .hiddenOff || scenario == .hiddenAuthorized {
                 RuntimeObservationControl(services: services, scenario: scenario)
+            }
+            if scenario == .performance50k || scenario == .activeCancel20 {
+                RuntimePerformanceControl(services: services, scenario: scenario)
             }
             Text("This dedicated build uses production scenes and services with disposable storage.")
                 .fixedSize(horizontal: false, vertical: true)
@@ -484,6 +538,7 @@ struct RuntimeTestControlView: View {
             services.disposeMonitoring()
             Task { @MainActor in
                 await RuntimeObservationCoordinator.stopIfActive()
+                await RuntimePerformanceCoordinator.stopIfActive()
                 _ = await queuedCancellationBlocker?.releaseAndAttest()
                 await services.disposeScanResourcesForTesting()
                 RuntimeTestComposition.cleanupIfRegistered()
@@ -539,6 +594,7 @@ struct RuntimeTestRecoveryAttestationView: View {
                 services.disposeMonitoring()
                 Task { @MainActor in
                     await RuntimeObservationCoordinator.stopIfActive()
+                    await RuntimePerformanceCoordinator.stopIfActive()
                     await services.disposeScanResourcesForTesting()
                     RuntimeTestComposition.cleanupIfRegistered()
                     NSApp.terminate(nil)
