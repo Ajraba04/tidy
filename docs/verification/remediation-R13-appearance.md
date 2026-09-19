@@ -30,3 +30,36 @@ The public AppKit content-view label correction passed its original audit findin
 
 
 The first scroll-document correction adds a named semantic content group plus a public NSScrollView document-label bridge. The focused run `/tmp/tidy-r13-compact-ax-scroll-20260919.xcresult` still reports an unnamed `Other` container at the scroll-document bounds. This reviewed source checkpoint is retained for exact independent-observer provenance; the compact audit remains RED and its remaining container is under diagnosis. The audit is not filtered, and final verification must still run and pass the exact compact case.
+
+
+### Bounded compact accessibility diagnosis continuation
+
+A fresh public XCTest hierarchy trace is retained at `/tmp/tidy-r13-compact-public-trace-20260919.xcresult` and `/tmp/tidy-r13-compact-public-trace-20260919.log`. It reproduced the description failure in 17.708 seconds and showed the exact path `ScrollView` → `Other` labelled `Settings content` → same-frame unnamed `Other` → independently exposed setting rows, checkbox and metadata. This established that the remaining element was inside the labelled outer SwiftUI content container. The temporary trace instrumentation was removed after capture.
+
+The first bounded hypothesis removed the outer semantic wrapper while retaining the AppKit document bridge. `/tmp/tidy-r13-compact-ax-green2-20260919.xcresult` remained RED, one test with one failure in 18.614 seconds. Its failure attachment showed two same-frame unnamed `Other` elements, contradicting the claim that the public AppKit bridge labelled the exposed scroll document.
+
+Source inspection matched those two elements to the two intentional nested `LazyVStack` containers: the production settings content and `RegistrySettingsContent`. The second and final bounded hypothesis labels both containers with SwiftUI `.contain` semantics and removes the ineffective AppKit bridge. `/tmp/tidy-r13-compact-ax-green3-20260919.xcresult` advanced past the unnamed-container finding. Its failure path shows both `Settings content` and `Settings registry` labels, followed by the independently exposed `settings.row.feature.headroom` group and `settings.metadata.feature.headroom` static text.
+
+The compact case remains RED: one test with one failure in 16.859 seconds. The unfiltered audit now reports `Contrast failed` for `settings.metadata.feature.headroom`, frame 445 by 162 points, with the detail `Contrast failed for Default: On. Effective: On. Source: Built-in. Rule: On or off`. All pre-audit physical containment checks and the separate enabled/hittable checkbox and metadata queries completed before that finding. Teardown still invoked fixture cleanup and waited for the runtime host to terminate. Per the two-hypothesis bound, no contrast patch or further GUI run was attempted; this newly exposed contrast finding remains a separate unresolved accessibility seam for review.
+
+
+### Consolidated review correction
+
+The reviewer inspected the retained green3 failure screenshot (`/tmp/tidy-review-contrast-element.png`): fully visible metadata is gray on white. The controller changed only `SettingsVisualContract.metadataRole` from secondary to primary text, retaining headline/body hierarchy and all semantic endpoints. The existing model contract assertion now requires that role. No further exploratory compact run was made; the unchanged unfiltered compact case will run once in final aggregate verification. Until that result, compact acceptance remains pending.
+
+
+### Single final aggregate outcome
+
+The resumed final verifier ran the unchanged compact audit once from the corrected
+source. Its pre-audit compact geometry, metadata and independent-checkbox assertions
+completed, but XCTest returned `com.apple.xcode.xctest.accessibilityAudit` code -56,
+“Audit failed to complete in time”, on the Settings audit before producing any issue
+result. Test duration was 45.166 seconds including teardown. The unfiltered audit
+therefore remains **NOT ACCEPTED**: neither a contrast pass nor an unnamed-container
+regression is inferred from a tool timeout. Per the user's “don't overtest” instruction,
+no retry or additional audit run follows.
+
+Evidence: `/private/tmp/tidy-resume-verification-2i64nn35/production-native-ui.log`
+and its `production-native-ui.xcresult` bundle. Earlier green3 description progress
+and contrast failure remain historical evidence; the screenshot-supported primary
+text correction is source-reviewed but still lacks a completed final native audit.

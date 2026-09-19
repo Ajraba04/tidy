@@ -4302,7 +4302,7 @@ extension SharedSettingsWiringTests {
             XCTAssertTrue(rows.allSatisfy { !$0.defaultText.isEmpty && !$0.effectiveText.isEmpty &&
                 !$0.sourceText.isEmpty && !$0.ruleText.isEmpty && !$0.consequence.isEmpty })
             XCTAssertEqual(SettingsVisualContract.titleRole, .primary)
-            XCTAssertEqual(SettingsVisualContract.metadataRole, .secondary)
+            XCTAssertEqual(SettingsVisualContract.metadataRole, .primary)
             XCTAssertEqual(SettingsVisualContract.unavailableRole, .warning)
             XCTAssertEqual(SettingsVisualContract.layoutMode(for: .large), .columns)
             XCTAssertEqual(SettingsVisualContract.layoutMode(for: .accessibility1), .stacked)

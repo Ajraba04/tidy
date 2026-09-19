@@ -43,6 +43,9 @@ No privacy-manifest reason or category change is justified by this review. Its b
 | Dedicated runtime-verification target: `RuntimeTestComposition.lstat` | fixture-root type, owner UID, and mode | Before test-only cleanup, require the exact owned mode-0700 disposable `/tmp` root; production services then use the same APIs against its synthetic home/state subtree | Apple lists `lstat` in file timestamps even though this call reads no timestamp. The guarded temporary root is neither a demonstrated Apple container nor a user-granted document, so no current reason is asserted. The target has no code-signing entitlements, skips installation, and must remain absent from distributed artifacts. |
 | Dedicated runtime-verification target: `RuntimeObservationCoordinator.lstat/fstat` | Root/state/staging file type, owner, mode, link count and size | Validate owned synthetic observation storage and atomically publish fixed ready/final state records | Guarded test-only storage validation; no reason is asserted for temporary roots. This code and its measurement controls must remain absent from the normal distributed artifact. |
 
+| Dedicated runtime-verification target: `RuntimePerformanceComposition.lstat/fstat` | Root/state/proceed-token type, owner, mode and size; fixture entry type, owner, link count, logical size and allocated blocks | Validate the owned observer handshake and fixed 50k synthetic fixture, measure its composition, and publish bounded result documents | Test-only storage and fixture measurements; no new reason is asserted. This code must remain absent from the distributed artifact. |
+| Dedicated runtime-verification target: `RuntimeTestComposition.statfs` | Available blocks and block size | Refuse performance fixture setup unless at least 2 GiB is available on its temporary volume | Test-only sufficient-write-space guard; no new manifest reason is asserted by this source refresh. The test target remains excluded from distribution. |
+
 ## Direct source inventory
 
 The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ files in the app and core source roots, including conditionally compiled runtime-host source. It intentionally does not infer private framework implementation from ordinary `FileManager` methods. Generic `fgetattrlist` is reported in both categories because Apple lists it in both. `kern.boottime` and `kern.bootsessionuuid` are separate review rows because Apple's current required-reason list names neither.
@@ -50,8 +53,10 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | Source | Direct API category | Matched tokens and lines |
 |---|---|---|
 | `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@620 |
-| `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@428,455; `lstat`@406 |
-| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@147 |
+| `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@410,437; `lstat`@388 |
+| `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@655; `lstat`@279,546,630 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@155 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | Disk space | `statfs`@272 |
 | `TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@25,37; `URLResourceValues.contentModificationDate`@46 |
 | `TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@16,24; `URLResourceValues.contentModificationDate`@35 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | File timestamp | `fstat`@45; `lstat`@45 |

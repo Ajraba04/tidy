@@ -1,64 +1,73 @@
 # Headroom remediation acceptance
 
-Baseline: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a`, audit 2026-09-17. Execution branch: `codex/remediation-20260917`. This is a working evidence record, not a release approval. The original audit and approved program scope remain binding.
+Audit baseline: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a`, 2026-09-17. Continued execution: 2026-09-19, branch `codex/remediation-20260917`, isolated worktree `/Users/mac/Desktop/AJR/tidy-remediation-20260917`.
 
-**Current advertised application: NO-GO. Full program: INCOMPLETE.** A denied mutation is a successful containment boundary and an unavailable promised workflow. These are separate outcomes.
+**Current advertised application: NO-GO. Full program: INCOMPLETE.** Read-only functionality, containment, source review, native fixtures and distribution acceptance are separate exits. An unavailable promised workflow is not a completed workflow.
 
-## Capability, locale and distribution manifest
+## Capability and distribution record
 
-| Field | Current source / assessment |
+| Field | Current state |
 | --- | --- |
-| Source version/build | 1.5.0 / 1 in `project.yml`; not a new published release |
-| Platforms | macOS 14+ target, arm64 and x86_64; runtime matrix still open |
+| Source version/build | 1.5.0 / 1; no new published release |
+| Platform target | macOS 14+, arm64 and x86_64; supported runtime matrix remains unverified |
 | Locale | English; no additional locale acceptance claimed |
-| Distribution | Intended manual GitHub ZIP/DMG, optional signing/notarization; no publication authorized or performed |
-| Compiled mutation allowlist | Empty; every catalog mutation including DerivedData quarantined |
-| Forbidden destructive scope | Repository/database/model/Docker-volume/generic-duplicate deletion and broad erase/prune routes remain forbidden |
-| Scan / monitor | Read-only capability under active scope/lifetime/policy remediation; per-package evidence below |
-| Unattended authority | Initial mutation allowlist empty; settings, profiles, notification/monitor consent do not grant effect authority |
-| Release scope approval | No new capability/distribution release manifest approved; this record does not narrow the promised program |
+| Distribution | Intended manual ZIP/DMG; signing/notarization remain optional; no publication |
+| Compiled mutations | Every catalog mutation, including DerivedData, remains denied |
+| Tool handoff | `detectedTools: []`; no restored mutation/tool reachability |
+| Explicit scans | Validated missing-file defaults can start Quick without a settings write; full home requires separate expiring one-run consent |
+| Background authority | Initial unattended mutation allowlist remains empty; scan/settings/monitor consent grants no effects |
+| Forbidden destructive scope | Repository/database/model/Docker-volume/generic-duplicate deletion and broad prune/erase paths remain forbidden |
+| Scope approval | No changed capability/distribution manifest has been approved; promised program scope is unchanged |
 
 ## Work-package ledger
 
-| Package | Implementation/containment evidence | Acceptance still required |
+| Package | Implemented or verified | Remaining acceptance / dependency |
 | --- | --- | --- |
-| R01 | Committed `651e703`; 15 core + 1 model tests; independent review `775d2fb` clean | Immediate containment accepted. Positive cleanup remains R02–R05/R10. |
-| R02 | Foundation `0ddd0f9`; archive binding fix `676c22e`; 8 authority + 29 guarded-deletion tests passed | Supported real Xcode producer exclusion/ownership proof; fixture leases alone cannot close it. |
-| R03 | R02 exact archive exists; production lifecycle entry remains blocked by the accepted-adapter prerequisite | Durable pending/terminal lifecycle, crash/relaunch, bounded storage and positive reconciliation. |
-| R04 | Open after accepted resource/lifecycle contracts; no accepted production effect | Streaming bounds, policy/cancel at leaf, contention/reaping and measured physical gates. |
-| R05 | Open, dependent on safety plus R06/R08 | Fresh-install scope-safe scans, measured-volume targets and accepted adapter reachability. |
-| R06 | Scoped/resumable source plus app integration `cdb57c1`/`139a2b8`; 14 focused app tests passed; final review corrections in progress | Final integrated/runtime acceptance. Indexed Continue has an event-history witness; index-disabled terminal partials truthfully offer no Continue and require a new scan. General continuation breadth and measured cancel bounds remain open. |
-| R07 | App index wiring and linked-cache protection committed; real 100k fixture matched fresh totals and reduced metadata visits from 100502 to 0; final cache-trust review corrections in progress | App-owned index, real FSEvents catch-up/loss, size/expiry and >=80% actual metadata-visit reduction with complete parity. |
-| R08 | Policy/monitor/history source integrated; history revision, pressure recovery, disable publication, volume epoch and bootstrap corrections committed; final scene-disposal review correction in progress | Integrated scene/policy/history/migration/registry/privacy consumers and production presentation acceptance. |
-| R09 | Open after prerequisites | Full projects/ranking/Build Prep T11–T13 and production integration. |
-| R10 | Open after ownership/ranking/safety | Every ecosystem `.I`/`.M` adapter/version matrix; permanent inventory-only resources accepted only under that explicit contract. |
-| R11 | Open after supported adapters | Instance-safe rescue, notification rules and separate local standing-authority ledger. |
-| R12 | Checkpoint `981052b`: 19 focused tooling tests and static generation/privacy gates passed; see [R12 evidence](remediation-R12.md) | Final integrated aggregate/build, real isolated service acceptance, generated reference/migrations; production runtime acceptance remains open. |
-| R13 | Synthetic native UI: 2/2 passed after Settings AX fix `4ef9956`; earlier two runner-startup failures preserved | Production native journeys/AX/human checks, traffic instrumentation, complete API reason mapping, numeric hardware/OS gates. |
-| R14 | Corrected truthful README, Gatekeeper instructions, contributor workflow, partial privacy API map and package checksum/provenance output | Immutable final packaged bytes/provenance, actual signature/entitlements, install/upgrade/uninstall and recovery witnesses. No release. |
+| R01 | Full compiled mutation quarantine and public/raw-route denial tests | Containment closed; positive cleanup remains unavailable |
+| R02 | Exact reviewed identity/manifest/protection archive, stale proof and hostile binding tests | Real supported producer-owned exclusion and complete shared-owner proof unavailable; ordinary Darwin file-lease probe also denied |
+| R03 | Existing durable foundations and R02 archive interface retained | Positive effect lifecycle, adapter-specific reconciliation, crash/relaunch, bounded retirement; original T04.C prerequisite remains binding |
+| R04 | Existing process/scheduler bounds and denied dispatch retained | Accepted-effect streaming, leaf cancellation/contention/reaping and reference measurements depend on R02/R03 |
+| R05 | `dbf9c72`/`4fe419e`: store-bound canonical defaults, generation/single-use/disk-image checks, explicit first-launch scan, first-save barrier; native Quick journey passes without `config.json` | Controlled tool discovery/handoff and mutation delivery still depend on R02–R04; no blanket revision-zero admission |
+| R06 | Scoped traversal, live constraints, shared cancellation, indexed Continue and atomic watch checkpoint; `76590e3` releases consumed scope/consent metadata; native consent/cancel/reopen journeys pass | Source/current-host functional implementation complete; index-disabled terminal partials truthfully offer no Continue. Physical critical/thermal/LPM/sleep delivery, multiple-volume/remount behavior and measured UI/worker latency gates remain open |
+| R07 | App-owned bounded index/event buffers, restart/catch-up/loss/device checks, real 100k complete parity and metadata-visit reduction | Reference performance, long-run failure/physical matrix and full supported-OS coverage remain separate |
+| R08 | Scene leases, snapshot replay, live policy/history/volume ordering; `b171d85` adds supported-shape/future/corrupt/import/reset fixtures preserving a real unresolved admission record | Future consumers remain R09–R11; diagnostic renderer disk candidates are tested, but production diagnostic export/lifecycle remains unavailable |
+| R09 | Minimum earlier ownership foundation retained | Remaining projects/ranking/Build Prep T11–T13 follows the plan's unclosed R02–R08 prerequisites |
+| R10 | Existing inventory/denial boundaries retained | Each remaining ecosystem inventory and mutation/denial unit, supported-version matrix and production integration |
+| R11 | Empty initial unattended allowlist and unavailable consumers retained | Instance-safe rescue, notification rules, separate local standing authority and supported-adapter-dependent assistance |
+| R12 | All 10 project phases/test membership; exact required tests; isolated process-cap gate; runtime flag/bundle/test-target/binary isolation; live privacy-table identity | Single final aggregate: Core701 + isolated1 + models144 + presentation2 passed; production native10/11 with compact audit timeout, exit65; external CI remains distinct |
+| R13 | `be8e34d`: 6/6 real production-scene journeys in a compile-scoped disposable host; 2/2 presentation tests previously pass; exact direct API mapping and limited current-host observation | Human VoiceOver/complete AX journey, appearance/Reduce Motion matrix, reference hardware/OS, full workflow traffic, exact privacy reasons and numeric physical gates |
+| R14 | Local checkpoint ZIP/DMG strict signatures, slices, version/resources/checksums/parity and copy/replace/remove witness rehearsal | Final-source packages are pending; actual supported-host install/launch/upgrade/uninstall, optional signed/notarized path and approved release manifest remain open |
 
-The complete baseline row mapping remains in `docs/audits/2026-09-17-9e1a500/coverage-ledger.md`. No checklist row closes through an ownership assignment or an unavailable label alone.
+The original exhaustive mapping remains in `docs/audits/2026-09-17-9e1a500/coverage-ledger.md`. This table does not erase any row or narrow its closure criteria.
 
-## Host and evidence boundaries
+## Current evidence
 
-This execution uses the user's M1 Max Mac, 32 GiB, macOS 27.0 build 26A428, Xcode 27.0 build 27A266a and Swift 6.4. These are development/diagnostic measurements. They do not substitute for the exact 8 GiB Apple Silicon and Intel reference machines or the oldest-supported/current-stable runtime matrix required by the approved plan.
+Resume baseline `ca24965` had compact accessibility and hidden-window fixture failures.
+The resumed semantic-label and metadata-color corrections compiled; the single final
+compact audit timed out in XCTest (code -56), so native accessibility remains unaccepted. The hidden fixture passed its one 120-second external-observer run; the
+consolidated source review passed after three bounded corrections. The final aggregate
+exited65: Core701, isolated1, models144 and presentation2 passed; production native
+finished10 passed/1 failed. No repeat was run under the user's “don't overtest” instruction.
+Historical Core/model/native results below are retained as checkpoint evidence only.
+The known model teardown race was corrected by requiring 200 active leases before
+deinitialization; its focused repetitions passed. Current required counts are 701 Core
+plus one isolated process-cap case, 144 models, two presentation cases, and 11 ordinary
+production-native cases. Separate observation/performance wrappers require their external
+observer. None of the earlier failed aggregate runs is relabeled as passing.
 
-The synthetic native UI target is presentation-only and has no discovery/persistence/effect authority. Two early unsigned/ad-hoc attempts failed during XCTest bootstrap before assertions. A later fresh fixture build and native suite passed both tests, including distinct Settings row/editor/metadata elements and editor submission. Earlier failures remain preserved; the new result supersedes them only for these synthetic assertions. No human VoiceOver evaluation, production AX endpoint closure or reference hardware measurement has been claimed.
+Independent production-native evidence: `/tmp/tidy-r13-resume-final2-native.xcresult`, 6/6 passed, zero skips, 105.791 seconds. It covers actual synthetic storage paths and witness bytes, two production windows and keyboard close/reopen, distinct Settings AX elements, full-home consent/complete scan/cancel, first-launch Quick without a settings write, and future-schema recovery without rewriting bytes. The normal app was not launched against the user's home. The host's test signing, fixed scenarios, disabled automatic tabbing and cleanup behavior are documented in [R13 runtime evidence](remediation-R13-resume.md).
 
-The R13 numeric gates remain unverified: hidden-off zero repeating work; authorized hidden CPU <0.5% of one core/settled RSS <=60 MiB; interactive <=100 MiB; scan physical footprint <=150 MiB; complete 50k useful <=1s/total <=10s; UI cancel <=100ms/workers <=500ms; unchanged complete 100k >=80% metadata-visit reduction; 20 active scan/cancel cycles with no FD/worker leaks and <=10 MiB settled growth; five paired build medians <=3% overhead. Partial scans and RSS are not substitutes for complete traversal and physical footprint.
+The M1 Max 32 GiB/macOS 27.0 observation was limited to a visible fixture-control window for 30.442 seconds. It recorded RSS 89,552 KiB and a physical-footprint snapshot of 36,160,472 bytes, with no sampled network process rows after a positive loopback observer control. It is not scan-peak, hidden-idle, ten-minute background, full-workflow traffic or reference-machine evidence. See [observation limits](remediation-R13-observation.md).
 
-Controlled app/child network instrumentation, all required-reason API mapping, disposable capacity-limited crash/disk-full setup, human accessibility evaluation, and signed/unsigned installation matrices remain separate evidence gates. Do not change host permissions, exhaust physical resources or delete user/recovery data to manufacture a pass.
+## Gates that cannot be inferred from local passes
 
-## Current integration checkpoint
+The approved reference setup still requires physical 8 GiB Apple Silicon and Intel Macs, macOS 14 and current-stable runtime coverage, plus a human VoiceOver evaluator. This host and automated AX tests cannot substitute for those requirements.
 
-The active execution clone is `/Users/mac/Developer/tidy-remediation-20260918` after the temporary external Desktop move. Both original Desktop checkouts are restored and preserved. The final review at `29f6da1` requires corrections for cache restart trust, event byte bounds, terminal-partial idle work, scene-disposal bookkeeping and CI regression coverage. These are being corrected before a new final aggregate.
+The 120-second hidden-off capture verified zero repeating monitor timers, leases and scan
+work on this host ([evidence](remediation-R13-hidden-resume.md)). Remaining unverified
+numeric gates include authorized hidden CPU below 0.5% of one core over ten minutes and settled RSS at most 60 MiB; interactive RSS at most 100 MiB; scan physical footprint at most 150 MiB; complete 50k useful output within 1 second and total within 10 seconds; UI cancel within 100 ms and workers within 500 ms; twenty scan/cancel cycles without worker/FD leaks and at most 10 MiB settled growth; and five paired builds with median background overhead at most 3%. The real 100k fixture supplies measured scan-traversal cache-usefulness evidence, not all of these measurements.
 
-Checkpoint evidence before those corrections: 677 Core tests across 69 suites passed, followed by the required isolated process-cap test. The complete 132-test model run had two failures; `641233f` corrected their bootstrap ordering and repeated policy-registry computation causes, with focused reruns recorded in `remediation-integration.md`. The old aggregate failure is retained and requires a fresh complete model run. The universal Release checkpoint built both architectures; final source changes require a fresh build.
+[Producer/dependency evidence](remediation-producer-dependency-resume.md), [privacy mapping](privacy-api-inventory.md), and [remaining dependency closures](remediation-dependency-blocks.md) record exact unresolved conditions. No private entitlement, host-security change, generic recovery reset, positive fixture-only adapter or unsupported manifest reason was used to manufacture acceptance.
 
-The real 100k fixture is functional/correctness evidence from this host, not the reference-machine latency/physical-footprint matrix. The presentation-only fixture now builds after `e6eee36` and opens through native application control. Safe cleanup rows are disabled and Settings opens; the observed settings AX grouping issue is being corrected. Neither direct fixture launch nor these limited observations supersede the failed XCTest runner sessions or establish human VoiceOver/production acceptance.
 
-Native correction checkpoint `4ef9956`: the result checker independently confirmed 2/2 native tests and 2/2 focused Settings model tests with zero failures/skips. Exact commands, result bundles, matching input hashes and scope are recorded in [Settings AX evidence](remediation-settings-ax.md). No host security or permission changes were made.
-
-The frozen correction source is `ce89f22`, including post-aggregate initial-snapshot replay. Final independent source/spec review has no remaining substantive finding for the partial checkpoint. Fresh local gates now pass: 690 Core + 1 isolated, 137 model, 2 native, and universal Release. See the final verification record for the corrected artifact-stage invocation, exact evidence and unchanged acceptance boundaries.
-
-Final evidence: [local verification checkpoint](remediation-final-verification.md). The original isolated Desktop worktree has been restored and synchronized; main remains preserved.
+Current resumed results, exact input hashes and retained failure are in [resumed verification](remediation-resume-verification.md). The final local package record is separate from these test results.

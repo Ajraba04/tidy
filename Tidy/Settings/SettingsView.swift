@@ -36,7 +36,7 @@ enum SettingsSurfaceEmptyState: Equatable {
 
 enum SettingsVisualContract {
     static let titleRole: SettingsSemanticTextRole = .primary
-    static let metadataRole: SettingsSemanticTextRole = .secondary
+    static let metadataRole: SettingsSemanticTextRole = .primary
     static let unavailableRole: SettingsSemanticTextRole = .warning
     static func layoutMode(for size: DynamicTypeSize) -> SettingsLayoutMode {
         size.isAccessibilitySize ? .stacked : .columns
@@ -1580,49 +1580,9 @@ struct SettingsView: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Settings content")
-                .background(SettingsScrollDocumentAccessibilityLabel(
-                    label: "Settings content").frame(width: 0, height: 0))
             }
             .accessibilityIdentifier("settings.content")
         }.padding().frame(minWidth: 480, minHeight: 520).navigationTitle("Settings")
-    }
-}
-
-/// SwiftUI's macOS `ScrollView` exposes its document view as a separate public
-/// accessibility container. Label that container without making this bridge an
-/// accessibility element or changing any descendant row/control semantics.
-private struct SettingsScrollDocumentAccessibilityLabel: NSViewRepresentable {
-    let label: String
-
-    func makeNSView(context: Context) -> LabelView {
-        let view = LabelView(frame: .zero)
-        view.setAccessibilityElement(false)
-        view.label = label
-        return view
-    }
-
-    func updateNSView(_ view: LabelView, context: Context) {
-        view.label = label
-        view.applyLabel()
-    }
-
-    final class LabelView: NSView {
-        var label = ""
-
-        override func viewDidMoveToSuperview() {
-            super.viewDidMoveToSuperview()
-            applyLabel()
-        }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            applyLabel()
-            DispatchQueue.main.async { [weak self] in self?.applyLabel() }
-        }
-
-        func applyLabel() {
-            enclosingScrollView?.documentView?.setAccessibilityLabel(label)
-        }
     }
 }
 
@@ -1662,6 +1622,8 @@ private struct RegistrySettingsContent: View {
                 ForEach(rows) { RegistrySettingRow(row: $0, submit: submit) }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Settings registry")
     }
 }
 

@@ -913,6 +913,8 @@ def validate_performance_final(value: dict[str, Any], scenario: str, pid: int) -
     boolean_fields = {"allMutationsDenied", "witnessUnchanged", "settled", "passed"}
     if scenario == "performance-50k":
         boolean_fields.add("completeCoverage")
+    else:
+        boolean_fields.add("indexWatchActive")
     string_fields = {"scenario"}
     if scenario == "performance-50k":
         string_fields.add("terminal")
@@ -1349,6 +1351,9 @@ def finish_process_capture(capture: dict[str, Any]) -> dict[str, Any]:
 def observe_workflow_traffic(runtime_app: Path) -> Path:
     app, executable = validate_runtime_app(runtime_app)
     derived_data = derived_data_for_runtime_app(app)
+    configuration = app.parent.name
+    if configuration not in {"Debug", "Release"}:
+        raise ObservationError("runtime app has an unsupported build configuration")
     evidence = Path(tempfile.mkdtemp(
         prefix=EVIDENCE_PREFIX + "traffic-", dir="/private/tmp"))
     os.chmod(evidence, 0o700)
@@ -1365,7 +1370,7 @@ def observe_workflow_traffic(runtime_app: Path) -> Path:
     stderr = (evidence / "xcodebuild.stderr").open("wb")
     command = [
         "/usr/bin/xcodebuild", "-project", str(REPO_ROOT / "Tidy.xcodeproj"),
-        "-scheme", "TidyProductionNativeUITests", "-configuration", "Debug",
+        "-scheme", "TidyProductionNativeUITests", "-configuration", configuration,
         "-destination", f"platform=macOS,arch={os.uname().machine}", "-jobs", "2",
         "-derivedDataPath", str(derived_data), "-resultBundlePath", str(result_bundle),
         *[f"-only-testing:TidyProductionNativeUITests/ProductionSceneRuntimeUITests/{case}"
@@ -1546,6 +1551,29 @@ def run_self_test() -> None:
             }
             assert set(performance_ready) == PERFORMANCE_READY_KEYS
             validate_performance_ready(performance_ready, "performance-50k", 123)
+            performance_cycles = {
+                "schema": 1, "scenario": "active-cancel-20", "pid": 123,
+                "cycleCount": 20, "cancelRequested": 20,
+                "terminalCancelled": 20, "completedBeforeCancel": 0,
+                "otherTerminal": 0, "maxCancelToTerminalNanoseconds": 1,
+                "maxCancelToSettledNanoseconds": 1, "registrySessions": 20,
+                "registryActiveWork": 0, "retainedTerminalStates": 20,
+                "schedulerActive": 0, "schedulerQueued": 0,
+                "schedulerLiveSessions": 0, "explicitLeases": 0,
+                "indexWatchActive": False, "allMutationsDenied": True,
+                "witnessUnchanged": True, "settled": True, "passed": True,
+            }
+            assert set(performance_cycles) == PERFORMANCE_CYCLE_KEYS
+            validate_performance_final(performance_cycles, "active-cancel-20", 123)
+            invalid_cycles = dict(performance_cycles)
+            invalid_cycles["indexWatchActive"] = 0
+            try:
+                validate_performance_final(invalid_cycles, "active-cancel-20", 123)
+            except ObservationError as error:
+                assert str(error) == (
+                    "runtime JSON field is not a boolean: indexWatchActive")
+            else:
+                raise AssertionError("integer indexWatchActive was accepted")
         finally:
             shutil.rmtree(fixture)
     print("R13 observation harness self-tests: PASS")
