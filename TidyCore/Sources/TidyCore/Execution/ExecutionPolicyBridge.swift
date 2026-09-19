@@ -22,18 +22,20 @@ public struct SettingsSchedulerBootstrap: @unchecked Sendable {
     public let result: SettingsLoadResult
     fileprivate let store: SettingsStore
     fileprivate let generation: UInt64?
+    fileprivate let image: SettingsDiskImage?
     fileprivate let use: SettingsSchedulerBootstrapUse
 
     fileprivate init(result: SettingsLoadResult, store: SettingsStore,
-                     generation: UInt64?) {
+                     generation: UInt64?, image: SettingsDiskImage?) {
         self.result = result
         self.store = store
         self.generation = generation
+        self.image = image
         self.use = SettingsSchedulerBootstrapUse()
     }
 
     fileprivate func belongs(to store: SettingsStore, result: SettingsLoadResult) -> Bool {
-        self.store === store && self.result == result && generation != nil
+        self.store === store && self.result == result && generation != nil && image != nil
     }
 }
 
@@ -48,8 +50,9 @@ public extension SettingsStore {
         let result = load()
         let generation = schedulerBootstrapGenerationExhausted
             ? nil : schedulerBootstrapGeneration
+        let image = schedulerBootstrapImageForIssue()
         return SettingsSchedulerBootstrap(result: result, store: self,
-            generation: generation)
+            generation: generation, image: image)
     }
 
     fileprivate func acquireSchedulerBootstrap(
@@ -60,7 +63,9 @@ public extension SettingsStore {
               generation == schedulerBootstrapGeneration,
               !schedulerBootstrapGenerationExhausted,
               schedulerBootstrapReservation == nil,
-              bootstrap.use.consume() else { return nil }
+              let image = bootstrap.image,
+              bootstrap.use.consume(),
+              revalidateSchedulerBootstrapImage(image) else { return nil }
         let lease = SettingsSchedulerBootstrapLease(id: UUID())
         schedulerBootstrapReservation = lease.id
         return lease
