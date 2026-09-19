@@ -118,13 +118,21 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     @MainActor
     func testProductionFullHomeScanCancelSurvivesCloseAndReopen() throws {
         continueAfterFailure = false
-        let app = launchReadyApp()
+        let app = launchReadyApp(scenarioArgument: "--tidy-runtime-cancel-queued")
         defer { terminateAndCleanup(app) }
 
         let witnessPath = try XCTUnwrap(
             app.staticTexts["runtime.synthetic.witness"].value as? String)
         let witnessURL = URL(fileURLWithPath: witnessPath)
         let original = try Data(contentsOf: witnessURL)
+
+        let blocker = app.staticTexts["runtime.cancel.blocker"]
+        XCTAssertTrue(blocker.waitForExistence(timeout: 15), app.debugDescription)
+        let blockerReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value BEGINSWITH %@", "ready permits:"),
+            object: blocker)
+        XCTAssertEqual(XCTWaiter.wait(for: [blockerReady], timeout: 15), .completed,
+                       String(describing: blocker.value))
 
         openFullHomeScan(in: app)
         let scanWindow = app.windows["Scan Report"]
@@ -134,7 +142,27 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         let cancelled = app.descendants(matching: .any)["scan.phase.cancelled"]
         XCTAssertTrue(cancelled.waitForExistence(timeout: 10), app.debugDescription)
 
-        scanWindow.typeKey("w", modifierFlags: .command)
+        let controlWindow = app.windows["Tidy Production Runtime Verification"]
+        controlWindow.click()
+        controlWindow.buttons["runtime.cancel.release"].click()
+        let blockerReleased = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value BEGINSWITH %@", "released "),
+            object: blocker)
+        XCTAssertEqual(XCTWaiter.wait(for: [blockerReleased], timeout: 15), .completed,
+                       String(describing: blocker.value))
+        let releasedState = try XCTUnwrap(blocker.value as? String)
+        XCTAssertTrue(releasedState.contains("serviceActive:false"), releasedState)
+        XCTAssertTrue(releasedState.contains("registry:1/0/1"), releasedState)
+        XCTAssertTrue(releasedState.contains("scheduler:0/0/0"), releasedState)
+        XCTAssertTrue(releasedState.contains("leases:0"), releasedState)
+        XCTAssertTrue(releasedState.contains("watch:false"), releasedState)
+        XCTAssertTrue(releasedState.contains("witness:unchanged"), releasedState)
+
+        app.menuBars.menuBarItems["Window"].click()
+        let scanWindowMenuItem = app.menuItems["Scan Report"]
+        XCTAssertTrue(scanWindowMenuItem.waitForExistence(timeout: 5))
+        scanWindowMenuItem.click()
+        app.typeKey("w", modifierFlags: .command)
         XCTAssertTrue(waitForAbsence(scanWindow))
         app.buttons["runtime.open.scan"].click()
         XCTAssertTrue(scanWindow.waitForExistence(timeout: 10))

@@ -32,6 +32,73 @@ private actor ScanLifecycleGate {
     }
 }
 
+private actor ScanPermitHoldGate {
+    private let target: Int
+    private var entered = 0
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(target: Int) { self.target = target }
+
+    func hold() async {
+        entered += 1
+        if entered >= target {
+            let waiters = entryWaiters
+            entryWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
+        if released { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilAllEntered() async {
+        if entered >= target { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
+private actor ScanOrdinalLifecycleGate {
+    private let pauseAt: Int
+    private var observed = 0
+    private var entered = false
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(pauseAt: Int) { self.pauseAt = pauseAt }
+
+    func receiveStart() async {
+        observed += 1
+        guard observed == pauseAt else { return }
+        entered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+        if released { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
 private func canonicalScratchBase() throws -> URL {
     var path = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard realpath("/private/tmp", &path) != nil else {
@@ -183,6 +250,159 @@ private func runAppScanToCompletion(services: AppExecutionServices,
 
 @MainActor
 final class ScanOrchestrationWiringTests: XCTestCase {
+
+    func testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let startGate = ScanLifecycleGate()
+        let services = try await scratch.services(scanLifecycleHook: { event in
+            if event == .startReserved { await startGate.pause() }
+        })
+        let sessions = services.explicitSessions
+        let initial = await sessions.snapshot()
+        XCTAssertGreaterThan(initial.effectiveWorkers, 0)
+        let blockerSession = try await sessions.beginSession(
+            requirements: try SchedulerRequirements(features: [.headroom]))
+        let permitGate = ScanPermitHoldGate(target: initial.effectiveWorkers)
+        let blockers = (0..<initial.effectiveWorkers).map { _ in
+            Task {
+                try? await sessions.withPermit(session: blockerSession) { _ in
+                    await permitGate.hold()
+                }
+            }
+        }
+        await permitGate.waitUntilAllEntered()
+        let occupied = await sessions.snapshot()
+        XCTAssertEqual(occupied.active, initial.effectiveWorkers)
+
+        func releaseBlockersAndDispose() async {
+            await permitGate.release()
+            for blocker in blockers { await blocker.value }
+            await sessions.finish(session: blockerSession)
+            await services.disposeScanResourcesForTesting()
+        }
+
+        let model = ScanViewModel(services: services)
+        let scan = Task { @MainActor in await model.runScan() }
+        await startGate.waitUntilEntered()
+        guard case .running = model.phase else {
+            await startGate.release(); await permitGate.release()
+            await releaseBlockersAndDispose()
+            return XCTFail("Cancel was not exposed while start was reserved: \(model.phase)")
+        }
+
+        await model.cancelScan()
+        await startGate.release()
+        await scan.value
+        do {
+            try await waitUntil { if case .cancelled = model.phase { return true }; return false }
+        } catch {
+            await releaseBlockersAndDispose()
+            throw error
+        }
+
+        let registryBeforeRelease = await services.scanRegistry.snapshot()
+        let leasesBeforeRelease = await services.systemMonitor
+            .activeExplicitWorkLeaseCountForTesting()
+        let watchBeforeRelease = await services.activeScanIndexWatchIsActiveForTesting()
+        guard case .cancelled = model.phase,
+              registryBeforeRelease.activeWork == 0,
+              registryBeforeRelease.retainedTerminalStates == 1,
+              leasesBeforeRelease == 0,
+              watchBeforeRelease == false else {
+            await releaseBlockersAndDispose()
+            return XCTFail("Pending Cancel was not the retained terminal before teardown: "
+                + "phase=\(model.phase) registry=\(registryBeforeRelease) "
+                + "leases=\(leasesBeforeRelease) watch=\(watchBeforeRelease)")
+        }
+
+        await releaseBlockersAndDispose()
+        let scheduler = await sessions.snapshot()
+        let registry = await services.scanRegistry.snapshot()
+        let leases = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+        XCTAssertEqual(scheduler.active, 0)
+        XCTAssertEqual(scheduler.queued, 0)
+        XCTAssertEqual(scheduler.liveSessions, 0)
+        XCTAssertEqual(registry.activeWork, 0)
+        XCTAssertEqual(leases, 0)
+        let watchActive = await services.activeScanIndexWatchIsActiveForTesting()
+        XCTAssertFalse(watchActive)
+    }
+
+    func testCancelDuringRescanTargetsNewStartInsteadOfOldTerminalSession() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let secondStartGate = ScanOrdinalLifecycleGate(pauseAt: 2)
+        let services = try await scratch.services(scanLifecycleHook: { event in
+            if event == .startReserved { await secondStartGate.receiveStart() }
+        })
+        let sessions = services.explicitSessions
+        let model = ScanViewModel(services: services)
+        await model.runScan()
+        try await waitUntil { if case .complete = model.phase { return true }; return false }
+        guard case .complete = model.phase else {
+            await services.disposeScanResourcesForTesting()
+            return XCTFail("Initial scan did not complete before Rescan: \(model.phase)")
+        }
+        try await waitUntil { (await sessions.snapshot()).liveSessions == 0 }
+
+        let initial = await sessions.snapshot()
+        XCTAssertGreaterThan(initial.effectiveWorkers, 0)
+        let blockerSession = try await sessions.beginSession(
+            requirements: try SchedulerRequirements(features: [.headroom]))
+        let permitGate = ScanPermitHoldGate(target: initial.effectiveWorkers)
+        let blockers = (0..<initial.effectiveWorkers).map { _ in
+            Task {
+                try? await sessions.withPermit(session: blockerSession) { _ in
+                    await permitGate.hold()
+                }
+            }
+        }
+        await permitGate.waitUntilAllEntered()
+
+        func releaseBlockersAndDispose() async {
+            await permitGate.release()
+            for blocker in blockers { await blocker.value }
+            await sessions.finish(session: blockerSession)
+            await services.disposeScanResourcesForTesting()
+        }
+
+        let rescan = Task { @MainActor in await model.runScan() }
+        await secondStartGate.waitUntilEntered()
+        guard case .running = model.phase else {
+            await secondStartGate.release()
+            await releaseBlockersAndDispose()
+            return XCTFail("Rescan did not expose its starting state: \(model.phase)")
+        }
+        await model.cancelScan()
+        await secondStartGate.release()
+        await rescan.value
+        do {
+            try await waitUntil { if case .cancelled = model.phase { return true }; return false }
+        } catch {
+            await releaseBlockersAndDispose()
+            throw error
+        }
+
+        let registryBeforeRelease = await services.scanRegistry.snapshot()
+        let leasesBeforeRelease = await services.systemMonitor
+            .activeExplicitWorkLeaseCountForTesting()
+        let watchBeforeRelease = await services.activeScanIndexWatchIsActiveForTesting()
+        guard case .cancelled = model.phase,
+              registryBeforeRelease.activeWork == 0,
+              registryBeforeRelease.retainedTerminalStates == 2,
+              leasesBeforeRelease == 0,
+              watchBeforeRelease == false else {
+            await releaseBlockersAndDispose()
+            return XCTFail("Rescan Cancel missed the new generation before teardown: "
+                + "phase=\(model.phase) registry=\(registryBeforeRelease) "
+                + "leases=\(leasesBeforeRelease) watch=\(watchBeforeRelease)")
+        }
+
+        await releaseBlockersAndDispose()
+        let settled = await sessions.snapshot()
+        XCTAssertEqual(settled.active, 0)
+        XCTAssertEqual(settled.queued, 0)
+        XCTAssertEqual(settled.liveSessions, 0)
+    }
 
     func testFreshInstallExplicitScanUsesDefaultsWithoutWritingSettingsOrStartingBackgroundWork()
       async throws {

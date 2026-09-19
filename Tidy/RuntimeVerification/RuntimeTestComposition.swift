@@ -6,8 +6,11 @@ import TidyCore
 
 enum RuntimeTestScenario: String {
     case acknowledged
+    case cancelQueued = "cancel-queued"
     case freshDefaults = "fresh-defaults"
     case futureSettings = "future-settings"
+    case hiddenOff = "hidden-off"
+    case hiddenAuthorized = "hidden-authorized"
 }
 
 /// Exists only in the dedicated runtime-verification target. The distributed
@@ -25,6 +28,9 @@ enum RuntimeTestComposition {
         let arguments = Set(processArguments)
         if arguments.contains("--tidy-runtime-future-settings") { return .futureSettings }
         if arguments.contains("--tidy-runtime-fresh-defaults") { return .freshDefaults }
+        if arguments.contains("--tidy-runtime-cancel-queued") { return .cancelQueued }
+        if arguments.contains("--tidy-runtime-hidden-off") { return .hiddenOff }
+        if arguments.contains("--tidy-runtime-hidden-authorized") { return .hiddenAuthorized }
         return .acknowledged
     }
 
@@ -51,8 +57,12 @@ enum RuntimeTestComposition {
             try createPrivateDirectory(state, fileManager: fileManager)
             try createPrivateDirectory(journal, fileManager: fileManager)
             switch scenario {
-            case .acknowledged:
+            case .acknowledged, .cancelQueued:
                 try seedAcknowledgedSettings(at: settings)
+            case .hiddenOff:
+                try seedObservationSettings(at: settings, authorized: false)
+            case .hiddenAuthorized:
+                try seedObservationSettings(at: settings, authorized: true)
             case .freshDefaults:
                 break
             case .futureSettings:
@@ -84,7 +94,8 @@ enum RuntimeTestComposition {
         let settingsExists = fileManager.fileExists(atPath: paths.settings.path)
         let settingsState: String
         switch scenario {
-        case .acknowledged: settingsState = settingsExists ? "ready" : "missing"
+        case .acknowledged, .cancelQueued, .hiddenOff, .hiddenAuthorized:
+            settingsState = settingsExists ? "ready" : "missing"
         case .freshDefaults: settingsState = settingsExists ? "unexpected" : "absent"
         case .futureSettings:
             settingsState = (try? Data(contentsOf: paths.settings)) == futureSettingsBytes
@@ -178,6 +189,23 @@ enum RuntimeTestComposition {
     private static func seedAcknowledgedSettings(at url: URL) throws {
         let config = TidyConfig(schemaVersion: 2, hasCompletedOnboarding: true)
         let envelope = SettingsEnvelope(schemaVersion: 2, revision: 1, config: config)
+        try writeSettings(envelope, to: url)
+    }
+
+    private static func seedObservationSettings(at url: URL, authorized: Bool) throws {
+        let config = TidyConfig(schemaVersion: 2, hasCompletedOnboarding: true)
+        let preferences = PolicyPreferences(global: PolicyValues(fields: [
+            SettingID(rawValue: "feature.headroom"): .bool(authorized),
+            SettingID(rawValue: "monitor.backgroundEnabled"): .bool(authorized),
+            SettingID(rawValue: "monitor.suppressHiddenSampling"): .bool(!authorized),
+            SettingID(rawValue: "monitor.hiddenIntervalSeconds"): .integer(60),
+        ]))
+        let envelope = SettingsEnvelope(schemaVersion: 2, revision: 1, config: config,
+                                        preferences: preferences)
+        try writeSettings(envelope, to: url)
+    }
+
+    private static func writeSettings(_ envelope: SettingsEnvelope, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let bytes: Data = try encoder.encode(envelope)
@@ -215,6 +243,128 @@ enum RuntimeTestComposition {
     }
 }
 
+private actor RuntimeTestPermitHoldGate {
+    private let target: Int
+    private var entered = 0
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(target: Int) { self.target = target }
+
+    func hold() async {
+        entered += 1
+        if entered >= target {
+            let waiters = entryWaiters
+            entryWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
+        if released { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilAllEntered() async {
+        if entered >= target { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
+@MainActor
+private final class RuntimeTestQueuedCancellationBlocker {
+    private let services: AppExecutionServices
+    private let sessions: BridgeExplicitSessions
+    private var blockerSession: WorkSession?
+    private var gate: RuntimeTestPermitHoldGate?
+    private var tasks: [Task<Void, Never>] = []
+    private var released = false
+
+    init(services: AppExecutionServices) {
+        self.services = services
+        sessions = services.explicitSessions
+    }
+
+    func start() async -> String {
+        guard blockerSession == nil, gate == nil, tasks.isEmpty else {
+            return "failed duplicate-start"
+        }
+        await sessions.awaitInitialInstall()
+        let initial = await sessions.snapshot()
+        guard initial.availability == .available, initial.effectiveWorkers > 0,
+              initial.active == 0, initial.queued == 0 else {
+            return "failed scheduler-not-idle"
+        }
+        do {
+            let session = try await sessions.beginSession(
+                requirements: try SchedulerRequirements(features: [.headroom]))
+            let gate = RuntimeTestPermitHoldGate(target: initial.effectiveWorkers)
+            blockerSession = session
+            self.gate = gate
+            tasks = (0..<initial.effectiveWorkers).map { _ in
+                Task {
+                    try? await sessions.withPermit(session: session) { _ in
+                        await gate.hold()
+                    }
+                }
+            }
+            await gate.waitUntilAllEntered()
+            let occupied = await sessions.snapshot()
+            guard occupied.active == initial.effectiveWorkers, occupied.queued == 0 else {
+                return "failed permits-not-occupied"
+            }
+            return "ready permits:\(initial.effectiveWorkers) active:\(occupied.active)"
+        } catch {
+            return "failed \(String(describing: error))"
+        }
+    }
+
+    func releaseAndAttest() async -> String {
+        if !released {
+            released = true
+            await gate?.release()
+            for task in tasks { await task.value }
+            if let blockerSession { await sessions.finish(session: blockerSession) }
+            tasks.removeAll()
+            blockerSession = nil
+            gate = nil
+        }
+        var scheduler = await sessions.snapshot()
+        var registry = await services.scanRegistry.snapshot()
+        var leases = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+        var watchActive = await services.activeScanIndexWatchIsActiveForTesting()
+        var settled = services.activeScanSessionID == nil && registry.activeWork == 0
+            && scheduler.active == 0 && scheduler.queued == 0 && scheduler.liveSessions == 0
+            && leases == 0 && !watchActive
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(10))
+        while !settled, clock.now < deadline {
+            try? await clock.sleep(for: .milliseconds(10))
+            scheduler = await sessions.snapshot()
+            registry = await services.scanRegistry.snapshot()
+            leases = await services.systemMonitor.activeExplicitWorkLeaseCountForTesting()
+            watchActive = await services.activeScanIndexWatchIsActiveForTesting()
+            settled = services.activeScanSessionID == nil && registry.activeWork == 0
+                && scheduler.active == 0 && scheduler.queued == 0
+                && scheduler.liveSessions == 0 && leases == 0 && !watchActive
+        }
+        let witnessUnchanged = (try? Data(contentsOf: RuntimeTestComposition.witnessURL(
+            home: services.paths.home))) == Data("runtime-witness\n".utf8)
+        return "\(settled ? "released" : "failed natural-settle") "
+            + "serviceActive:\(services.activeScanSessionID != nil) "
+            + "registry:\(registry.sessions)/\(registry.activeWork)/"
+            + "\(registry.retainedTerminalStates) "
+            + "scheduler:\(scheduler.active)/\(scheduler.queued)/\(scheduler.liveSessions) "
+            + "leases:\(leases) watch:\(watchActive) "
+            + "witness:\(witnessUnchanged ? "unchanged" : "changed")"
+    }
+}
+
 final class RuntimeTestAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         RuntimeTestComposition.cleanupIfRegistered()
@@ -226,6 +376,8 @@ struct RuntimeTestControlView: View {
     let services: AppExecutionServices
     let scenario: RuntimeTestScenario
     @Environment(\.openWindow) private var openWindow
+    @State private var queuedCancellationBlocker: RuntimeTestQueuedCancellationBlocker?
+    @State private var queuedCancellationState = "not-required"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -233,12 +385,42 @@ struct RuntimeTestControlView: View {
                 .font(.title2.bold())
                 .accessibilityIdentifier("runtime.control.title")
             RuntimeTestAppearanceAttestation()
+            if scenario == .hiddenOff || scenario == .hiddenAuthorized {
+                RuntimeObservationControl(services: services, scenario: scenario)
+            }
             Text("This dedicated build uses production scenes and services with disposable storage.")
                 .fixedSize(horizontal: false, vertical: true)
             Text(scenario.rawValue)
                 .accessibilityLabel("Runtime scenario")
                 .accessibilityValue(scenario.rawValue)
                 .accessibilityIdentifier("runtime.scenario")
+            if scenario == .cancelQueued {
+                Text(queuedCancellationState)
+                    .font(.caption)
+                    .accessibilityLabel("Queued cancellation fixture")
+                    .accessibilityValue(queuedCancellationState)
+                    .accessibilityIdentifier("runtime.cancel.blocker")
+                Button("Release cancellation blocker") {
+                    Task { @MainActor in await releaseQueuedCancellationBlocker() }
+                }
+                .disabled(queuedCancellationBlocker == nil)
+                .accessibilityIdentifier("runtime.cancel.release")
+            }
+            cleanupButton
+            HStack {
+                openButton("Open Scan", id: WindowID.scan,
+                           identifier: "runtime.open.scan")
+                openButton("Open Settings", id: WindowID.settings,
+                           identifier: "runtime.open.settings")
+                Button("Open Safe Clean") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: WindowID.clean, value: Tier.safe)
+                }
+                .accessibilityIdentifier("runtime.open.clean.safe")
+                openButton("Open Headroom", id: WindowID.headroom,
+                           identifier: "runtime.open.headroom")
+            }
+            Divider()
 
             pathRow("Synthetic home", value: services.paths.home.path,
                     identifier: "runtime.synthetic.home")
@@ -269,25 +451,10 @@ struct RuntimeTestControlView: View {
                 .accessibilityLabel("Runtime host process identifier")
                 .accessibilityValue("\(ProcessInfo.processInfo.processIdentifier)")
                 .accessibilityIdentifier("runtime.process.pid")
-            cleanupButton
-
-            Divider()
-            HStack {
-                openButton("Open Scan", id: WindowID.scan,
-                           identifier: "runtime.open.scan")
-                openButton("Open Settings", id: WindowID.settings,
-                           identifier: "runtime.open.settings")
-                Button("Open Safe Clean") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: WindowID.clean, value: Tier.safe)
-                }
-                .accessibilityIdentifier("runtime.open.clean.safe")
-                openButton("Open Headroom", id: WindowID.headroom,
-                           identifier: "runtime.open.headroom")
-            }
         }
         .padding(20)
         .frame(minWidth: 620, minHeight: 540, alignment: .topLeading)
+        .task { await startQueuedCancellationBlockerIfNeeded() }
     }
 
     private func pathRow(_ label: String, value: String, identifier: String) -> some View {
@@ -316,12 +483,26 @@ struct RuntimeTestControlView: View {
         Button("Clean up fixture and quit") {
             services.disposeMonitoring()
             Task { @MainActor in
+                await RuntimeObservationCoordinator.stopIfActive()
+                _ = await queuedCancellationBlocker?.releaseAndAttest()
                 await services.disposeScanResourcesForTesting()
                 RuntimeTestComposition.cleanupIfRegistered()
                 NSApp.terminate(nil)
             }
         }
         .accessibilityIdentifier("runtime.fixture.cleanupAndQuit")
+    }
+
+    private func startQueuedCancellationBlockerIfNeeded() async {
+        guard scenario == .cancelQueued, queuedCancellationBlocker == nil else { return }
+        let blocker = RuntimeTestQueuedCancellationBlocker(services: services)
+        queuedCancellationBlocker = blocker
+        queuedCancellationState = await blocker.start()
+    }
+
+    private func releaseQueuedCancellationBlocker() async {
+        guard let queuedCancellationBlocker else { return }
+        queuedCancellationState = await queuedCancellationBlocker.releaseAndAttest()
     }
 }
 
@@ -357,6 +538,7 @@ struct RuntimeTestRecoveryAttestationView: View {
             Button("Clean up fixture and quit") {
                 services.disposeMonitoring()
                 Task { @MainActor in
+                    await RuntimeObservationCoordinator.stopIfActive()
                     await services.disposeScanResourcesForTesting()
                     RuntimeTestComposition.cleanupIfRegistered()
                     NSApp.terminate(nil)
