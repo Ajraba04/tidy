@@ -204,8 +204,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=ROOT,
                         help="repository root to scan (defaults to this checkout)")
-    parser.add_argument("--self-test", action="store_true",
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--self-test", action="store_true",
                         help="verify every current pattern, including getattrlistat/bulk")
+    action.add_argument("--check-document", type=Path,
+                        help="require the document's generated table to match current source")
     return parser.parse_args()
 
 
@@ -214,6 +217,19 @@ def main() -> int:
     try:
         if args.self_test:
             run_self_test()
+        elif args.check_document:
+            generated = render_inventory(args.root.resolve())
+            header = generated.splitlines()[0]
+            lines = args.check_document.read_text(encoding="utf-8").splitlines()
+            if lines.count(header) != 1:
+                raise AssertionError("document must contain exactly one generated inventory table")
+            start = lines.index(header)
+            end = start
+            while end < len(lines) and lines[end].startswith("|"):
+                end += 1
+            if "\n".join(lines[start:end]) != generated:
+                raise AssertionError("documented API inventory differs from current source")
+            print("privacy inventory document: PASS (exact current-source table)")
         else:
             print(render_inventory(args.root.resolve()))
     except (AssertionError, OSError, UnicodeError) as error:

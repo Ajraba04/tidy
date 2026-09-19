@@ -76,6 +76,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 
 ```bash
 python3 scripts/verification/privacy-api-inventory.py --self-test
+python3 scripts/verification/privacy-api-inventory.py --check-document docs/verification/privacy-api-inventory.md
 python3 scripts/verification/privacy-api-inventory.py
 ```
 
