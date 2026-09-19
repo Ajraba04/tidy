@@ -29,7 +29,7 @@ if command -v xcodegen >/dev/null 2>&1; then
   xcodegen generate
 fi
 
-xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
+xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release -jobs 2 \
   -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO \
   'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 
