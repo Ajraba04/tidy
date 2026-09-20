@@ -1,5 +1,8 @@
 # Final local remediation checkpoint — 2026-09-18
 
+Current code continuation: [20 September source checkpoint](code-completion-20260920.md). The historical evidence below remains scoped to its named commits; GUI and real-system checks are deferred by the user.
+
+
 Status: **historical verified partial checkpoint; application NO-GO, full program INCOMPLETE**.
 
 This records the 2026-09-18 source only. The 2026-09-19 continuation and its final evidence are tracked in [continued acceptance](headroom-acceptance.md); counts and unresolved items below are historical.

@@ -280,6 +280,9 @@ struct SettingsSurfaceModel {
         case .unavailable(let reason):
             return definition.resolution == .authority ? .deferred(reason) : .unavailable(reason)
         case .connected:
+            if definition.resolution == .authority {
+                return .deferred("Manage this approval in Assistance and Local Consent.")
+            }
             if !definition.layers.contains(.global) {
                 return .unavailable("This setting is not editable at the global layer.")
             }
@@ -353,6 +356,7 @@ private func describe(_ reason: FieldReason) -> String {
     case .invalidForVolume: "invalid for volume"
     case .unmatchedVolume: "unmatched volume"
     case .authorityUnavailable: "authority unavailable"
+    case .localConsent: "local consent"
     case .protected: "protected"
     case .quarantine: "quarantine"
     case .notConfigured: "not configured"
@@ -1546,6 +1550,7 @@ struct SettingsWorkflowSurface: View {
 
 struct SettingsView: View {
     @Environment(AppConfigStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedSection = SettingsPresentationSection.features
     @State private var query = ""
     @State private var showsAdvanced = false
@@ -1562,6 +1567,8 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.section." + section.rawValue)
                 }
             }.pickerStyle(.segmented)
+            Button("Manage Local Consent…") { openWindow(id: "assistance") }
+                .accessibilityIdentifier("settings.localConsent")
             TextField("Search settings", text: $query)
                 .accessibilityLabel("Search settings")
                 .accessibilityIdentifier("settings.search")

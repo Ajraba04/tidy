@@ -31,6 +31,29 @@ final class AppConfigStore {
     var acknowledgedEffectivePolicy: EffectivePolicy? { resolvePolicy(acknowledged) }
     var acknowledgedSettingsRevision: UInt64 { acknowledged.revision }
 
+    func acknowledgedPolicyEnvironment(homeDirectory: String) -> CleanEnvironment? {
+        guard acknowledgedEffectivePolicy != nil else { return nil }
+        return acknowledged.config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: [])
+    }
+
+    private(set) var localAuthoritySnapshot: LocalAuthoritySnapshot?
+
+    /// Local approvals are installation-bound and never serialized into portable settings.
+    func installLocalAuthority(_ snapshot: LocalAuthoritySnapshot?) {
+        if let snapshot {
+            guard snapshot.isCurrent else { return }
+            if let current = localAuthoritySnapshot, current.isCurrent {
+                guard current.installation == snapshot.installation,
+                      snapshot.revision >= current.revision else { return }
+            }
+        }
+        localAuthoritySnapshot = snapshot
+        let policy = acknowledgedEffectivePolicy
+        for observer in acknowledgedPolicyObservers.values {
+            observer(acknowledged.revision, policy)
+        }
+    }
+
     private let bridge: ExecutionPolicyBridge
     private var acknowledged: SettingsEnvelope
     private var displayed: SettingsEnvelope
@@ -218,7 +241,19 @@ final class AppConfigStore {
         }
     }
 
+    func acknowledgedPolicyForVolume(identity: String?, capacityBytes: Int64?) -> EffectivePolicy? {
+        guard let identity, let volume = UUID(uuidString: identity),
+              let capacityBytes, capacityBytes > 0 else { return nil }
+        return resolvePolicy(acknowledged, volumeID: volume, capacityBytes: capacityBytes)
+    }
+
     private func resolvePolicy(_ envelope: SettingsEnvelope) -> EffectivePolicy? {
+        resolvePolicy(envelope, volumeID: selectedVolumeID,
+            capacityBytes: selectedVolumeCapacityBytes)
+    }
+
+    private func resolvePolicy(_ envelope: SettingsEnvelope, volumeID: UUID?,
+                               capacityBytes: Int64?) -> EffectivePolicy? {
         let projected = PolicyPreferences.project(legacy: envelope.config,
             saved: envelope.preferences)
         var layers: [PolicyLayer: PolicyValues] = [.global: projected.global]
@@ -228,12 +263,12 @@ final class AppConfigStore {
             else { return nil }
             layers[.profile] = profile.values
         }
-        let approved: Set<UUID> = selectedVolumeID.map { Set([$0]) } ?? []
-        let inputs = PolicyInputs(layers: layers, selectedVolumeID: selectedVolumeID,
-            approvedVolumeIDs: approved, capacityBytes: selectedVolumeCapacityBytes,
+        let approved: Set<UUID> = volumeID.map { Set([$0]) } ?? []
+        let inputs = PolicyInputs(layers: layers, selectedVolumeID: volumeID,
+            approvedVolumeIDs: approved, capacityBytes: capacityBytes,
             logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
             lowPower: false, seriousThermal: false, critical: false,
-            mandatoryExclusions: [])
+            mandatoryExclusions: [], localAuthority: localAuthoritySnapshot)
         return try? PolicyResolver.resolve(inputs)
     }
 

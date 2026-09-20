@@ -77,6 +77,73 @@ private struct AppBootstrapWorkerResult: Sendable {
     let journalAdmission: MutationAdmission
 }
 
+private struct AppConfirmedExecution: Sendable {
+    let id: UUID
+    let binding: ReviewBinding
+    let task: Task<RunReport, Error>
+    let completion: AppExecutionCompletionLatch
+}
+
+private final class AppExecutionCompletionLatch: @unchecked Sendable {
+    private struct Waiter {
+        let continuation: CheckedContinuation<Bool, Never>
+        let timeout: DispatchWorkItem
+    }
+    private let lock = NSLock()
+    private var completed = false
+    private var waiters: [UUID: Waiter] = [:]
+
+    func finish() {
+        let pending: [Waiter] = lock.withLock {
+            guard !completed else { return [] }
+            completed = true
+            let values = Array(waiters.values)
+            waiters.removeAll()
+            return values
+        }
+        for waiter in pending {
+            waiter.timeout.cancel()
+            waiter.continuation.resume(returning: true)
+        }
+    }
+
+    func wait(timeout: Duration) async -> Bool {
+        let seconds = Self.seconds(timeout)
+        return await withCheckedContinuation { continuation in
+            let id = UUID()
+            let timeoutWork = DispatchWorkItem { [weak self] in self?.timeout(id) }
+            let resumeNow = lock.withLock { () -> Bool in
+                if completed { return true }
+                waiters[id] = Waiter(continuation: continuation, timeout: timeoutWork)
+                return false
+            }
+            if resumeNow {
+                continuation.resume(returning: true)
+            } else {
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + seconds, execute: timeoutWork)
+            }
+        }
+    }
+
+    private func timeout(_ id: UUID) {
+        let waiter = lock.withLock { waiters.removeValue(forKey: id) }
+        waiter?.continuation.resume(returning: false)
+    }
+
+    private static func seconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return max(0, Double(components.seconds)
+            + Double(components.attoseconds) / 1e18)
+    }
+}
+
+enum AppExecutionDrainResult: Equatable, Sendable {
+    case noExecution
+    case completed
+    case durablyUncertain
+}
+
 /// Synchronous, Sendable lifetime state shared by the service and its
 /// escaping monitor callbacks. Closing it in ordinary `deinit` prevents a
 /// still-registered callback from starting new work while main-actor observer
@@ -119,6 +186,13 @@ final class AppExecutionServices {
     @ObservationIgnored nonisolated(unsafe) private var monitorPolicyObserverToken: UUID?
     @ObservationIgnored nonisolated(unsafe) private var monitorVolumeObservationTask:
         Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var executionProgressTask:
+        Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var confirmedExecution:
+        AppConfirmedExecution?
+    private(set) var executionProgress: ExecutionProgressSnapshot?
+    private(set) var liveRecoveryAdmission: MutationAdmission
+    private(set) var lastRecoveryReport: RecoveryReconciliationReport?
 
     /// The app's one T08.2 session registry, constructed once at bootstrap. It starts no work;
     /// `beginScan` is the only route that registers and launches a session against it.
@@ -152,6 +226,7 @@ final class AppExecutionServices {
         self.settings = settings
         self.settingsLoad = worker.load
         self.initialJournalAdmission = worker.journalAdmission
+        self.liveRecoveryAdmission = worker.journalAdmission
         self.coordinator = worker.coordinator
         self.scanLifecycleHook = scanLifecycleHook
         self.scanTraversalLimits = scanTraversalLimits
@@ -223,6 +298,15 @@ final class AppExecutionServices {
                     capacityBytes: disk?.totalBytes, observationEpoch: observationEpoch)
             }
         }
+        let executionCoordinator = self.coordinator
+        self.executionProgressTask = Task { @MainActor [weak self, executionCoordinator] in
+            let updates = await executionCoordinator.progressUpdates()
+            for await snapshot in updates {
+                guard let self, !Task.isCancelled else { break }
+                self.executionProgress = snapshot
+                self.liveRecoveryAdmission = snapshot.recovery
+            }
+        }
     }
 
     deinit {
@@ -230,6 +314,9 @@ final class AppExecutionServices {
         // removal must execute on MainActor; capture values only, never `self`.
         monitoringLifetime.dispose()
         monitorVolumeObservationTask?.cancel()
+        executionProgressTask?.cancel()
+        confirmedExecution?.task.cancel()
+        coordinator.cancelCurrentRun()
         guard let token = monitorPolicyObserverToken else { return }
         let configStore = configStore
         Task { @MainActor in
@@ -265,6 +352,13 @@ final class AppExecutionServices {
     /// unavailable, this throws rather than silently starting nothing.
     func issueFullHomeScanConsent(ownerID: UUID) throws -> FullHomeScanConsent {
         try scanScopeAuthority.issueFullHomeConsent(ownerID: ownerID)
+    }
+
+    func authorizeProjectScope(ownerID: UUID,
+                               localAuthority: LocalAuthoritySnapshot? = nil) throws
+        -> AuthorizedScanScope {
+        try scanScopeAuthority.authorizeProjects(ownerID: ownerID,
+                                                 localAuthority: localAuthority)
     }
 
     func beginScan(environment: CleanEnvironment, request: AppScanRequest = .policyDefault,
@@ -672,14 +766,14 @@ final class AppExecutionServices {
     }
 
     var isExecutionEnabled: Bool {
-        settingsLoad.envelope != nil && initialJournalAdmission == .ready
+        settingsLoad.envelope != nil && liveRecoveryAdmission == .ready
             && policyBridge.isExecutionEnabled
     }
     var policyUpdatePending: Bool { policyBridge.policyUpdatePending }
     var storageUpdatePending: Bool { policyBridge.storageUpdatePending }
     var persistenceError: String? {
         if let error = policyBridge.persistenceError { return error }
-        guard initialJournalAdmission == .ready else {
+        guard liveRecoveryAdmission == .ready else {
             return "Execution records could not be validated. Cleanup remains disabled."
         }
         return nil
@@ -705,6 +799,71 @@ final class AppExecutionServices {
             historyPersistenceError = "Optional run history could not be updated: \(error)"
         }
     }
+
+    /// Starts one app-owned confirmed execution or joins the same binding's
+    /// existing task. Window/session cancellation never owns this task and
+    /// optional history is recorded exactly once inside it.
+    func startConfirmedExecution(binding: ReviewBinding) throws -> Task<RunReport, Error> {
+        if let confirmedExecution {
+            guard confirmedExecution.binding == binding else {
+                throw ConfirmationError.busy
+            }
+            return confirmedExecution.task
+        }
+        let id = UUID()
+        let completion = AppExecutionCompletionLatch()
+        let task = Task { @MainActor [self] () throws -> RunReport in
+            defer {
+                completion.finish()
+                if confirmedExecution?.id == id { confirmedExecution = nil }
+            }
+            try Task.checkCancellation()
+            let token = try await coordinator.confirm(binding: binding)
+            let revision = await coordinator.currentPolicyRevision()
+            let report = await coordinator.execute(token, currentPolicyRevision: revision)
+            await recordCompletedRun(report)
+            return report
+        }
+        confirmedExecution = AppConfirmedExecution(id: id, binding: binding,
+            task: task, completion: completion)
+        return task
+    }
+
+    func executeConfirmed(binding: ReviewBinding) async throws -> RunReport {
+        try await startConfirmedExecution(binding: binding).value
+    }
+
+    var hasActiveConfirmedExecution: Bool { confirmedExecution != nil }
+
+    func awaitActiveConfirmedExecution() async -> RunReport? {
+        guard let active = confirmedExecution else { return nil }
+        return try? await active.task.value
+    }
+
+    func cancelConfirmedExecution() {
+        confirmedExecution?.task.cancel()
+        coordinator.cancelCurrentRun()
+    }
+
+    func reconcileExecutionRecovery() async -> RecoveryReconciliationReport {
+        let report = await coordinator.reconcileUnfinishedEffects()
+        lastRecoveryReport = report
+        liveRecoveryAdmission = await coordinator.mutationAdmission()
+        executionProgress = await coordinator.executionProgress()
+        return report
+    }
+
+    /// Quit may proceed after this bounded drain. A timeout does not claim a
+    /// clean cancellation: Core's durable intent remains the recovery truth.
+    func cancelAndDrainExecutionForTermination(
+        timeout: Duration = .seconds(5)
+    ) async -> AppExecutionDrainResult {
+        guard let active = confirmedExecution else { return .noExecution }
+        active.task.cancel()
+        coordinator.cancelCurrentRun()
+        return await active.completion.wait(timeout: timeout)
+            ? .completed : .durablyUncertain
+    }
 }
 
 @Observable @MainActor
@@ -729,6 +888,17 @@ final class AppBootstrapState {
         guard completion == nil else { return }
         services = nil
         status = .unavailable
+    }
+
+    /// Re-evaluates the already-loaded service after bounded recovery
+    /// reconciliation. It never reloads settings, resets storage, or discards
+    /// an unresolved record.
+    func refreshRecoveryDisposition() {
+        guard let services else {
+            status = .unavailable
+            return
+        }
+        status = services.isExecutionEnabled ? .ready : .recovery
     }
 
     private func start(_ operation: @escaping @MainActor () async -> AppExecutionServices)
@@ -769,6 +939,14 @@ final class AppReviewSession {
         selection?.invalidate(policyEnabled: false)
         selection = nil
         return lifetime.enqueue { [self] request in
+            if services.hasActiveConfirmedExecution {
+                phase = .executing
+                if let report = await services.awaitActiveConfirmedExecution(),
+                   lifetime.isCurrent(request) {
+                    phase = .complete(report)
+                }
+                return
+            }
             phase = .loadingPlan
             if let old = registeredReview {
                 registeredReview = nil
@@ -836,15 +1014,18 @@ final class AppReviewSession {
             selection?.cancelConfirmation()
             return
         }
+        let executionTask: Task<RunReport, Error>
+        do {
+            executionTask = try services.startConfirmedExecution(binding: frozen.binding)
+        } catch {
+            phase = .failed(confirmationFailureMessage(error))
+            return
+        }
         lifetime.invalidate()
         phase = .executing
         _ = lifetime.enqueue { [self] request in
             do {
-                let token = try await services.coordinator.confirm(binding: frozen.binding)
-                // Policy may change at any await; coordinator validates both actual state and hint.
-                let revision = await services.coordinator.currentPolicyRevision()
-                let report = await services.coordinator.execute(token, currentPolicyRevision: revision)
-                await services.recordCompletedRun(report)
+                let report = try await executionTask.value
                 guard lifetime.isCurrent(request) else { return }
                 phase = .complete(report)
             } catch {

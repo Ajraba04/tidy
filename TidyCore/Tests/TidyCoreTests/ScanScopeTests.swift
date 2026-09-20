@@ -4,6 +4,34 @@ import Testing
 
 @Suite("Production scan scope authorization", .serialized)
 struct ScanScopeTests {
+    @Test("consumed project scopes expire and invalidate during a pending policy transition")
+    @MainActor
+    func liveProjectScopeChecksPolicyAndExpiry() async throws {
+        let clock = ScanScopeTestClock()
+        let rig = try await ScanScopeRig.make(defaultScope: "selectedProjects", gitRoots: [], clock: clock)
+        defer { rig.remove() }
+        let scope = try rig.scopeAuthority.authorizeProjects(ownerID: rig.ownerID)
+        try scope.checkValidity()
+        let envelope = try #require(rig.bridge.acknowledgedScanEnvelope)
+        let id = SettingID(rawValue: "feature.projects")
+        let submission = rig.bridge.submit(global: .init(baseRevision: envelope.revision,
+            id: id, baseValue: envelope.preferences?.global.fields[id], editedValue: .bool(false)))
+        guard case .accepted(_, let completion) = submission else {
+            Issue.record("Fixture policy invalidation was not admitted")
+            return
+        }
+        #expect(throws: ScanScopeAuthorizationError.expiredConsent) { try scope.checkValidity() }
+        _ = await completion.value
+        #expect(throws: ScanScopeAuthorizationError.expiredConsent) { try scope.checkValidity() }
+
+        let secondRig = try await ScanScopeRig.make(defaultScope: "selectedProjects", gitRoots: [], clock: clock)
+        defer { secondRig.remove() }
+        let timed = try secondRig.scopeAuthority.authorizeProjects(ownerID: secondRig.ownerID)
+        try timed.checkValidity()
+        clock.advance(nanoseconds: 11)
+        #expect(throws: ScanScopeAuthorizationError.expiredConsent) { try timed.checkValidity() }
+    }
+
     @Test("exact absent-file defaults authorize only the bounded Quick roots")
     @MainActor
     func freshDefaultsAuthorizeQuickScopeWithoutPersistingSettings() async throws {

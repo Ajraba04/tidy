@@ -327,6 +327,10 @@ public final class ExecutionPolicyBridge {
     }
 
     @discardableResult
+    internal func scanScopeValidity() -> @Sendable () -> Bool {
+        schedulerController.readValidity()
+    }
+
     public func observeOutcomes(
         _ observer: @escaping @MainActor (SettingsIntentOutcome) -> Void
     ) -> UUID {

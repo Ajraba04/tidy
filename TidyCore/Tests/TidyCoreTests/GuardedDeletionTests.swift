@@ -445,6 +445,31 @@ private func withNestedManifest(_ body: (ReviewedTree) throws -> Void) throws {
         #expect(budget.reservedBytes == 6)
     }
 
+    @Test("review capture enforces cancellation node depth name and work bounds before expansion")
+    func captureBudgetRejectsBeforeUnboundedTraversal() throws {
+        try inScratch { scratch in
+            _ = try scratch.file("a")
+            _ = try scratch.file("b")
+            _ = try scratch.file("c")
+            let token = EffectCancellationToken()
+            let limits = ManifestCaptureLimits(maximumNodes: 2,
+                maximumNameBytes: 64, maximumDepth: 4, maximumWorkUnits: 16,
+                deadline: ContinuousClock.now.advanced(by: .seconds(1)),
+                cancellation: token)
+            #expect(throws: GuardedFileError.manifestLimit) {
+                _ = try ResourcePreflight.captureReviewedDirectory(at: scratch.selected.path,
+                    protectedRoots: [], limits: limits)
+            }
+            token.cancel()
+            #expect(throws: GuardedFileError.manifestLimit) {
+                _ = try ResourcePreflight.captureReviewedDirectory(at: scratch.selected.path,
+                    protectedRoots: [], limits: .production(cancellation: token))
+            }
+            #expect(try Data(contentsOf: scratch.selected.appendingPathComponent("a"))
+                == Data("reviewed".utf8))
+        }
+    }
+
     @Test func accountingDoesNotTurnFailureExitOrMissingMeasurementIntoSuccess() {
         #expect(EffectAccounting.checkedSum([observed(Int64.max), observed(1)]).bytes == nil)
         #expect(EffectAccounting.checkedSum([observed(10), unknown()]).bytes == nil)

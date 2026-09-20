@@ -3,6 +3,8 @@ public enum ResourceIdentity: Hashable, Sendable {
     case filesystem(FileResourceIdentity)
     case simulator(udid: UUID, runtimeID: String)
     case snapshot(volumeID: UUID, exactSnapshotID: String)
+    case localService(adapterID: String, exactObjectID: String,
+                      endpoint: LocalSocketApproval)
 }
 public struct FileResourceIdentity: Hashable, Sendable {
     public let volumeID: UUID

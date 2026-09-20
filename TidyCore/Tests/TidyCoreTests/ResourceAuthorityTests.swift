@@ -229,7 +229,8 @@ struct ResourceAuthorityTests {
             seal: seal, association: association, currentProtectedRoots: [scratch.protected.path],
             leaseProvider: provider)
 
-        #expect(state.acquisitions == 1)
+        #expect(state.acquisitions == effect.outcomes.count)
+        #expect(state.acquisitions > 1)
         #expect(state.releasedAfterEffect)
         #expect(!FileManager.default.fileExists(atPath: scratch.unchanged.path))
         #expect(!FileManager.default.fileExists(atPath: scratch.unicode.path))
@@ -333,6 +334,41 @@ struct ResourceAuthorityTests {
         }
         #expect(try Data(contentsOf: hardlink) == Data("unchanged".utf8))
         #expect(try Data(contentsOf: scratch.derivedData.appendingPathComponent("replacement")) == Data("replacement".utf8))
+    }
+
+    @Test("streamed effect renews leases and stops before the next leaf after cancellation")
+    func streamedCancellationUsesFreshLeafAuthority() throws {
+        let scratch = try AuthorityScratch(); defer { scratch.cleanup() }
+        let seal = try ResourcePreflight.captureReviewedDirectory(
+            at: scratch.derivedData.path, protectedRoots: [scratch.protected.path])
+        let now = Date()
+        let association = scratch.association(for: seal, observedAt: now)
+        let state = LeaseState(effectWitness: scratch.unchanged)
+        let provider = FixtureLeaseProvider(state: state,
+            adapterVersion: AppleDerivedDataInventory.contractVersion,
+            ownerIDs: association.ownerIDs, observedAt: now,
+            validUntil: now.addingTimeInterval(5))
+        let cancellation = EffectCancellationToken()
+        let schedule = try FilesystemEffectSchedule(allocatedByteLimit: Int64.max,
+            leafLimit: 100, deadline: ContinuousClock.now.advanced(by: .seconds(5)),
+            cancellation: cancellation,
+            policyBarrier: PolicyInvalidationBarrier(coordinatorID: UUID()),
+            policyRevision: 1)
+        var outcomes: [TargetEffectOutcome] = []
+        let result = try DerivedDataEffectAdapter.streamReviewed(seal: seal,
+            association: association, currentProtectedRoots: [scratch.protected.path],
+            leaseProvider: provider, schedule: schedule) { outcome in
+                outcomes.append(outcome)
+                cancellation.cancel()
+            }
+
+        #expect(result.stop == .cancelled)
+        #expect(result.scheduledLeaves == 1)
+        #expect(outcomes.count == 1)
+        #expect(state.acquisitions == 1)
+        #expect(try Data(contentsOf: scratch.outside) == Data("outside".utf8))
+        #expect(try Data(contentsOf: scratch.protected.appendingPathComponent("keep.txt"))
+            == Data("protected".utf8))
     }
 }
 

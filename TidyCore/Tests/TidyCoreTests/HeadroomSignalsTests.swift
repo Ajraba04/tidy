@@ -316,6 +316,37 @@ struct HeadroomSignalsTests {
         #expect(second.pageOutRatePerSecond == nil)
     }
 
+    @Test("local consent revocation stops hidden monitoring independently of settings revision")
+    func localConsentRevocationStopsHiddenMonitoring() async throws {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Tidy-monitor-authority-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let store = try LocalAuthorityStore(directory: scratch,
+            installation: LocalInstallationIdentity.verify(directory: scratch))
+        let owner = LocalAuthorityOwner()
+        let review = try await store.beginReview(scope: .backgroundSignals, owner: owner,
+            nowMonotonicNanoseconds: 1)
+        let approved = try await store.confirm(review, owner: owner, nowMonotonicNanoseconds: 2)
+        let monitor = SystemMonitor(configuration: .disabled,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        await monitor.applyLocalAuthority(approved, generation: 1)
+        var configuration = enabledVisibleConfiguration
+        configuration.backgroundEnabled = true
+        _ = await monitor.applyConfiguration(configuration, acknowledgedRevision: 7)
+        #expect(await monitor.isTimerRunningForTesting())
+        _ = try await store.revoke(.backgroundSignals)
+        // Even a stale observer/configuration cannot revive the invalidated snapshot.
+        _ = await monitor.applyConfiguration(configuration, acknowledgedRevision: 7)
+        #expect(!(await monitor.isTimerRunningForTesting()))
+        await monitor.applyLocalAuthority(nil, generation: 2)
+        await monitor.applyLocalAuthority(approved, generation: 1)
+        #expect(!(await monitor.isTimerRunningForTesting()))
+        #expect(await monitor.appliedConfigurationRevisionForTesting() == 7)
+    }
+
     // MARK: Visibility and explicit-work leases
 
     @Test("hidden and disabled produces no repeating timer at all")

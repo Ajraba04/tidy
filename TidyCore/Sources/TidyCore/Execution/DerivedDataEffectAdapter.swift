@@ -27,6 +27,9 @@ enum DerivedDataEffectAdapter {
         /// this target (including any batches withheld by the preflight).
         let freeSpaceAfterBytes: Int64?
     }
+    private final class OutcomeCollector {
+        var values: [TargetEffectOutcome] = []
+    }
 
     /// Existing production call shape is retained as an explicit denial so a
     /// stale coordinator binary cannot fall back to fresh-tree authorization.
@@ -44,6 +47,69 @@ enum DerivedDataEffectAdapter {
                                 association: ResourceAssociationEvidence,
                                 currentProtectedRoots: [String],
                                 leaseProvider: any ProducerExclusionLeaseProviding) throws -> Effect {
+        let barrier = PolicyInvalidationBarrier(coordinatorID: UUID())
+        let cancellation = EffectCancellationToken()
+        let schedule = try FilesystemEffectSchedule(
+            allocatedByteLimit: 256 * 1_024 * 1_024 * 1_024,
+            leafLimit: ReviewedManifestArchive.maximumNodeCount,
+            deadline: ContinuousClock.now.advanced(by: .seconds(60)),
+            cancellation: cancellation, policyBarrier: barrier, policyRevision: 1)
+        let outcomes = OutcomeCollector()
+        let streamed = try streamReviewed(seal: seal, association: association,
+            currentProtectedRoots: currentProtectedRoots, leaseProvider: leaseProvider,
+            schedule: schedule) { outcomes.values.append($0) }
+        return Effect(outcomes: outcomes.values,
+            freeSpaceBeforeBytes: streamed.freeSpaceBeforeBytes,
+            freeSpaceAfterBytes: streamed.freeSpaceAfterBytes)
+    }
+
+    /// Streams one result at a time and performs every synchronous unlink while
+    /// the exact policy revision is held. Durability work belongs to the caller
+    /// outside this barrier.
+    static func streamReviewed(seal: ReviewedFileResource,
+                               association: ResourceAssociationEvidence,
+                               currentProtectedRoots: [String],
+                               leaseProvider: any ProducerExclusionLeaseProviding,
+                               schedule: FilesystemEffectSchedule,
+                               onOutcome: @escaping (TargetEffectOutcome) throws -> Void) throws
+        -> StreamedFilesystemEffect {
+        try streamReviewedBatches(seal: seal, association: association,
+            currentProtectedRoots: currentProtectedRoots,
+            leaseProvider: leaseProvider, schedule: schedule,
+            forEachBatchReversed: { body in
+                for batch in seal.tree.batches.reversed() { try body(batch) }
+            }, onOutcome: onOutcome)
+    }
+
+    static func streamPersistedReviewed(
+        seal: ReviewedFileResource,
+        reference: ReviewedManifestReference,
+        association: ResourceAssociationEvidence,
+        currentProtectedRoots: [String],
+        leaseProvider: any ProducerExclusionLeaseProviding,
+        schedule: FilesystemEffectSchedule,
+        forEachBatchReversed: (_ body: (ReviewedBatch) throws -> Void) throws -> Void,
+        onOutcome: @escaping (TargetEffectOutcome) throws -> Void
+    ) throws -> StreamedFilesystemEffect {
+        guard reference.manifestDigest == seal.tree.digest,
+              reference.protectionDigest == seal.protection.digest else {
+            throw GuardedFileError.invalidManifest
+        }
+        return try streamReviewedBatches(seal: seal, association: association,
+            currentProtectedRoots: currentProtectedRoots,
+            leaseProvider: leaseProvider, schedule: schedule,
+            forEachBatchReversed: forEachBatchReversed, onOutcome: onOutcome)
+    }
+
+    private static func streamReviewedBatches(
+        seal: ReviewedFileResource,
+        association: ResourceAssociationEvidence,
+        currentProtectedRoots: [String],
+        leaseProvider: any ProducerExclusionLeaseProviding,
+        schedule: FilesystemEffectSchedule,
+        forEachBatchReversed: (_ body: (ReviewedBatch) throws -> Void) throws -> Void,
+        onOutcome: @escaping (TargetEffectOutcome) throws -> Void
+    ) throws -> StreamedFilesystemEffect {
         guard seal.identity.canonicalPath.hasSuffix(acceptedRelativeSuffix) else {
             throw AdapterError.wrongTarget
         }
@@ -54,51 +120,92 @@ enum DerivedDataEffectAdapter {
         let anchor = try ResourcePreflight.openValidated(
             seal, currentProtectedRoots: currentProtectedRoots)
 
-        var outcomes: [TargetEffectOutcome] = []
         let before = Self.freeBytes(atDirectory: seal.identity.canonicalPath)
         var volumeUnreadable = false
-
-        // Acquisition is deliberately the final preparatory step. The lease
-        // is strongly retained across every unlink and validates positive,
-        // complete producer evidence no older than five seconds.
-        let lease = try leaseProvider.acquireLease(for: resource)
-        let effectInstant = ContinuousClock.now
-        let effectNow = Date()
-        try ResourceAuthorityValidator.validateAssociation(association,
-            resource: resource, adapterID: AppleDerivedDataInventory.adapterID,
-            adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow)
-        try ResourceAuthorityValidator.validateRuntime(lease.proof,
-            association: association, resource: resource,
-            adapterID: AppleDerivedDataInventory.adapterID,
-            adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow,
-            monotonicAcquiredAt: lease.acquiredAt,
-            monotonicDeadline: lease.deadline,
-            monotonicNow: effectInstant)
+        var lease: (any ProducerExclusionLease)?
+        var budget = try LeafScheduleBudget(allocatedByteLimit: schedule.allocatedByteLimit,
+            leafLimit: schedule.leafLimit, deadline: schedule.deadline)
+        var scheduled = 0
+        var overruns = 0
+        var stop: SchedulingStop?
+        let exclusions = Set(seal.tree.excludedRelativePaths)
 
         // Batches preserve the manifest's global preorder (parents before
         // children) across their boundaries, so replaying batches in
         // reverse order and each batch's entries in reverse order removes
         // every child before the parent that contains it without having to
         // re-walk the tree.
-        let effect = withExtendedLifetime(lease) { () -> Effect in
-            for batch in seal.tree.batches.reversed() {
-                if !volumeUnreadable, Self.freeBytes(atDirectory: seal.identity.canonicalPath) == nil {
-                    volumeUnreadable = true
-                }
-                guard !volumeUnreadable else {
-                    outcomes.append(contentsOf: batch.entries.map(Self.withheldOutcome))
-                    continue
-                }
-                for entry in batch.entries.reversed() {
-                    outcomes.append(AnchoredFileOperations.unlinkReviewedLeaf(
-                        anchor: anchor, reviewed: entry,
-                        excludedRelativePaths: Set(seal.tree.excludedRelativePaths)))
-                }
+        try forEachBatchReversed { batch in
+            guard stop == nil else { return }
+            if !volumeUnreadable, Self.freeBytes(atDirectory: seal.identity.canonicalPath) == nil {
+                volumeUnreadable = true
             }
-            let after = Self.freeBytes(atDirectory: seal.identity.canonicalPath)
-            return Effect(outcomes: outcomes, freeSpaceBeforeBytes: before, freeSpaceAfterBytes: after)
+            guard !volumeUnreadable else {
+                for entry in batch.entries.reversed() { try onOutcome(Self.withheldOutcome(entry)) }
+                return
+            }
+            for entry in batch.entries.reversed() {
+                let now = ContinuousClock.now
+                if let reason = budget.reserve(allocatedEstimate: entry.snapshot.allocatedBytes,
+                                               now: now,
+                                               cancelled: schedule.cancellation.isCancelled
+                                                   || withUnsafeCurrentTask {
+                                                       $0?.isCancelled ?? false
+                                                   }) {
+                    stop = reason
+                    return
+                }
+                let fresh: any ProducerExclusionLease
+                if let lease {
+                    fresh = try leaseProvider.renewLease(for: resource, after: lease)
+                } else {
+                    fresh = try leaseProvider.acquireLease(for: resource)
+                }
+                lease = fresh
+                let effectNow = Date()
+                let effectInstant = ContinuousClock.now
+                try ResourceAuthorityValidator.validateAssociation(association,
+                    resource: resource, adapterID: AppleDerivedDataInventory.adapterID,
+                    adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow)
+                try ResourceAuthorityValidator.validateRuntime(fresh.proof,
+                    association: association, resource: resource,
+                    adapterID: AppleDerivedDataInventory.adapterID,
+                    adapterVersion: AppleDerivedDataInventory.contractVersion, now: effectNow,
+                    monotonicAcquiredAt: fresh.acquiredAt,
+                    monotonicDeadline: fresh.deadline,
+                    monotonicNow: effectInstant)
+                var boundaryStop: SchedulingStop?
+                let outcome: TargetEffectOutcome? = try withExtendedLifetime(fresh) {
+                    try schedule.policyBarrier.withCurrentPolicy(
+                        revision: schedule.policyRevision) {
+                        if schedule.cancellation.isCancelled
+                            || withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) {
+                            boundaryStop = .cancelled
+                            return nil
+                        }
+                        if ContinuousClock.now >= schedule.deadline {
+                            boundaryStop = .deadline
+                            return nil
+                        }
+                        return AnchoredFileOperations.unlinkReviewedLeaf(anchor: anchor,
+                            reviewed: entry, excludedRelativePaths: exclusions)
+                    }
+                }
+                if let boundaryStop {
+                    stop = boundaryStop
+                    return
+                }
+                guard let outcome else { throw GuardedFileError.invalidBudget }
+                scheduled += 1
+                if ContinuousClock.now > schedule.deadline { overruns += 1 }
+                try onOutcome(outcome)
+            }
         }
-        return effect
+        lease = nil
+        let after = Self.freeBytes(atDirectory: seal.identity.canonicalPath)
+        return StreamedFilesystemEffect(freeSpaceBeforeBytes: before,
+            freeSpaceAfterBytes: after, scheduledLeaves: scheduled,
+            deadlineOverruns: overruns, stop: stop)
     }
 
     private static func withheldOutcome(_ entry: ReviewedLeaf) -> TargetEffectOutcome {

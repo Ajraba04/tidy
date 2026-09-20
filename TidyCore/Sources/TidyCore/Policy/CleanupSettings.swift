@@ -83,11 +83,12 @@ public struct PolicyInputs: Equatable, Sendable {
     public var seriousThermal: Bool
     public var critical: Bool
     public var mandatoryExclusions: Set<String>
+    public var localAuthority: LocalAuthoritySnapshot?
 
     public init(layers: [PolicyLayer: PolicyValues], selectedVolumeID: UUID?,
                 approvedVolumeIDs: Set<UUID>, capacityBytes: Int64?, logicalCPUCount: Int,
                 lowPower: Bool, seriousThermal: Bool, critical: Bool,
-                mandatoryExclusions: Set<String>) {
+                mandatoryExclusions: Set<String>, localAuthority: LocalAuthoritySnapshot? = nil) {
         self.layers = layers
         self.selectedVolumeID = selectedVolumeID
         self.approvedVolumeIDs = approvedVolumeIDs
@@ -97,6 +98,7 @@ public struct PolicyInputs: Equatable, Sendable {
         self.seriousThermal = seriousThermal
         self.critical = critical
         self.mandatoryExclusions = mandatoryExclusions
+        self.localAuthority = localAuthority
     }
 }
 
@@ -112,7 +114,7 @@ public enum FieldReason: String, Sendable {
     case defaultValue, replaced, denied, union, strictestCap, automatic, inherited
     case preset, cpuCeiling, pressureCeiling, capacityUnavailable, invalidForVolume
     case unmatchedVolume, authorityUnavailable, protected, quarantine
-    case notConfigured
+    case notConfigured, localConsent
 }
 
 public enum EffectiveValue: Equatable, Sendable {

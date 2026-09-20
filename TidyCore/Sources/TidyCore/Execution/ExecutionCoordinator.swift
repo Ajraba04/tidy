@@ -7,6 +7,7 @@ public actor ExecutionCoordinator {
         let identities: [String: [ResourceIdentity]]
         let reviewedFiles: [String: [ReviewedFileResource]]
         let inventory: [String: [InventoryRecord]]
+        let associations: [String: [ResourceAssociationEvidence]]
         let unavailableIdentityIDs: Set<String>
     }
     private enum State { case idle, running(runID: UUID) }
@@ -15,6 +16,7 @@ public actor ExecutionCoordinator {
         let identities: [String: [ResourceIdentity]]
         let reviewedFiles: [String: [ReviewedFileResource]]
         let inventory: [String: [InventoryRecord]]
+        let associations: [String: [ResourceAssociationEvidence]]
         let unavailable: Set<String>
     }
     private let id: UUID
@@ -27,6 +29,15 @@ public actor ExecutionCoordinator {
     private var tokens: [UUID: ReviewBinding] = [:]
     private var rejections: [UUID: Rejection] = [:]
     private var rejectionOrder: [UUID] = []
+    private var progressPhase: ExecutionProgressPhase = .idle
+    private var completedEffects = 0
+    private var scheduledEffects = 0
+    private var cancellation: EffectCancellationToken?
+    private nonisolated let cancellationRelay = ExecutionCancellationRelay()
+    private var cachedRecovery: MutationAdmission = .storageUnavailable
+    private var progressSubscribers: [UUID:
+        AsyncStream<ExecutionProgressSnapshot>.Continuation] = [:]
+    private static let maximumProgressSubscribers = 8
 
     public init(environment: CleanEnvironment, journalDirectory: URL) {
         let id = UUID()
@@ -54,6 +65,7 @@ public actor ExecutionCoordinator {
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
             reviews[binding.planID] = Registration(review: review, identities: captured.identities,
                 reviewedFiles: captured.reviewedFiles, inventory: captured.inventory,
+                associations: captured.associations,
                 unavailableIdentityIDs: captured.unavailable)
             return review
         }
@@ -100,6 +112,7 @@ public actor ExecutionCoordinator {
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
             reviews[binding.planID] = Registration(review: review, identities: captured.identities,
                 reviewedFiles: captured.reviewedFiles, inventory: captured.inventory,
+                associations: captured.associations,
                 unavailableIdentityIDs: captured.unavailable)
             return review
         }
@@ -125,6 +138,7 @@ public actor ExecutionCoordinator {
             reviews[planID] = Registration(review: next, identities: registration.identities,
                                            reviewedFiles: registration.reviewedFiles,
                                            inventory: registration.inventory,
+                                           associations: registration.associations,
                                            unavailableIdentityIDs: registration.unavailableIdentityIDs)
             return next
         }
@@ -151,9 +165,34 @@ public actor ExecutionCoordinator {
         let binding = tokens[token.nonce]
         let rejection = rejections[token.nonce]
         guard binding != nil || rejection != nil else { return report(.invalidToken) }
-        state = .running(runID: UUID())
-        defer { admissionStore?.release(); state = .idle }
+        let executionRunID = UUID()
+        state = .running(runID: executionRunID)
+        progressPhase = .preparing
+        completedEffects = 0
+        scheduledEffects = 0
+        cancellation = EffectCancellationToken()
+        let runCancellation = cancellation!
+        cancellationRelay.install(runCancellation)
+        publishProgress()
+        defer {
+            admissionStore?.release()
+            cancellationRelay.clear(runCancellation)
+            state = .idle
+            progressPhase = .idle
+            completedEffects = 0
+            scheduledEffects = 0
+            cancellation = nil
+            if let admissionStore {
+                cachedRecovery = admissionStore.acquire()
+                admissionStore.release()
+            } else {
+                cachedRecovery = .storageUnavailable
+            }
+            publishProgress()
+        }
         let admission = admissionStore?.acquire() ?? .storageUnavailable
+        cachedRecovery = admission
+        publishProgress()
         if admission == .busy { return report(.busy) } // reservation released; genuine token retained
         tokens.removeValue(forKey: token.nonce)
         rejections.removeValue(forKey: token.nonce)
@@ -189,7 +228,11 @@ public actor ExecutionCoordinator {
         } catch { return report(.unavailableSelection, tier: tier) }
 
         guard !selected.isEmpty else { return report(.noWork, tier: tier) }
-        return await performAcceptedEffects(selected, tier: tier)
+        scheduledEffects = selected.count
+        progressPhase = .executing
+        publishProgress()
+        return await performAcceptedEffects(selected, registration: registered,
+            binding: binding, runID: executionRunID, tier: tier)
     }
 
     /// The only call site that dispatches a real mutation. Every item here
@@ -197,7 +240,9 @@ public actor ExecutionCoordinator {
     /// accepted it, while the synchronous policy barrier was held. Each
     /// item is independently re-checked against the one sealed adapter
     /// before it is touched: this function grants no authority of its own.
-    private func performAcceptedEffects(_ items: [PlannedItem], tier: Tier) async -> RunReport {
+    private func performAcceptedEffects(_ items: [PlannedItem], registration: Registration,
+                                        binding: ReviewBinding, runID: UUID,
+                                        tier: Tier) async -> RunReport {
         let startedAt = Date()
         guard let admissionStore else { return report(.storageUnavailable, tier: tier) }
         let journal: RunJournal
@@ -206,29 +251,15 @@ public actor ExecutionCoordinator {
             journal = try RunJournal(store: admissionStore, storage: storage)
         } catch { return report(.storageUnavailable, tier: tier) }
 
-        let runID = UUID()
         var sequence: UInt64 = 1
         func appendEvent(_ phase: JournalPhase) -> Bool {
             defer { sequence += 1 }
             return (try? journal.append(JournalEvent(runID: runID, sequence: sequence, phase: phase,
                 operationID: nil, status: nil, reason: nil))) != nil
         }
-        // `RunJournal.append(.started)` requires a matching `PendingEffectIntent`
-        // already durably persisted in the single mandatory admission ledger,
-        // and there is no accepted API anywhere in this package that later
-        // removes a persisted intent (RunRecoveryTests.diagnosticSucceededNeverSuppliesTerminalProof
-        // proves `.itemTerminal(.succeeded)` does not reconcile one either).
-        // Persisting one here would make every future mutation across the
-        // whole app permanently `.uncertainAndPossiblyRunning` after the
-        // very first real cleanup, which is a strictly worse outcome than a
-        // narrower journal record. Until a reviewed reconciliation primitive
-        // lands in `MutationAdmissionStore`, this coordinator only records
-        // the confirmed intent to run (`.planned`/`.confirmed`), never a
-        // per-operation `.started`/`.itemTerminal`/`.finished` sequence for a
-        // real effect. Journal failures below latch the mandatory admission
-        // store unavailable on their own (`RunJournal.observed`); this run
-        // simply stops making progress rather than report a success it
-        // cannot durably record.
+        // Every accepted target below persists its immutable manifest and
+        // versioned intent before `.started`; terminal proof is durable before
+        // the intent can be retired. Journal failure stops further dispatch.
         guard appendEvent(.planned) else { return report(.storageUnavailable, tier: tier) }
         guard appendEvent(.confirmed) else { return report(.storageUnavailable, tier: tier) }
 
@@ -240,37 +271,101 @@ public actor ExecutionCoordinator {
         var measurementsAvailable = true
 
         for item in items {
+            if cancellation?.isCancelled == true || Task.isCancelled {
+                results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0,
+                    succeeded: false, message: "Cancelled before the next effect boundary.",
+                    targetOutcomes: nil, effectStatus: .cancelled))
+                completedEffects += 1
+                publishProgress()
+                continue
+            }
             guard CapabilityRegistry.denialReason(for: item.action, itemID: item.id) == nil,
                   item.targets.count == 1, let target = item.targets.first,
                   guardian.isSafe(target.path, mustBeUnder: item.declaredRoot, home: environment.homeDirectory) else {
                 results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
                     message: CapabilityRegistry.quarantineReason, targetOutcomes: nil, effectStatus: .skipped))
+                completedEffects += 1
+                publishProgress()
                 continue
             }
             do {
-                let effect = try DerivedDataEffectAdapter.execute(itemID: item.id, action: item.action, target: target)
-                if !capturedFirstMeasurement, let before = effect.freeSpaceBeforeBytes {
+                guard item.id == DerivedDataEffectAdapter.acceptedItemID,
+                      let provider = AppleDerivedDataInventory.productionLeaseProvider,
+                      let association = registration.associations[item.id]?.first else {
+                    throw DerivedDataEffectAdapter.AdapterError.productionProofUnavailable
+                }
+                let completed = try executeRegisteredFilesystemTarget(
+                    registration: registration, binding: binding, item: item,
+                    targetOrdinal: 0, runID: runID, journal: journal,
+                    association: association, leaseProvider: provider)
+                if !capturedFirstMeasurement,
+                   let before = completed.streamed.freeSpaceBeforeBytes {
                     freeSpaceBeforeBytes = before
                     capturedFirstMeasurement = true
                 }
-                if let after = effect.freeSpaceAfterBytes { freeSpaceAfterBytes = after }
+                if let after = completed.streamed.freeSpaceAfterBytes {
+                    freeSpaceAfterBytes = after
+                }
                 else { measurementsAvailable = false }
-                let status = EffectAccounting.aggregateStatus(effect.outcomes)
-                let freed = EffectAccounting.checkedSum(effect.outcomes.map(\.removedAllocatedBytes))
-                results.append(ItemResult(id: item.id, title: item.title, freedBytes: freed.bytes ?? 0,
-                    succeeded: status == .succeeded, message: nil,
-                    targetOutcomes: effect.outcomes, effectStatus: status))
+                results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0,
+                    succeeded: completed.status == .succeeded,
+                    message: completed.streamed.stop.map { "Stopped at safe boundary: \($0)" },
+                    targetOutcomes: nil, effectStatus: completed.status))
             } catch {
                 measurementsAvailable = false
                 results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
                     message: "\(error)", targetOutcomes: nil, effectStatus: .failed))
             }
+            completedEffects += 1
+            publishProgress()
+        }
+
+        if results.allSatisfy({ $0.effectStatus != .uncertain }) {
+            do { try journal.finish(runID: runID) }
+            catch { return report(.storageUnavailable, tier: tier) }
         }
 
         return RunReport(tier: tier, results: results, startedAt: startedAt, finishedAt: Date(),
             freeSpaceBeforeBytes: freeSpaceBeforeBytes, freeSpaceAfterBytes: freeSpaceAfterBytes,
             disposition: .completed,
             coordinatorMeasurementsAvailable: measurementsAvailable && capturedFirstMeasurement)
+    }
+
+    private func executeRegisteredFilesystemTarget(
+        registration: Registration, binding: ReviewBinding, item: PlannedItem,
+        targetOrdinal: Int, runID: UUID, journal: RunJournal,
+        association: ResourceAssociationEvidence,
+        leaseProvider: any ProducerExclusionLeaseProviding
+    ) throws -> CompletedFilesystemEffect {
+        guard item.id == DerivedDataEffectAdapter.acceptedItemID,
+              case .deleteContents = item.action,
+              registration.review.binding == binding,
+              registration.review.selection.selectedIDs.contains(item.id),
+              let reviewed = registration.reviewedFiles[item.id],
+              reviewed.indices.contains(targetOrdinal),
+              let storedAssociation = registration.associations[item.id],
+              storedAssociation.indices.contains(targetOrdinal),
+              PersistedResourceAssociation(storedAssociation[targetOrdinal])
+                == PersistedResourceAssociation(association) else {
+            throw ConfirmationError.unavailableSelection
+        }
+        let operationID = UUID()
+        let lifecycle = FilesystemEffectLifecycle(journal: journal)
+        let prepared = try lifecycle.prepare(runID: runID, operationID: operationID,
+            planID: binding.planID, planRevision: binding.planRevision,
+            policyRevision: binding.policyRevision, selectedItemID: item.id,
+            targetOrdinal: targetOrdinal, reviewed: reviewed[targetOrdinal],
+            association: association)
+        let cancellation = self.cancellation ?? EffectCancellationToken()
+        let schedule = try FilesystemEffectSchedule(
+            allocatedByteLimit: 256 * 1_024 * 1_024 * 1_024,
+            leafLimit: ReviewedManifestArchive.maximumNodeCount,
+            deadline: ContinuousClock.now.advanced(by: .seconds(300)),
+            cancellation: cancellation, policyBarrier: barrier,
+            policyRevision: binding.policyRevision)
+        return try lifecycle.execute(prepared, reviewed: reviewed[targetOrdinal],
+            association: association, currentProtectedRoots: environment.protectedRoots,
+            leaseProvider: leaseProvider, schedule: schedule)
     }
 
     public nonisolated func beginPolicyUpdate() throws -> PolicyUpdateTicket { try barrier.beginUpdate() }
@@ -307,7 +402,142 @@ public actor ExecutionCoordinator {
         if case .running = state { return .busy }
         guard let admissionStore else { return .storageUnavailable }
         defer { admissionStore.release() }
-        return admissionStore.acquire()
+        let admission = admissionStore.acquire()
+        cachedRecovery = admission
+        publishProgress()
+        return admission
+    }
+
+    public func executionProgress() -> ExecutionProgressSnapshot {
+        progressSnapshot()
+    }
+
+    public func progressUpdates() -> AsyncStream<ExecutionProgressSnapshot> {
+        let id = UUID()
+        let pair = AsyncStream<ExecutionProgressSnapshot>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        guard progressSubscribers.count < Self.maximumProgressSubscribers else {
+            pair.continuation.finish()
+            return pair.stream
+        }
+        progressSubscribers[id] = pair.continuation
+        pair.continuation.yield(progressSnapshot())
+        pair.continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeProgressSubscriber(id) }
+        }
+        return pair.stream
+    }
+
+    private func progressSnapshot() -> ExecutionProgressSnapshot {
+        let runID: UUID?
+        switch state {
+        case .idle: runID = nil
+        case .running(let value): runID = value
+        }
+        return ExecutionProgressSnapshot(runID: runID, phase: progressPhase,
+            completedEffects: completedEffects, scheduledEffects: scheduledEffects,
+            cancellationRequested: cancellationRelay.isCancelled,
+            recovery: caseRunningRecovery())
+    }
+
+    private func caseRunningRecovery() -> MutationAdmission {
+        if case .running = state { return .busy }
+        return cachedRecovery
+    }
+
+    public nonisolated func cancelCurrentRun() {
+        cancellationRelay.cancel()
+        Task { await self.cancellationDidChange() }
+    }
+
+    private func cancellationDidChange() { publishProgress() }
+
+    private func publishProgress() {
+        let snapshot = progressSnapshot()
+        for continuation in progressSubscribers.values { continuation.yield(snapshot) }
+    }
+
+    private func removeProgressSubscriber(_ id: UUID) {
+        progressSubscribers.removeValue(forKey: id)
+    }
+
+    public func reconcileUnfinishedEffects() async -> RecoveryReconciliationReport {
+        guard case .idle = state, let admissionStore else {
+            return RecoveryReconciliationReport(disposition: .storageUnavailable,
+                inspectedEffects: 0, reconciledEffects: 0)
+        }
+        let admission = admissionStore.acquire()
+        guard admission != .busy else {
+            return RecoveryReconciliationReport(disposition: .blocked,
+                inspectedEffects: 0, reconciledEffects: 0)
+        }
+        defer {
+            admissionStore.release()
+            progressPhase = .idle
+            publishProgress()
+        }
+        guard admission != .storageUnavailable else {
+            return RecoveryReconciliationReport(disposition: .storageUnavailable,
+                inspectedEffects: 0, reconciledEffects: 0)
+        }
+        progressPhase = .reconciling
+        publishProgress()
+        let intents: [PendingEffectIntent]
+        do { intents = try admissionStore.unfinishedIntentsWhileLocked() }
+        catch {
+            return RecoveryReconciliationReport(disposition: .storageUnavailable,
+                inspectedEffects: 0, reconciledEffects: 0)
+        }
+        guard !intents.isEmpty else {
+            cachedRecovery = .ready
+            return RecoveryReconciliationReport(disposition: .noUnfinishedEffects,
+                inspectedEffects: 0, reconciledEffects: 0)
+        }
+        let journal: RunJournal
+        do {
+            journal = try RunJournal(store: admissionStore,
+                storage: DurableJournalStorage(directory: journalDirectory))
+        } catch {
+            return RecoveryReconciliationReport(disposition: .storageUnavailable,
+                inspectedEffects: intents.count, reconciledEffects: 0)
+        }
+        var reconciled = 0
+        var blocked = false
+        for runID in Set(intents.map(\.runID)) {
+            let runIntents = intents.filter { $0.runID == runID }
+            guard runIntents.allSatisfy({ intent in
+                guard intent.schemaVersion == 2,
+                      case .filesystem(let binding)? = intent.binding else { return false }
+                return binding.adapterID == AppleDerivedDataInventory.adapterID
+                    && binding.adapterVersion == AppleDerivedDataInventory.contractVersion
+            }) else {
+                blocked = true
+                continue
+            }
+            do {
+                if try journal.reconcileTerminalRun(runID: runID) {
+                    reconciled += runIntents.count
+                } else {
+                    // Missing paths, PIDs, locks, or a reboot are deliberately
+                    // not substituted for an adapter terminal proof.
+                    blocked = true
+                }
+            } catch {
+                blocked = true
+            }
+        }
+        if reconciled > 0 {
+            reviews.removeAll()
+            tokens.removeAll()
+            rejections.removeAll()
+            rejectionOrder.removeAll()
+        }
+        progressPhase = blocked ? .blocked : .idle
+        cachedRecovery = blocked ? .uncertainAndPossiblyRunning : .ready
+        publishProgress()
+        return RecoveryReconciliationReport(
+            disposition: blocked ? .blocked : .requireFreshReview,
+            inspectedEffects: intents.count, reconciledEffects: reconciled)
     }
 
     private func requireAdmission() throws {
@@ -347,6 +577,7 @@ public actor ExecutionCoordinator {
         var identities: [String: [ResourceIdentity]] = [:]
         var reviewedFiles: [String: [ReviewedFileResource]] = [:]
         var inventory: [String: [InventoryRecord]] = [:]
+        var associations: [String: [ResourceAssociationEvidence]] = [:]
         var unavailable: Set<String> = []
         for row in plan.reviewItems {
             var rowIdentities: [ResourceIdentity] = []
@@ -377,9 +608,11 @@ public actor ExecutionCoordinator {
             identities[row.id] = rowIdentities
             reviewedFiles[row.id] = rowReviewed
             inventory[row.id] = rowInventory
+            associations[row.id] = []
         }
         return CapturedReviewResources(identities: identities,
-            reviewedFiles: reviewedFiles, inventory: inventory, unavailable: unavailable)
+            reviewedFiles: reviewedFiles, inventory: inventory,
+            associations: associations, unavailable: unavailable)
     }
 
     private func invalidateTokens(planID: UUID, reason: RunDisposition) {

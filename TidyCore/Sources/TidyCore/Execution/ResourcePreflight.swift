@@ -205,14 +205,16 @@ enum ResourcePreflight {
 
     static func captureReviewedDirectory(at path: String, protectedRoots: [String],
                                          maxNodesPerBatch: Int = 5_000,
-                                         maxBytesPerBatch: Int = 8 * 1_024 * 1_024) throws
+                                         maxBytesPerBatch: Int = 8 * 1_024 * 1_024,
+                                         limits: ManifestCaptureLimits = .production()) throws
       -> ReviewedFileResource {
         let anchor = try DirectoryAnchor.open(path: path)
         let protection = try protectionScope(rootPath: anchor.path, protectedRoots: protectedRoots)
         let relativeExclusions = try descendantExclusions(
             rootPath: anchor.path, protectedRoots: protection.canonicalProtectedRoots)
         let tree = try ReviewedTree.capture(anchor: anchor, excluding: relativeExclusions,
-            maxNodesPerBatch: maxNodesPerBatch, maxBytesPerBatch: maxBytesPerBatch)
+            maxNodesPerBatch: maxNodesPerBatch, maxBytesPerBatch: maxBytesPerBatch,
+            limits: limits)
         return try makeReviewedResource(tree: tree, protection: protection)
     }
 
@@ -295,8 +297,8 @@ enum ResourcePreflight {
         return anchor
     }
 
-    fileprivate static func protectionScope(rootPath: String,
-                                             protectedRoots: [String]) throws -> ProtectionScopeIdentity {
+    static func protectionScope(rootPath: String,
+                                protectedRoots: [String]) throws -> ProtectionScopeIdentity {
         let canonicalRoot = PathGuard.canonicalize(rootPath)
         guard canonicalRoot == rootPath else { throw GuardedFileError.identityChanged }
         let roots = Array(Set(protectedRoots.map(PathGuard.canonicalize)))

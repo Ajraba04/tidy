@@ -222,6 +222,32 @@ struct ReviewedManifestHeader: Codable, Equatable, Sendable {
     let rootSnapshot: NodeSnapshot
     let rootParentChain: [NodeSnapshot]
 }
+struct ManifestCaptureLimits: Sendable {
+    static func production(cancellation: EffectCancellationToken = EffectCancellationToken()) -> Self {
+        Self(maximumNodes: ReviewedManifestArchive.maximumNodeCount,
+             maximumNameBytes: 64 * 1_024 * 1_024,
+             maximumDepth: 127, maximumWorkUnits: 2_000_000,
+             deadline: ContinuousClock.now.advanced(by: .seconds(600)),
+             cancellation: cancellation)
+    }
+    let maximumNodes: Int
+    let maximumNameBytes: Int
+    let maximumDepth: Int
+    let maximumWorkUnits: Int
+    let deadline: ContinuousClock.Instant
+    let cancellation: EffectCancellationToken
+
+    init(maximumNodes: Int, maximumNameBytes: Int, maximumDepth: Int,
+         maximumWorkUnits: Int, deadline: ContinuousClock.Instant,
+         cancellation: EffectCancellationToken) {
+        self.maximumNodes = maximumNodes
+        self.maximumNameBytes = maximumNameBytes
+        self.maximumDepth = maximumDepth
+        self.maximumWorkUnits = maximumWorkUnits
+        self.deadline = deadline
+        self.cancellation = cancellation
+    }
+}
 struct ReviewedTree: Sendable {
     let header: ReviewedManifestHeader
     let canonicalHeaderBytes: Data
@@ -238,8 +264,15 @@ struct ReviewedTree: Sendable {
     }
     static func capture(anchor: DirectoryAnchor, excluding: Set<String>,
                         maxNodesPerBatch: Int = 5_000,
-                        maxBytesPerBatch: Int = 8 * 1_024 * 1_024) throws -> ReviewedTree {
+                        maxBytesPerBatch: Int = 8 * 1_024 * 1_024,
+                        limits: ManifestCaptureLimits = .production()) throws -> ReviewedTree {
         guard (1...5_000).contains(maxNodesPerBatch), (1...8 * 1_024 * 1_024).contains(maxBytesPerBatch) else {
+            throw GuardedFileError.manifestLimit
+        }
+        guard (1...ReviewedManifestArchive.maximumNodeCount).contains(limits.maximumNodes),
+              (1...ReviewedManifestArchive.maximumCanonicalBytes).contains(limits.maximumNameBytes),
+              (1...127).contains(limits.maximumDepth),
+              limits.maximumWorkUnits >= limits.maximumNodes else {
             throw GuardedFileError.manifestLimit
         }
         for path in excluding { _ = try DirectoryAnchor.relativeComponents(path) }
@@ -254,6 +287,18 @@ struct ReviewedTree: Sendable {
         var batchBytes = 24 // UUID bytes plus UInt64 entry count.
         var totalNodes = 0
         var totalBatchBytes = 0
+        var enumeratedNames = 0
+        var nameBytes = 0
+        var workUnits = 0
+        func checkpoint(_ work: Int = 1) throws {
+            let (next, overflow) = workUnits.addingReportingOverflow(work)
+            guard !overflow, next <= limits.maximumWorkUnits,
+                  ContinuousClock.now < limits.deadline,
+                  !limits.cancellation.isCancelled else {
+                throw GuardedFileError.manifestLimit
+            }
+            workUnits = next
+        }
         func append(_ entry: ReviewedLeaf) throws {
             let size = try ManifestEncoding.leaf(entry).count
             guard size <= maxBytesPerBatch - 24 else { throw GuardedFileError.manifestLimit }
@@ -279,6 +324,9 @@ struct ReviewedTree: Sendable {
             totalNodes = nextNodes
         }
         func walk(_ fd: Int32, prefix: String, parents: [NodeSnapshot]) throws {
+            let depth = parents.count - header.rootParentChain.count
+            guard depth <= limits.maximumDepth else { throw GuardedFileError.manifestLimit }
+            try checkpoint()
             let before = try DirectoryAnchor.readSnapshot(fd)
             let enumerationFD = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard enumerationFD >= 0 else { throw GuardedFileError.systemCall(errno) }
@@ -300,9 +348,20 @@ struct ReviewedTree: Sendable {
                 guard let name else { throw GuardedFileError.invalidComponent }
                 if name == "." || name == ".." { continue }
                 _ = try DirectoryAnchor.relativeComponents(name)
+                try checkpoint()
+                let (nextNames, namesOverflow) = enumeratedNames.addingReportingOverflow(1)
+                let (nextNameBytes, bytesOverflow) = nameBytes.addingReportingOverflow(name.utf8.count)
+                guard !namesOverflow, !bytesOverflow,
+                      nextNames <= limits.maximumNodes,
+                      nextNameBytes <= limits.maximumNameBytes else {
+                    throw GuardedFileError.manifestLimit
+                }
+                enumeratedNames = nextNames
+                nameBytes = nextNameBytes
                 names.append(name)
             }
             for name in names.sorted(by: ManifestEncoding.ordered) {
+                try checkpoint()
                 let relative = prefix.isEmpty ? name : prefix + "/" + name
                 if excluding.contains(where: { PathGuard.isEqualOrDescendant(relative, of: $0) }) { continue }
                 let snapshot = try DirectoryAnchor.readSnapshot(fd, name)
@@ -311,12 +370,19 @@ struct ReviewedTree: Sendable {
                 let child = openat(fd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC
                     | (snapshot.isDirectory ? O_DIRECTORY : 0))
                 guard child >= 0 else { throw GuardedFileError.systemCall(errno) }
-                defer { close(child) }
-                guard try DirectoryAnchor.readSnapshot(child) == snapshot else { throw GuardedFileError.identityChanged }
-                try anchor.validateVolume(child)
-                let entry = ReviewedLeaf(relativePath: relative, parentChain: parents, snapshot: snapshot)
-                try append(entry)
-                if snapshot.isDirectory { try walk(child, prefix: relative, parents: parents + [snapshot]) }
+                try { () throws -> Void in
+                    defer { close(child) }
+                    guard try DirectoryAnchor.readSnapshot(child) == snapshot else {
+                        throw GuardedFileError.identityChanged
+                    }
+                    try anchor.validateVolume(child)
+                    let entry = ReviewedLeaf(relativePath: relative,
+                        parentChain: parents, snapshot: snapshot)
+                    try append(entry)
+                    if snapshot.isDirectory {
+                        try walk(child, prefix: relative, parents: parents + [snapshot])
+                    }
+                }()
                 guard try DirectoryAnchor.readSnapshot(fd, name) == snapshot else { throw GuardedFileError.identityChanged }
             }
             guard try DirectoryAnchor.readSnapshot(fd) == before else { throw GuardedFileError.identityChanged }
@@ -332,12 +398,15 @@ struct ReviewedTree: Sendable {
         guard try DirectoryAnchor.readSnapshot(anchor.rootFD) == root else { throw GuardedFileError.identityChanged }
         // Reject a mixed snapshot if an earlier leaf changed while later names
         // were captured. This is read-only review, not an external-writer lease.
-        for entry in batches.flatMap(\.entries) {
-            try anchor.withParent(relativePath: entry.relativePath) { parent, name, chain in
-                guard chain.count == entry.parentChain.count,
-                      zip(chain, entry.parentChain).allSatisfy({ $0.sameIdentity(as: $1) }),
-                      try DirectoryAnchor.readSnapshot(parent, name) == entry.snapshot else {
-                    throw GuardedFileError.identityChanged
+        for batch in batches {
+            for entry in batch.entries {
+                try checkpoint()
+                try anchor.withParent(relativePath: entry.relativePath) { parent, name, chain in
+                    guard chain.count == entry.parentChain.count,
+                          zip(chain, entry.parentChain).allSatisfy({ $0.sameIdentity(as: $1) }),
+                          try DirectoryAnchor.readSnapshot(parent, name) == entry.snapshot else {
+                        throw GuardedFileError.identityChanged
+                    }
                 }
             }
         }
@@ -577,7 +646,9 @@ enum AnchoredFileOperations {
         }
     }
 }
-enum SchedulingStop: Equatable { case cancelled, deadline, budget, unknownEstimate }
+enum SchedulingStop: String, Codable, Equatable, Sendable {
+    case cancelled, deadline, budget, unknownEstimate
+}
 struct LeafScheduleBudget {
     private let allocatedByteLimit: Int64
     private let leafLimit: Int

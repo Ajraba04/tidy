@@ -156,6 +156,21 @@ protocol ProducerExclusionLeaseProviding: Sendable {
     /// fresh state. Merely checking for a process or taking a Tidy-owned lock
     /// does not conform to this contract.
     func acquireLease(for resource: ResourceIdentity) throws -> any ProducerExclusionLease
+    /// Reacquires producer-owned exclusion and fresh observations at a safe
+    /// leaf boundary. Providers may use the same primitive internally, but
+    /// must return a newly observed proof with a new monotonic lifetime.
+    func renewLease(for resource: ResourceIdentity,
+                    after previous: any ProducerExclusionLease) throws
+        -> any ProducerExclusionLease
+}
+
+extension ProducerExclusionLeaseProviding {
+    func renewLease(for resource: ResourceIdentity,
+                    after previous: any ProducerExclusionLease) throws
+        -> any ProducerExclusionLease {
+        _ = previous
+        return try acquireLease(for: resource)
+    }
 }
 
 enum ResourceAuthorityError: Error, Equatable {

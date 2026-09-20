@@ -82,6 +82,14 @@ struct MenuBarContentView: View {
                     open(WindowID.clean, value: Tier.deep)
                 }
 
+                ModeButton(title: "Developer Workspace", subtitle: "Projects, ecosystem inventory and Build Prep") {
+                    open(WindowID.developer)
+                }
+
+                ModeButton(title: "Assistance", subtitle: "Local consent, budgets, Rescue and maintenance") {
+                    open(WindowID.assistance)
+                }
+
                 ModeButton(title: "Custom…", subtitle: "Pick individual items, save presets") {
                     open(WindowID.custom)
                 }

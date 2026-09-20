@@ -21,10 +21,15 @@ public extension SettingsPresentationRegistry {
     static func consumerSupport(for definition: SettingDefinition) -> SettingConsumerSupport {
         let raw = definition.id.rawValue
         if definition.resolution == .authority {
-            if raw == "monitor.backgroundEnabled" {
-                return .unavailable("Local background-monitor consent is not implemented.")
+            if ["monitor.backgroundEnabled", "notifications.enabled", "scope.projectRoots",
+                "scope.externalVolumes", "tools.approvedExecutables", "docker.approvedEndpoints",
+                "rescue.approvedApplications", "app.launchAtLogin"].contains(raw) {
+                return .connected("Separate installation-bound local consent in Assistance")
             }
-            return .unavailable("A separately accepted machine-local authority workflow is not implemented.")
+            if raw.hasPrefix("maintenance.") {
+                return .connected("Reviewed local maintenance grant; unattended allowlist is empty")
+            }
+            return .unavailable("This local authority has no accepted effect workflow.")
         }
         if raw == "feature.headroom" {
             return .connected("SystemMonitor and Headroom presentation")
@@ -35,20 +40,28 @@ public extension SettingsPresentationRegistry {
         if ["feature.buildPrep", "feature.projects"].contains(raw)
             || raw == "scope.currentProject"
             || raw == "scope.pinnedProjects" {
-            return .unavailable("R09 project inventory, ranking, and Build Prep are not implemented.")
+            return .connected("Scoped project inventory and target-limited Build Prep planning")
+        }
+        if ["cleanup.inactiveDays", "cleanup.recentProtectionDays", "cleanup.minimumCandidateMiB",
+            "cleanup.minimumItemMiB", "cleanup.costCeiling", "cleanup.requestedBatchGiB",
+            "cleanup.requestedBatchItems", "cleanup.hardBatchGiB", "cleanup.hardBatchItems"].contains(raw) {
+            return .connected("Eligibility ranking and bounded Build Prep selection; effects require accepted adapters")
         }
         if raw.hasPrefix("cleanup.") {
-            return .unavailable("R02-R04 accepted cleanup effects and bounds, plus the relevant R09-R10 workflow consumer, are not implemented.")
+            return .unavailable("The corresponding cleanup effect has no accepted production adapter.")
+        }
+        if raw == "feature.ecosystems" || (raw.hasPrefix("ecosystem.") && raw.hasSuffix(".inventory")) {
+            return .connected("Scoped bounded developer inventory")
         }
         if raw == "feature.ecosystems" || raw.hasPrefix("ecosystem.")
             || raw.hasPrefix("item.") || raw == "browsers.keepCookieDomains" {
-            return .unavailable("R10 ecosystem adapter behavior is not implemented.")
+            return .unavailable("Inventory is available; this mutation control requires an accepted production effect adapter.")
         }
         if ["feature.rescue", "feature.budgets", "feature.maintenance"].contains(raw)
             || raw.hasPrefix("rescue.") || raw.hasPrefix("budget.")
             || raw.hasPrefix("notifications.") || raw.hasPrefix("maintenance.")
             || raw == "app.launchAtLogin" {
-            return .unavailable("R11 notifications and assistance are not implemented.")
+            return .connected("Local assistance, budget hysteresis and consent-gated notifications")
         }
         if raw.hasPrefix("scan.cache") {
             return .connected("App-owned incremental scan index")

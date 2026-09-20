@@ -618,6 +618,14 @@ internal actor SchedulerPolicyController {
                 SchedulerPolicyControllerCapability(controllerID: controller.controllerID))
     }
 
+    /// Captures the current read-admission epoch without retaining a session.
+    /// Invalidating settings transitions revoke already-issued traversal scopes.
+    nonisolated func readValidity() -> @Sendable () -> Bool {
+        let captured = barrier.openEpoch()
+        let barrier = self.barrier
+        return { captured != nil && barrier.openEpoch() == captured }
+    }
+
     nonisolated func beginAdmissionTransition(
         using capability: SchedulerPolicyControllerCapability) throws -> SchedulerAdmissionTicket {
         guard capability.controllerID == controllerID else { throw WorkSchedulerError.foreignController }
