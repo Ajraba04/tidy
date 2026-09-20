@@ -57,8 +57,6 @@ struct RuntimeTestAppearanceAttestation: View {
 
 private struct RuntimeCompactWindowGeometry: View {
     @State private var geometry = "not-open"
-    @State private var auditArrangementStatus = "not arranged"
-    @State private var auditArrangementDetail = "not-arranged"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -75,15 +73,10 @@ private struct RuntimeCompactWindowGeometry: View {
                 capture(window)
             }
             .accessibilityIdentifier("runtime.settings.compact")
-            Text("Audit windows: \(auditArrangementStatus)")
-                .font(.caption.monospaced())
-                .accessibilityLabel("Runtime audit window arrangement")
-                .accessibilityValue(auditArrangementDetail)
-                .accessibilityIdentifier("runtime.audit.arrangement")
-            Button("Arrange audit windows") {
-                arrangeAuditWindows()
+            Button("Hide verification controls") {
+                RuntimeAuditControls.hide()
             }
-            .accessibilityIdentifier("runtime.audit.arrange")
+            .accessibilityIdentifier("runtime.audit.hide")
         }
             .onReceive(NotificationCenter.default.publisher(
                 for: NSWindow.didBecomeKeyNotification)) { notification in
@@ -98,78 +91,25 @@ private struct RuntimeCompactWindowGeometry: View {
             + "contentMin:\(window.contentMinSize) max:\(window.maxSize) "
             + "resizable:\(window.styleMask.contains(.resizable))"
     }
+}
 
-    private func arrangeAuditWindows() {
-        let visibleTitledWindows = NSApp.windows.filter {
-            $0.isVisible && $0.styleMask.contains(.titled)
-        }
-        let controls = visibleTitledWindows.filter {
-            $0.title == "Tidy Production Runtime Verification"
-        }
-        guard controls.count == 1 else {
-            auditArrangementStatus = "failed (control count)"
-            auditArrangementDetail = "failed:expected-one-control found:\(controls.count)"
-            return
-        }
-        let control = controls[0]
-        let subjects = visibleTitledWindows.filter { $0 !== control }
-        guard subjects.count == 1 else {
-            auditArrangementStatus = "failed (subject count)"
-            auditArrangementDetail = "failed:expected-one-subject found:\(subjects.count)"
-            return
-        }
-        let subject = subjects[0]
-        guard let screen = subject.screen else {
-            auditArrangementStatus = "failed (no screen)"
-            auditArrangementDetail = "failed:subject-has-no-screen"
-            return
-        }
+@MainActor
+enum RuntimeAuditControls {
+    private static let controlTitle = "Tidy Production Runtime Verification"
 
-        let viewport = screen.visibleFrame
-        let gap: CGFloat = 16
-        let requiredWidth = control.frame.width + gap + subject.frame.width
-        let requiredHeight = max(control.frame.height, subject.frame.height)
-        guard requiredWidth <= viewport.width, requiredHeight <= viewport.height else {
-            auditArrangementStatus = "failed (no fit)"
-            auditArrangementDetail = "failed:no-fit viewport:\(viewport) "
-                + "required:\(NSSize(width: requiredWidth, height: requiredHeight))"
-            return
-        }
+    static func hide() {
+        controlWindow?.orderOut(nil)
+    }
 
-        let left = viewport.minX + floor((viewport.width - requiredWidth) / 2)
-        let controlFrame = CGRect(
-            origin: CGPoint(x: left, y: viewport.maxY - control.frame.height),
-            size: control.frame.size)
-        let subjectFrame = CGRect(
-            origin: CGPoint(x: controlFrame.maxX + gap,
-                            y: viewport.maxY - subject.frame.height),
-            size: subject.frame.size)
-        guard viewport.contains(controlFrame), viewport.contains(subjectFrame) else {
-            auditArrangementStatus = "failed (calculation)"
-            auditArrangementDetail = "failed:calculated-frame-outside viewport:\(viewport) "
-                + "control:\(controlFrame) subject:\(subjectFrame)"
-            return
-        }
+    static func show() {
+        guard let controlWindow else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        controlWindow.makeKeyAndOrderFront(nil)
+    }
 
-        control.setFrameOrigin(controlFrame.origin)
-        subject.setFrameOrigin(subjectFrame.origin)
-        let finalControlFrame = control.frame
-        let finalSubjectFrame = subject.frame
-        let isOnscreen = viewport.contains(finalControlFrame)
-            && viewport.contains(finalSubjectFrame)
-        let isDisjoint = !finalControlFrame.intersects(finalSubjectFrame)
-        guard isOnscreen, isDisjoint,
-              finalControlFrame.size == controlFrame.size,
-              finalSubjectFrame.size == subjectFrame.size else {
-            auditArrangementStatus = "failed (postcondition)"
-            auditArrangementDetail = "failed:postcondition viewport:\(viewport) "
-                + "control:\(finalControlFrame) subject:\(finalSubjectFrame)"
-            return
-        }
-        auditArrangementStatus = "arranged"
-        auditArrangementDetail = "arranged:onscreen viewport:\(viewport) "
-            + "control:\(finalControlFrame) subject:\(finalSubjectFrame) "
-            + "subject-title:\(subject.title) gap:\(gap)"
+    private static var controlWindow: NSWindow? {
+        let matches = NSApp.windows.filter { $0.title == controlTitle }
+        return matches.count == 1 ? matches[0] : nil
     }
 }
 #endif
