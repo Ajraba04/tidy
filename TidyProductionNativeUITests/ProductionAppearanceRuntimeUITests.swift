@@ -43,6 +43,7 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         if reducedMotion { app.launchArguments.append("--tidy-runtime-reduce-motion") }
         if compact { app.launchArguments.append("--tidy-runtime-compact") }
         addTeardownBlock { @MainActor in self.cleanup(app) }
+        addTeardownBlock { @MainActor in self.restoreVerificationControlsIfNeeded(app) }
         app.launch()
 
         let control = app.windows["Tidy Production Runtime Verification"]
@@ -56,6 +57,9 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
                        "isolated")
         XCTAssertEqual(control.staticTexts["runtime.authorization"].value as? String,
                        "all-denied")
+        let syntheticHome = control.staticTexts["runtime.synthetic.home"].value as? String
+        XCTAssertTrue(syntheticHome?.hasPrefix("/") == true,
+            "Runtime appearance host did not attest an absolute fixture home")
 
         control.buttons["runtime.open.settings"].click()
         let settings = app.windows["Settings"]
@@ -73,7 +77,6 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
             control.click()
             control.buttons["runtime.settings.compact"].click()
             settings.click()
-            arrangeAuditWindows(control: control, subjectWindow: settings)
             XCTAssertLessThanOrEqual(settings.frame.width, 500,
                 "Settings could not resize to its compact width: \(description)")
         }
@@ -96,7 +99,10 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
                 + "viewport=\(settingsViewport.frame), metadata=\(metadata.frame)")
         capture(settings, name: "\(expected)-settings")
         if compact {
+            hideVerificationControls(app, control: control, subjectWindow: settings)
             try audit(app, subjectWindow: settings)
+            restoreVerificationControlsIfNeeded(app)
+            settings.click()
         }
 
         let search = settings.textFields["settings.search"]
@@ -123,44 +129,44 @@ final class ProductionAppearanceRuntimeUITests: XCTestCase {
         XCTAssertTrue(cleanNow.waitForExistence(timeout: 45), clean.debugDescription)
         XCTAssertFalse(cleanNow.isEnabled)
         XCTAssertTrue(clean.frame.contains(cleanNow.frame))
-        if compact {
-            arrangeAuditWindows(control: control, subjectWindow: clean)
-        }
         capture(clean, name: "\(expected)-safe-clean")
         if compact {
+            hideVerificationControls(app, control: control, subjectWindow: clean)
             try audit(app, subjectWindow: clean)
+            restoreVerificationControlsIfNeeded(app)
         }
     }
 
     @MainActor
-    private func arrangeAuditWindows(
+    private func hideVerificationControls(
+        _ app: XCUIApplication,
         control: XCUIElement,
         subjectWindow: XCUIElement
     ) {
-        let attestation = control.staticTexts["runtime.audit.arrangement"]
-        XCTAssertTrue(attestation.exists, control.debugDescription)
-        let previousAttestation = attestation.value as? String
-        let controlSize = control.frame.size
-        let subjectSize = subjectWindow.frame.size
-
         control.click()
-        control.buttons["runtime.audit.arrange"].click()
+        control.buttons["runtime.audit.hide"].click()
+        XCTAssertFalse(control.exists, "Runtime verification controls remained visible")
+        XCTAssertTrue(subjectWindow.exists, "Audit subject disappeared with the controls")
+        let visibleWindows = app.windows.allElementsBoundByIndex
+        XCTAssertEqual(visibleWindows.count, 1,
+            "Expected only the audit subject after hiding controls: \(app.debugDescription)")
+        XCTAssertEqual(visibleWindows.first?.frame, subjectWindow.frame,
+            "The remaining app window is not the audit subject")
+    }
 
-        let detail = attestation.value as? String ?? "missing"
-        let attachment = XCTAttachment(string: detail)
-        attachment.name = "Audit window arrangement"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        XCTAssertNotEqual(detail, previousAttestation,
-            "Audit window arrangement action did not update its attestation")
-        XCTAssertTrue(detail.hasPrefix("arranged:onscreen"), detail)
-        XCTAssertEqual(control.frame.size, controlSize,
-            "Audit arrangement changed the control window size")
-        XCTAssertEqual(subjectWindow.frame.size, subjectSize,
-            "Audit arrangement changed the subject window size")
-        XCTAssertFalse(control.frame.intersects(subjectWindow.frame),
-            "Audit windows overlap: control=\(control.frame), subject=\(subjectWindow.frame)")
-        subjectWindow.click()
+    @MainActor
+    private func restoreVerificationControlsIfNeeded(_ app: XCUIApplication) {
+        guard app.state != .notRunning else { return }
+        let control = app.windows["Tidy Production Runtime Verification"]
+        guard !control.exists else { return }
+        app.activate()
+        let menu = app.menuBars.menuBarItems["Runtime Verification"]
+        XCTAssertTrue(menu.exists, app.debugDescription)
+        menu.click()
+        let showControls = app.menuItems["Show Verification Controls"]
+        XCTAssertTrue(showControls.exists, app.debugDescription)
+        showControls.click()
+        XCTAssertTrue(control.exists, "Runtime verification controls were not restored")
     }
 
     @MainActor

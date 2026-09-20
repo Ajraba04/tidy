@@ -131,3 +131,23 @@ All 239 other recorded inputs remained unchanged. The two final tested inputs we
 
 - `Tidy/RuntimeVerification/RuntimeTestAppearance.swift`: `3d12d40d63a8b6eb7e51a08a2381d7fe25b129ec993a61025e2ef9f84a4521ab`
 - `TidyProductionNativeUITests/ProductionAppearanceRuntimeUITests.swift`: `9a7d21d830fad4bd74aea39d3b85a0f01140de9635d8ecc055de79b29dc7d89c`
+
+
+## 2026-09-20 hide/restore correction and user GUI deferral
+
+The earlier arbitrary retry limit was not treated as a permission blocker. The failed
+side-by-side workaround was removed. The test-host-only control is now physically hidden
+with NSWindow.orderOut during audit and restored through a guarded Runtime Verification
+menu, including independent XCTest teardown restoration before fixture cleanup.
+Source review and fixture build passed.
+
+The single run at `dist/verification/compact-20260920-4gc9hwff/isolated-audit.xcresult`
+finished before the user's GUI deferral:1 test/1 failure,29.891s. It verified that only
+Settings remained in the app window list, and menu restoration plus guarded cleanup
+completed after failure. The remaining issue was an unnamed Touch Bar element at
+(80,0,685,30); no description exclusion was added. Clean's audit was not reached.
+
+The user then instructed: “defer repetitive GUI checks for when am not using the laptop;
+focus on the code side”. No GUI runner remained active, and no further GUI run followed.
+The compact audit and diagnostic save-dialog checks are queued for a later available
+session. Headless code work continued in [R08 diagnostic export](remediation-R08-diagnostic-export.md).

@@ -44,6 +44,16 @@ struct TidyApp: App {
             }
         }
         .defaultSize(width: 620, height: 540)
+        .commands {
+            CommandMenu("Runtime Verification") {
+                Button("Show Verification Controls") {
+                    RuntimeAuditControls.show()
+                }
+                Button("Hide Verification Controls") {
+                    RuntimeAuditControls.hide()
+                }
+            }
+        }
 #endif
 
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
