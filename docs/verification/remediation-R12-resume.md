@@ -33,3 +33,12 @@ The observer's pure validation self-tests are part of the ordinary verifier. The
 ## Resumed final pass
 
 The single resumed verifier exited65: Core701, isolated1, models144 and presentation2 passed; production native10/11 passed. The required compact audit timed out inside XCTest (code -56), so normal Release was not reached in this script. No retry or skip was introduced. See [resumed verification](remediation-resume-verification.md) for exact evidence and the separately built package.
+
+
+## 2026-09-20 diagnostic-export registration
+
+Six writer regressions and two acknowledged-snapshot model cases are now required by
+exact name; expected floors707 Core and146 models extend the unchanged701/144 baseline.
+Only the affected Core/registry15 and headless models2 were executed and passed. The full
+verifier was not rerun, and GUI checks are deferred until the user is not using the laptop.
+See [R08 export evidence](remediation-R08-diagnostic-export.md).

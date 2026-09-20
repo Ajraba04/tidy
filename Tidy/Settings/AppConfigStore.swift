@@ -114,6 +114,19 @@ final class AppConfigStore {
         try SettingsWorkflow.exportPortable(current: displayed)
     }
 
+    func makeDiagnosticExportInput() -> DiagnosticExportInput {
+        let redactionID = SettingID(rawValue: "export.redactDiagnostics")
+        let redactionEnabled: Bool
+        if case .stored(.bool(let value))? =
+                acknowledgedEffectivePolicy?.fields[redactionID]?.value {
+            redactionEnabled = value
+        } else {
+            redactionEnabled = true
+        }
+        return DiagnosticExportInput(settings: acknowledged,
+            cosmeticRedactionEnabled: redactionEnabled)
+    }
+
     func analyzeImportSummary(bytes: Data) async throws -> SettingsImportUISummary {
         try SettingsImportUISummary(try await analyzeImport(bytes: bytes))
     }

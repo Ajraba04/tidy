@@ -72,7 +72,7 @@ public extension SettingsPresentationRegistry {
             return .unavailable("This presentation preference has no application consumer.")
         }
         if raw == "export.redactDiagnostics" {
-            return .unavailable("Diagnostic export is not implemented.")
+            return .unavailable("Metadata-only diagnostics are available; optional cosmetic redaction is not implemented.")
         }
         return .unavailable("No verified production consumer is registered for this setting.")
     }
