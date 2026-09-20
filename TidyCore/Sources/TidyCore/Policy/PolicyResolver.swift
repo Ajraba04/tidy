@@ -19,8 +19,13 @@ public enum PolicyResolver {
 
         for definition in definitions {
             if definition.resolution == .authority {
-                fields[definition.id] = EffectiveField(value: .unavailable(.authorityUnavailable),
-                    sources: [.localAuthority], reason: .authorityUnavailable)
+                if let value = inputs.localAuthority?.policyValue(for: definition.id) {
+                    fields[definition.id] = EffectiveField(value: .stored(value),
+                        sources: [.localAuthority], reason: .localConsent)
+                } else {
+                    fields[definition.id] = EffectiveField(value: .unavailable(.authorityUnavailable),
+                        sources: [.localAuthority], reason: .authorityUnavailable)
+                }
             } else if isDeferred(definition.id) {
                 continue
             } else if definition.resolution == .preference {

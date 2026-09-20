@@ -300,6 +300,9 @@ public actor SystemMonitor {
     private var subscribers: [UUID: AsyncStream<SystemSnapshot>.Continuation] = [:]
 
     private var configuration: Configuration
+    private var localAuthority: LocalAuthoritySnapshot?
+    private var requiresLocalAuthority = false
+    private var authorityGeneration: UInt64 = 0
     private var configurationRevision: UInt64
     private var volumes: [URL]
     private let probe: SystemProbing
@@ -365,6 +368,29 @@ public actor SystemMonitor {
         configurationRevision = acknowledgedRevision
         apply(newConfiguration)
         return true
+    }
+
+    /// Separate ordering domain: local consent can change without a settings write.
+    /// The live snapshot also denies sampling during the persistence/observer gap.
+    public func applyLocalAuthority(_ snapshot: LocalAuthoritySnapshot?, generation: UInt64) {
+        guard generation > authorityGeneration else { return }
+        authorityGeneration = generation
+        requiresLocalAuthority = true
+        localAuthority = snapshot?.isCurrent == true ? snapshot : nil
+        reschedule()
+    }
+
+    private var maySampleInBackground: Bool {
+        configuration.backgroundEnabled && !configuration.suppressHiddenSampling &&
+            (!requiresLocalAuthority || localAuthority?.permits(.backgroundSignals) == true)
+    }
+
+    private func requestScheduledSnapshot() async {
+        guard !sceneLeases.isEmpty || !explicitWorkLeases.isEmpty || maySampleInBackground else {
+            reschedule()
+            return
+        }
+        _ = await requestSnapshot()
     }
 
     private func apply(_ newConfiguration: Configuration) {
@@ -562,7 +588,7 @@ public actor SystemMonitor {
         let foregroundOrExplicit = !sceneLeases.isEmpty || !explicitWorkLeases.isEmpty
         let shouldRun = configuration.featureEnabled &&
             (foregroundOrExplicit ||
-             (configuration.backgroundEnabled && !configuration.suppressHiddenSampling))
+             maySampleInBackground)
 
         timerTask?.cancel()
         let wasRunning = timerTask != nil
@@ -602,14 +628,16 @@ public actor SystemMonitor {
                 do { try await self.scheduling.sleep(seconds: interval) }
                 catch { break }
                 guard !Task.isCancelled else { break }
-                _ = await self.requestSnapshot()
+                await self.requestScheduledSnapshot()
             }
         }
     }
 
     private func updatePressureLevel(_ level: MemoryPressureLevel, generation: UInt64) {
         guard generation == pressureSubscriptionGeneration,
-              pressureSubscription != nil, configuration.featureEnabled else { return }
+              pressureSubscription != nil, configuration.featureEnabled,
+              !sceneLeases.isEmpty || !explicitWorkLeases.isEmpty || maySampleInBackground
+        else { return }
         latestPressureLevel = level
         let snapshot: SystemSnapshot
         if let cached = latestSnapshot {

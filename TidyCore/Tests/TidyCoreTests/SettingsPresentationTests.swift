@@ -179,12 +179,12 @@ struct SettingsPresentationTests {
             $0.definition.id.rawValue == "feature.buildPrep"
         })
         #expect(SettingsPresentationRegistry.consumerSupport(for: buildPrep.definition)
-                == .unavailable("R09 project inventory, ranking, and Build Prep are not implemented."))
+                == .connected("Scoped project inventory and target-limited Build Prep planning"))
         let notification = try #require(settings.first {
             $0.definition.id.rawValue == "notifications.cooldownMinutes"
         })
         #expect(SettingsPresentationRegistry.consumerSupport(for: notification.definition)
-                == .unavailable("R11 notifications and assistance are not implemented."))
+                == .connected("Local assistance, budget hysteresis and consent-gated notifications"))
     }
 
     @Test("committed settings reference is byte-for-byte generated from registry metadata")

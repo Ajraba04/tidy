@@ -15,6 +15,19 @@ struct JournalEvent: Codable, Equatable, Sendable {
     let operationID: UUID?
     let status: EffectStatus?
     let reason: String?
+    let proof: EffectProofReference?
+
+    init(runID: UUID, sequence: UInt64, phase: JournalPhase,
+         operationID: UUID?, status: EffectStatus?, reason: String?,
+         proof: EffectProofReference? = nil) {
+        self.runID = runID
+        self.sequence = sequence
+        self.phase = phase
+        self.operationID = operationID
+        self.status = status
+        self.reason = reason
+        self.proof = proof
+    }
 }
 enum JournalError: Error, Equatable {
     case invalidTransition, corrupt, unavailable, capacity, unsupportedSchema, notFound
@@ -29,6 +42,7 @@ enum JournalSequence {
 final class RunJournal {
     private let store: MutationAdmissionStore
     private let storage: any JournalStorage
+    private let artifacts: ReviewedManifestStore
     private var historyEnabled = true
     private var historyDays = 30
     private var historyBytes = 10_485_760
@@ -37,12 +51,16 @@ final class RunJournal {
         let entry: JournalStorageEntry
         let runID: UUID
         let finished: Bool
+        let artifactBytes: Int
+        let artifactCount: Int
     }
 
     init(store: MutationAdmissionStore, storage: any JournalStorage) throws {
         self.store = store
         self.storage = storage
+        self.artifacts = ReviewedManifestStore(admission: store)
         try checkLock()
+        try artifacts.resumeRetirements(storage: storage)
     }
 
     private func checkLock() throws {
@@ -92,14 +110,15 @@ final class RunJournal {
             store.latchJournalStorageFailure()
             throw (error as? JournalError) ?? .unavailable
         }
-        return try observed { try Self.parse(bytes, runID: runID, intents: intents) }
+        return try observed { try Self.parse(bytes, runID: runID) }
     }
 
     func append(_ event: JournalEvent) throws {
         try checkLock()
         let previous = try load(runID: event.runID)
         let intents = try store.unfinishedIntentsWhileLocked()
-        try Self.validate(event, previous: previous, intents: intents)
+        try Self.validateHistorical(event, previous: previous)
+        try validateAdmission(event, previous: previous, intents: intents)
         let payload = try JSONEncoder().encode(event)
         guard payload.count <= 65_536 else { throw JournalError.capacity }
         let record = Self.frame(payload, sequence: event.sequence)
@@ -130,6 +149,28 @@ final class RunJournal {
         catch let error as JournalError { throw error }
         catch { throw JournalError.unavailable }
     }
+    func prepareReviewedManifest(_ reviewed: ReviewedFileResource) throws
+        -> ReviewedManifestStore.PreparedManifestPublication {
+        try checkLock()
+        return try artifacts.prepare(reviewed)
+    }
+    func publishReviewedManifest(
+        _ prepared: ReviewedManifestStore.PreparedManifestPublication
+    ) throws {
+        try checkLock()
+        try artifacts.publish(prepared)
+    }
+    func persistTerminalProof(_ proof: VerifiedEffectTerminalProof) throws
+        -> EffectProofReference {
+        try checkLock()
+        return try artifacts.persist(proof)
+    }
+    func forEachReviewedBatch(_ reference: ReviewedManifestReference,
+                              reversed: Bool,
+                              _ body: (ReviewedBatch) throws -> Void) throws {
+        try checkLock()
+        try artifacts.forEachBatch(reference, reversed: reversed, body)
+    }
     func recordChild(_ intent: PendingEffectIntent) throws {
         try checkLock()
         _ = try load(runID: intent.runID)
@@ -142,6 +183,31 @@ final class RunJournal {
         let previous = try load(runID: runID)
         try append(JournalEvent(runID: runID, sequence: JournalSequence.next(after: previous.last?.sequence ?? 0),
             phase: .finished, operationID: nil, status: nil, reason: nil))
+        try retireTerminalIntents(previous)
+        try retain(now: Date())
+    }
+
+    func reconcileTerminalRun(runID: UUID) throws -> Bool {
+        try checkLock()
+        let events = try load(runID: runID)
+        guard events.contains(where: { $0.phase == .started }) else { return false }
+        try validateHistoricalProofs(events)
+        if events.last?.phase != .finished {
+            try finish(runID: runID)
+            return true
+        }
+        try retireTerminalIntents(events)
+        return true
+    }
+
+    private func retireTerminalIntents(_ events: [JournalEvent]) throws {
+        for terminal in events where terminal.phase == .itemTerminal {
+            guard let operationID = terminal.operationID, let proof = terminal.proof else {
+                throw JournalError.invalidTransition
+            }
+            _ = try store.retireIntentWhileLocked(operationID: operationID,
+                proof: proof, artifacts: artifacts)
+        }
     }
     func applyHistoryLimits(days: Int, bytes: Int, now: Date) throws {
         try applyHistoryLimits(enabled: true, days: days, bytes: bytes, now: now)
@@ -161,8 +227,9 @@ final class RunJournal {
     }
     private static func total(_ summaries: [Summary]) throws -> Int {
         try summaries.reduce(0) {
-            let (sum, overflow) = $0.addingReportingOverflow($1.entry.byteCount)
-            guard !overflow else { throw JournalError.capacity }
+            let (withJournal, journalOverflow) = $0.addingReportingOverflow($1.entry.byteCount)
+            let (sum, artifactOverflow) = withJournal.addingReportingOverflow($1.artifactBytes)
+            guard !journalOverflow, !artifactOverflow else { throw JournalError.capacity }
             return sum
         }
     }
@@ -171,9 +238,12 @@ final class RunJournal {
         guard let runID = try JournalFiles.runID(entry.name) else { throw JournalError.corrupt }
         let bytes = try storage.read(name: entry.name)
         guard bytes.count == entry.byteCount else { throw JournalError.unavailable }
-        let events = try Self.parse(bytes, runID: runID, intents: intents)
+        let events = try Self.parse(bytes, runID: runID)
+        try validateHistoricalProofs(events)
         let finished = events.last?.phase == .finished && !intents.contains(where: { $0.runID == runID })
-        return Summary(entry: entry, runID: runID, finished: finished)
+        let artifacts = finished ? try terminalArtifacts(events) : (bytes: 0, count: 0)
+        return Summary(entry: entry, runID: runID, finished: finished,
+            artifactBytes: artifacts.bytes, artifactCount: artifacts.count)
     }
     private func scan() throws -> [Summary] {
         try observed {
@@ -187,6 +257,7 @@ final class RunJournal {
         }
     }
     private func retain(now: Date) throws {
+        try artifacts.resumeRetirements(storage: storage)
         let summaries = try scan() // Validate ALL files before the first deletion.
         var optional = summaries.filter(\.finished).sorted {
             let a = $0.entry, b = $1.entry
@@ -195,36 +266,105 @@ final class RunJournal {
             return a.name.utf8.lexicographicallyPrecedes(b.name.utf8)
         }
         var bytes = try Self.total(optional)
+        var occupancy = try artifacts.retentionOccupancy()
         let cutoff = now.addingTimeInterval(-Double(historyDays) * 86_400)
         while let candidate = optional.first {
-            guard !historyEnabled || candidate.entry.modifiedAt < cutoff || bytes > historyBytes else { break }
+            guard !historyEnabled || candidate.entry.modifiedAt < cutoff
+                    || bytes > historyBytes
+                    || occupancy.artifacts > ReviewedManifestStore.retainedArtifactCeiling else {
+                break
+            }
             try checkLock()
             try observed {
                 let intents = try store.unfinishedIntentsWhileLocked()
                 guard !intents.contains(where: { $0.runID == candidate.runID }),
                       try summarize(candidate.entry, intents: intents) == candidate else { throw JournalError.unavailable }
-                try storage.removeJournal(candidate.entry)
+                let events = try Self.parse(storage.read(name: candidate.entry.name),
+                                            runID: candidate.runID)
+                try validateHistoricalProofs(events)
+                try artifacts.retireFinishedRun(runID: candidate.runID,
+                    journalEntry: candidate.entry, events: events, storage: storage)
             }
-            bytes -= candidate.entry.byteCount
+            let (candidateBytes, candidateOverflow) = candidate.entry.byteCount
+                .addingReportingOverflow(candidate.artifactBytes)
+            guard !candidateOverflow, candidateBytes <= bytes else {
+                throw JournalError.capacity
+            }
+            bytes -= candidateBytes
+            occupancy = try artifacts.retentionOccupancy()
             optional.removeFirst()
         }
         try requireOptionalCapacity(scan())
     }
 
-    private static func validate(_ event: JournalEvent, previous: [JournalEvent],
-                                 intents: [PendingEffectIntent]) throws {
+    private func validateHistoricalProofs(_ events: [JournalEvent]) throws {
+        let finished = events.last?.phase == .finished
+        for terminal in events where terminal.phase == .itemTerminal {
+            guard let operation = terminal.operationID else { throw JournalError.corrupt }
+            guard let proof = terminal.proof else {
+                if finished { throw JournalError.corrupt }
+                continue
+            }
+            let archive = try artifacts.historicalProof(proof)
+            guard archive.runID == terminal.runID,
+                  archive.operationID == operation,
+                  archive.terminalStatus == terminal.status else {
+                throw JournalError.corrupt
+            }
+            if let manifest = archive.manifest { _ = try artifacts.load(manifest) }
+        }
+    }
+
+    private func terminalArtifacts(_ events: [JournalEvent]) throws
+        -> (bytes: Int, count: Int) {
+        var proofIDs = Set<UUID>()
+        var manifestIDs = Set<UUID>()
+        var total = 0
+        var count = 0
+        for terminal in events where terminal.phase == .itemTerminal {
+            guard let proof = terminal.proof, proofIDs.insert(proof.id).inserted else {
+                throw JournalError.corrupt
+            }
+            let archive = try artifacts.historicalProof(proof)
+            guard let manifest = archive.manifest else { throw JournalError.corrupt }
+            _ = try artifacts.load(manifest)
+            let (withProof, proofOverflow) = total.addingReportingOverflow(proof.encodedBytes)
+            guard !proofOverflow else { throw JournalError.capacity }
+            total = withProof
+            let (withProofCount, proofCountOverflow) = count.addingReportingOverflow(1)
+            guard !proofCountOverflow else { throw JournalError.capacity }
+            count = withProofCount
+            if manifestIDs.insert(manifest.id).inserted {
+                let (withManifest, manifestOverflow) = total.addingReportingOverflow(
+                    manifest.encodedBytes)
+                guard !manifestOverflow else { throw JournalError.capacity }
+                total = withManifest
+                let (nextCount, countOverflow) = count.addingReportingOverflow(
+                    manifest.artifactCount)
+                guard !countOverflow else { throw JournalError.capacity }
+                count = nextCount
+            }
+        }
+        return (total, count)
+    }
+
+    private static func validateHistorical(_ event: JournalEvent,
+                                           previous: [JournalEvent]) throws {
         guard event.sequence == (try JournalSequence.next(after: previous.last?.sequence ?? 0)),
               previous.last?.phase != .finished else { throw JournalError.invalidTransition }
         switch event.phase {
         case .planned:
-            guard previous.isEmpty, event.operationID == nil, event.status == nil else { throw JournalError.invalidTransition }
+            guard previous.isEmpty, event.operationID == nil,
+                  event.status == nil, event.proof == nil else {
+                throw JournalError.invalidTransition
+            }
         case .confirmed:
             guard previous.count == 1, previous.first?.phase == .planned,
-                  event.operationID == nil, event.status == nil else { throw JournalError.invalidTransition }
+                  event.operationID == nil, event.status == nil,
+                  event.proof == nil else { throw JournalError.invalidTransition }
         case .started:
             guard previous.contains(where: { $0.phase == .confirmed }), let operation = event.operationID,
-                  event.status == nil,
-                  intents.contains(where: { $0.runID == event.runID && $0.operationID == operation }),
+                  event.status == nil, event.proof == nil,
                   !previous.contains(where: { $0.operationID == operation }) else { throw JournalError.invalidTransition }
         case .itemTerminal:
             guard let operation = event.operationID, event.status != nil,
@@ -233,9 +373,46 @@ final class RunJournal {
                 throw JournalError.invalidTransition
             }
         case .finished:
-            guard previous.last?.phase == .confirmed, event.operationID == nil, event.status == nil,
-                  !previous.contains(where: { $0.phase == .started }),
-                  !intents.contains(where: { $0.runID == event.runID }) else { throw JournalError.invalidTransition }
+            let started = Set(previous.filter { $0.phase == .started }.compactMap(\.operationID))
+            let terminal = Set(previous.filter { $0.phase == .itemTerminal }.compactMap(\.operationID))
+            guard previous.contains(where: { $0.phase == .confirmed }),
+                  event.operationID == nil, event.status == nil, event.proof == nil,
+                  started == terminal else { throw JournalError.invalidTransition }
+        }
+    }
+
+    private func validateAdmission(_ event: JournalEvent, previous: [JournalEvent],
+                                   intents: [PendingEffectIntent]) throws {
+        switch event.phase {
+        case .planned, .confirmed:
+            return
+        case .started:
+            guard let operation = event.operationID,
+                  intents.contains(where: {
+                      $0.runID == event.runID && $0.operationID == operation
+                  }) else { throw JournalError.invalidTransition }
+        case .itemTerminal:
+            guard let operation = event.operationID else { throw JournalError.invalidTransition }
+            if let proof = event.proof {
+                guard let intent = intents.first(where: {
+                    $0.runID == event.runID && $0.operationID == operation
+                }) else { throw JournalError.invalidTransition }
+                _ = try artifacts.proof(proof, for: intent)
+            }
+        case .finished:
+            let runIntents = intents.filter { $0.runID == event.runID }
+            let terminals = previous.filter { $0.phase == .itemTerminal }
+            guard runIntents.count == terminals.count else {
+                throw JournalError.invalidTransition
+            }
+            for intent in runIntents {
+                guard let terminal = terminals.first(where: {
+                    $0.operationID == intent.operationID
+                }), let proof = terminal.proof else {
+                    throw JournalError.invalidTransition
+                }
+                _ = try artifacts.proof(proof, for: intent)
+            }
         }
     }
     private static func integer(_ value: UInt64, count: Int) -> Data {
@@ -245,7 +422,7 @@ final class RunJournal {
         let body = integer(UInt64(payload.count), count: 4) + integer(sequence, count: 8) + payload
         return body + Data(SHA256.hash(data: header + body))
     }
-    private static func parse(_ bytes: Data, runID: UUID, intents: [PendingEffectIntent]) throws -> [JournalEvent] {
+    private static func parse(_ bytes: Data, runID: UUID) throws -> [JournalEvent] {
         guard bytes.count <= JournalFiles.maximumBytes else { throw JournalError.capacity }
         guard bytes.count >= 8, bytes.prefix(4) == header.prefix(4) else { throw JournalError.corrupt }
         guard bytes[4] == 0, bytes[5] == 1 else { throw JournalError.unsupportedSchema }
@@ -264,7 +441,7 @@ final class RunJournal {
             do { event = try JSONDecoder().decode(JournalEvent.self, from: bytes[(offset + 12)..<end]) }
             catch { throw JournalError.corrupt }
             guard event.runID == runID, event.sequence == sequence else { throw JournalError.corrupt }
-            do { try validate(event, previous: result, intents: intents) }
+            do { try validateHistorical(event, previous: result) }
             catch { throw JournalError.corrupt }
             result.append(event)
             offset = end + 32

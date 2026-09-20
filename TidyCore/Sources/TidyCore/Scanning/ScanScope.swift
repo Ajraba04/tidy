@@ -47,6 +47,8 @@ public struct AuthorizedScanScope: Sendable {
     public let roots: [String]
     public let excludedRoots: [String]
     public let policyRevision: UInt64
+    public let policy: EffectivePolicy
+    private let validity: @Sendable () -> Bool
     fileprivate let authorityID: UUID
     fileprivate let grantID: UUID
     fileprivate let ownerID: UUID
@@ -57,7 +59,8 @@ public struct AuthorizedScanScope: Sendable {
     fileprivate init(mode: ScanScopeMode, roots: [String], excludedRoots: [String],
                      policyRevision: UInt64, authorityID: UUID, grantID: UUID,
                      ownerID: UUID, homeDirectory: String, expiresAt: UInt64,
-                     ledger: ScanScopeGrantLedger) {
+                     ledger: ScanScopeGrantLedger, policy: EffectivePolicy,
+                     validity: @escaping @Sendable () -> Bool = { true }) {
         self.mode = mode
         self.roots = roots
         self.excludedRoots = excludedRoots
@@ -68,12 +71,19 @@ public struct AuthorizedScanScope: Sendable {
         self.homeDirectory = homeDirectory
         self.expiresAt = expiresAt
         self.ledger = ledger
+        self.policy = policy
+        self.validity = validity
     }
 
     func consumeForStart(ownerID: UUID, environment: CleanEnvironment) throws {
+        try checkValidity()
         try ledger.consume(id: grantID, authorityID: authorityID, ownerID: ownerID,
             homeDirectory: PathGuard.canonicalize(environment.homeDirectory),
             policyRevision: policyRevision, expiresAt: expiresAt)
+    }
+
+    func checkValidity() throws {
+        guard validity() else { throw ScanScopeAuthorizationError.expiredConsent }
     }
 }
 
@@ -204,6 +214,41 @@ public final class ScanScopeAuthority {
             snapshot: snapshot)
     }
 
+    /// Explicit project discovery can use legacy acknowledged roots and roots
+    /// selected through the separate local-consent ledger. It never converts a
+    /// root or volume approval into full-home traversal permission.
+    public func authorizeProjects(ownerID: UUID,
+                                  localAuthority: LocalAuthoritySnapshot? = nil) throws -> AuthorizedScanScope {
+        let snapshot = try policySnapshot()
+        guard snapshot.policy.allowedFeatures.contains("projects") else {
+            throw ScanScopeAuthorizationError.policyUnavailable
+        }
+        var roots = try selectedProjectRoots(snapshot.environment.gitRoots)
+        if let localAuthority {
+            guard localAuthority.isCurrent,
+                  let home = try? LocalRootApproval.verify(directory: URL(fileURLWithPath: homeDirectory)) else {
+                throw ScanScopeAuthorizationError.expiredConsent
+            }
+            for approval in localAuthority.approvedRoots {
+                guard !PathGuard.isEqualOrDescendant(homeDirectory, of: approval.canonicalPath),
+                      try LocalRootApproval.verify(directory: URL(fileURLWithPath: approval.canonicalPath)) == approval else {
+                    throw ScanScopeAuthorizationError.invalidRoot
+                }
+                if approval.volumeID != home.volumeID {
+                    guard localAuthority.approvedExternalVolumes.contains(where: {
+                        $0.volumeID == approval.volumeID
+                            && PathGuard.isEqualOrDescendant(approval.canonicalPath, of: $0.canonicalPath)
+                    }) else { throw ScanScopeAuthorizationError.invalidRoot }
+                }
+                roots.append(approval.canonicalPath)
+            }
+        }
+        return try authorization(mode: .selectedProjects, roots: minimalRoots(roots),
+            ownerID: ownerID, snapshot: snapshot,
+            validity: { localAuthority?.isCurrent ?? true },
+            locallyApprovedRoots: localAuthority?.approvedRoots ?? [])
+    }
+
     public func issueFullHomeConsent(ownerID: UUID) throws -> FullHomeScanConsent {
         let snapshot = try policySnapshot()
         reapExpiredConsents()
@@ -330,7 +375,9 @@ public final class ScanScopeAuthority {
 
     private func authorization(mode: ScanScopeMode, roots: [String], ownerID: UUID,
                                expiresAt explicitExpiry: UInt64? = nil,
-                               snapshot: PolicySnapshot) throws -> AuthorizedScanScope {
+                               snapshot: PolicySnapshot,
+                               validity: @escaping @Sendable () -> Bool = { true },
+                               locallyApprovedRoots: [LocalRootApproval] = []) throws -> AuthorizedScanScope {
         let exclusions = snapshot.policy.exclusions.map(PathGuard.canonicalize).sorted()
         let narrowed = roots.filter { root in
             !exclusions.contains { PathGuard.isEqualOrDescendant(root, of: $0) }
@@ -350,12 +397,27 @@ public final class ScanScopeAuthority {
         }
         var rootIdentities: [String: ScanScopeRootIdentity] = [:]
         for root in narrowed {
-            guard PathGuard.isEqualOrDescendant(root, of: homeDirectory),
-                  let identity = ScanScopeRootIdentity.capture(path: root),
-                  identity.volumeID == homeIdentity.volumeID else {
+            guard let identity = ScanScopeRootIdentity.capture(path: root) else {
                 throw ScanScopeAuthorizationError.invalidRoot
             }
+            let local = locallyApprovedRoots.first { $0.canonicalPath == root }
+            if let local {
+                guard identity.volumeID == local.volumeID,
+                      identity.device == local.device, identity.inode == local.inode else {
+                    throw ScanScopeAuthorizationError.invalidRoot
+                }
+            } else {
+                guard PathGuard.isEqualOrDescendant(root, of: homeDirectory),
+                      identity.volumeID == homeIdentity.volumeID else {
+                    throw ScanScopeAuthorizationError.invalidRoot
+                }
+            }
             rootIdentities[root] = identity
+        }
+        let policyValidity = bridge.scanScopeValidity()
+        let clock = nowNanoseconds
+        let liveValidity: @Sendable () -> Bool = {
+            clock() < expiry && policyValidity() && validity()
         }
         let grantID = UUID()
         grantLedger.register(id: grantID, authorityID: id, ownerID: ownerID,
@@ -364,7 +426,7 @@ public final class ScanScopeAuthority {
         return AuthorizedScanScope(mode: mode, roots: narrowed, excludedRoots: exclusions,
             policyRevision: snapshot.envelope.revision, authorityID: id,
             grantID: grantID, ownerID: ownerID, homeDirectory: homeDirectory,
-            expiresAt: expiry, ledger: grantLedger)
+            expiresAt: expiry, ledger: grantLedger, policy: snapshot.policy, validity: liveValidity)
     }
 
     private func minimalRoots(_ rawRoots: [String]) -> [String] {

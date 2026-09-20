@@ -1,5 +1,8 @@
 # Headroom remediation acceptance
 
+Current code continuation: [20 September source checkpoint](code-completion-20260920.md). The historical evidence below remains scoped to its named commits; GUI and real-system checks are deferred by the user.
+
+
 Audit baseline: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a`, 2026-09-17. Continued execution: 2026-09-19, branch `codex/remediation-20260917`, isolated worktree `/Users/mac/Desktop/AJR/tidy-remediation-20260917`.
 
 **Current advertised application: NO-GO. Full program: INCOMPLETE.** Read-only functionality, containment, source review, native fixtures and distribution acceptance are separate exits. An unavailable promised workflow is not a completed workflow.

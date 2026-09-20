@@ -8,7 +8,11 @@ struct TidyApp: App {
 #if TIDY_RUNTIME_TEST_HOST
     @NSApplicationDelegateAdaptor(RuntimeTestAppDelegate.self)
     private var runtimeTestAppDelegate
+#else
+    @NSApplicationDelegateAdaptor(AppTerminationDelegate.self)
+    private var appTerminationDelegate
 #endif
+    @State private var features: AppFeatureModels?
     @State private var bootstrap: AppBootstrapState
     private let productionPaths: AppStoragePaths?
 #if TIDY_RUNTIME_TEST_HOST
@@ -61,6 +65,24 @@ struct TidyApp: App {
                 VStack(alignment: .leading, spacing: 0) {
                     MenuBarContentView(services: services)
                         .environment(services.configStore)
+                    if services.hasActiveConfirmedExecution {
+                        Divider()
+                        if let progress = services.executionProgress {
+                            Text("Cleanup: \(progress.completedEffects) of \(progress.scheduledEffects)")
+                                .font(.caption).padding(.horizontal, 16)
+                        }
+                        Button("Cancel Cleanup") { services.cancelConfirmedExecution() }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
+                    if services.liveRecoveryAdmission != .ready {
+                        Button("Reconcile Cleanup Recovery") {
+                            Task { await services.reconcileExecutionRecovery() }
+                        }.padding(.horizontal, 16)
+                    }
+                    if features?.developer.isScanning == true {
+                        Button("Cancel Developer Inventory") { features?.developer.cancel() }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
                     if services.activeScanSessionID != nil {
                         Divider()
                         Button("Cancel Scan") {
@@ -96,6 +118,22 @@ struct TidyApp: App {
             }
         }
         .windowResizability(.contentSize)
+
+        Window("Developer Workspace", id: WindowID.developer) {
+            withServices(accessibilityLabel: "Developer workspace") { services in
+                if let features {
+                    DeveloperWorkspaceView(model: features.developer,
+                        localAuthority: services.configStore.localAuthoritySnapshot,
+                        policy: services.configStore.acknowledgedEffectivePolicy)
+                }
+            }
+        }
+
+        Window("Assistance and Local Consent", id: WindowID.assistance) {
+            withServices(accessibilityLabel: "Assistance and local consent") { _ in
+                if let features { AssistanceView(model: features.assistance) }
+            }
+        }
 
         Window("Custom Clean", id: WindowID.custom) {
             withServices(accessibilityLabel: "Custom cleanup") { services in
@@ -179,6 +217,12 @@ struct TidyApp: App {
             return
         }
         await bootstrap.start(paths: productionPaths).value
+        if let services = bootstrap.services {
+            if features == nil { features = AppFeatureModels(services: services) }
+#if !TIDY_RUNTIME_TEST_HOST
+            appTerminationDelegate.bind(services: services)
+#endif
+        }
     }
 
     private var recoveryUnavailable: some View {
@@ -186,6 +230,18 @@ struct TidyApp: App {
             ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
                 description: Text(bootstrap.services?.persistenceError
                     ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
+            if let services = bootstrap.services, services.liveRecoveryAdmission != .ready {
+                Button("Retry Cleanup Verification") {
+                    Task {
+                        _ = await services.reconcileExecutionRecovery()
+                        bootstrap.refreshRecoveryDisposition()
+                    }
+                }
+                if let report = services.lastRecoveryReport {
+                    Text("\(report.reconciledEffects) of \(report.inspectedEffects) effects reconciled. \(report.disposition.rawValue)")
+                        .font(.caption)
+                }
+            }
 #if TIDY_RUNTIME_TEST_HOST
             if let services = bootstrap.services {
                 Text("load:\(String(describing: services.settingsLoad.disposition)) "
@@ -264,4 +320,6 @@ enum WindowID {
     static let custom = "custom"
     static let settings = "settings"
     static let onboarding = "onboarding"
+    static let developer = "developer"
+    static let assistance = "assistance"
 }

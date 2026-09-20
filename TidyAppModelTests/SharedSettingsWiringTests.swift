@@ -4304,6 +4304,36 @@ extension SharedSettingsWiringTests {
     }
 
     @MainActor
+    func testLocalAuthorityProjectionDoesNotWritePortableSettings() async throws {
+        try await run { scratch, services, _ in
+            let directory = scratch.root.appendingPathComponent("authority")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+            let authority = try LocalAuthorityStore(directory: directory,
+                installation: LocalInstallationIdentity.verify(directory: directory))
+            let before = try? Data(contentsOf: scratch.paths.settings)
+            let revision = services.configStore.acknowledgedSettingsRevision
+            let owner = LocalAuthorityOwner()
+            let token = try await authority.beginReview(scope: .notifications, owner: owner,
+                nowMonotonicNanoseconds: 1)
+            let approved = try await authority.confirm(token, owner: owner,
+                nowMonotonicNanoseconds: 2)
+            services.configStore.installLocalAuthority(approved)
+            let id = SettingID(rawValue: "notifications.enabled")
+            XCTAssertEqual(services.configStore.acknowledgedEffectivePolicy?.fields[id]?.value,
+                           .stored(.bool(true)))
+            XCTAssertNil(services.configStore.preferences.global.fields[id])
+            XCTAssertEqual(services.configStore.acknowledgedSettingsRevision, revision)
+            XCTAssertEqual(try? Data(contentsOf: scratch.paths.settings), before)
+            _ = try await authority.revoke(.notifications)
+            // The captured snapshot denies even before the stream installs its replacement.
+            XCTAssertNotEqual(services.configStore.acknowledgedEffectivePolicy?.fields[id]?.value,
+                              .stored(.bool(true)))
+            services.configStore.installLocalAuthority(nil)
+        }
+    }
+
+    @MainActor
     func testSettingsRepresentativeGlobalControlsUseSharedStore() async throws {
         try await run { _, services, _ in
             let bundle = Bundle(for: SharedSettingsWiringTests.self)
@@ -4337,13 +4367,13 @@ extension SharedSettingsWiringTests {
                     .first { $0.id == id }?.storedValue, value)
             }
 
-            let unavailableID = SettingID(rawValue: "feature.buildPrep")
+            let unavailableID = SettingID(rawValue: "ecosystem.apple.manualActions")
             let unavailable = try XCTUnwrap(first.rows(query: unavailableID.rawValue,
                 showsAdvanced: false).first { $0.id == unavailableID })
             guard case .unavailable(let reason) = unavailable.availability else {
-                return XCTFail("Build Prep must be visibly unavailable")
+                return XCTFail("Unaccepted mutation controls must be visibly unavailable")
             }
-            XCTAssertTrue(reason.contains("R09"))
+            XCTAssertTrue(reason.contains("accepted production effect adapter"))
             XCTAssertNil(first.submit(id: unavailableID, value: .bool(true)))
         }
     }

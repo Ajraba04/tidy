@@ -27,6 +27,13 @@ python3 scripts/verification/privacy-api-inventory.py \
 python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
+  --require-case 'consumed project scopes expire and invalidate during a pending policy transition' \
+  --require-case 'local consent revocation stops hidden monitoring independently of settings revision' \
+  --require-case 'authorized root nested repositories worktrees exclusions and option-like names are data' \
+  --require-case 'global and Apple inventory disables produce zero tool reads' \
+  --require-case 'manifest batches publish immutably and stream only under the installation lock' \
+  --require-case 'terminal proof is durable before intent retirement and finished history remains valid' \
+  --require-case 'revoking captured app authority after review blocks dispatch' \
   --require-case 'successful scope grants release captured identities and replay still denies' \
   --require-case 'register reaps expired abandoned scope grants' \
   --require-case 'successful full-home consent and grant release metadata while both replays deny' \

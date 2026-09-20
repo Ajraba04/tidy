@@ -91,6 +91,7 @@ targets:
       - path: Tidy/Clean/CleanViewModel.swift
       - path: Tidy/Custom/CustomViewModel.swift
       - path: Tidy/Execution/AppExecutionServices.swift
+      - path: Tidy/Execution/AppTerminationDelegate.swift
       - path: Tidy/Settings/AppConfigStore.swift
       - path: Tidy/Clean/RunReportPresentation.swift
     dependencies:

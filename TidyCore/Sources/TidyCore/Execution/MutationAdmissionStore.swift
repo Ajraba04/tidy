@@ -76,7 +76,9 @@ final class MutationAdmissionStore {
         do {
             try validateStableLock()
             let ledger = try readLedger()
-            return ledger.unfinished.isEmpty ? .ready : .uncertainAndPossiblyRunning
+            let scan = try JournalDirectoryScan.read(directoryFD: directoryFD, limits: scanLimits)
+            return ledger.unfinished.isEmpty && !scan.containsEffectStage
+                ? .ready : .uncertainAndPossiblyRunning
         } catch { return .storageUnavailable }
     }
 
@@ -100,13 +102,21 @@ final class MutationAdmissionStore {
         try requireJournalLock()
         return try readLedger().unfinished
     }
+    func withLockedStorage<T>(_ body: (Int32, any JournalPOSIXIO, JournalScanLimits) throws -> T)
+        throws -> T {
+        try requireJournalLock()
+        return try body(directoryFD, io, scanLimits)
+    }
     func persistIntentWhileLocked(_ intent: PendingEffectIntent, update: IntentPersistence = .append) throws {
         try requireJournalLock()
         var ledger = try readLedger()
         switch update {
         case .append:
             guard !ledger.unfinished.contains(where: { $0.operationID == intent.operationID }),
-                  Self.validChildTuple(intent, allowAbsent: true) else { throw JournalError.invalidTransition }
+                  Self.validIntent(intent),
+                  Self.validChildTuple(intent, allowAbsent: true) else {
+                throw JournalError.invalidTransition
+            }
             ledger.unfinished.append(intent)
         case .capturedChild:
             guard ledger.unfinished.filter({ $0.operationID == intent.operationID }).count == 1,
@@ -124,11 +134,31 @@ final class MutationAdmissionStore {
                   prior.childStartMicroseconds == nil else { throw JournalError.invalidTransition }
             ledger.unfinished[index] = intent
         }
+        try publishLedger(ledger)
+    }
+
+    @discardableResult
+    func retireIntentWhileLocked(operationID: UUID, proof: EffectProofReference,
+                                 artifacts: ReviewedManifestStore) throws -> PendingEffectIntent {
+        try requireJournalLock()
+        var ledger = try readLedger()
+        guard ledger.unfinished.filter({ $0.operationID == operationID }).count == 1,
+              let index = ledger.unfinished.firstIndex(where: { $0.operationID == operationID }) else {
+            throw JournalError.invalidTransition
+        }
+        let intent = ledger.unfinished[index]
+        _ = try artifacts.proof(proof, for: intent)
+        ledger.unfinished.remove(at: index)
+        try publishLedger(ledger)
+        return intent
+    }
+
+    private func publishLedger(_ ledger: Envelope) throws {
         let bytes = try JSONEncoder().encode(ledger)
         guard bytes.count <= JournalFiles.maximumBytes else { throw JournalError.capacity }
         do {
-            try JournalFilePublication.replace(directoryFD: directoryFD, name: "unfinished-effects.json",
-                bytes: bytes, io: io, scanLimits: scanLimits)
+            try JournalFilePublication.replace(directoryFD: directoryFD,
+                name: "unfinished-effects.json", bytes: bytes, io: io, scanLimits: scanLimits)
         } catch JournalError.capacity { throw JournalError.capacity }
         catch {
             failed = true
@@ -143,6 +173,26 @@ final class MutationAdmissionStore {
         guard let pid = intent.childPID, let seconds = intent.childStartSeconds,
               let micros = intent.childStartMicroseconds else { return false }
         return pid > 0 && seconds >= 0 && (0..<1_000_000).contains(micros)
+    }
+
+    private static func validIntent(_ intent: PendingEffectIntent) -> Bool {
+        guard !intent.adapterID.isEmpty else { return false }
+        switch intent.schemaVersion {
+        case 1:
+            return intent.binding == nil && intent.bootID != nil
+                && intent.executablePath?.isEmpty == false
+                && intent.executableDevice != nil && intent.executableInode != nil
+        case 2:
+            guard case .filesystem(let binding)? = intent.binding else { return false }
+            return binding.schema == FilesystemEffectBinding.schemaVersion
+                && binding.adapterID == intent.adapterID
+                && intent.bootID == nil && intent.executablePath == nil
+                && intent.executableDevice == nil && intent.executableInode == nil
+                && intent.childPID == nil && intent.childStartSeconds == nil
+                && intent.childStartMicroseconds == nil
+        default:
+            return false
+        }
     }
 
     private func validateStableLock() throws {
@@ -205,7 +255,10 @@ final class MutationAdmissionStore {
         let marker = try read(Bootstrap.self, name: "bootstrap.json")
         let ledger = try read(Envelope.self, name: "unfinished-effects.json")
         guard marker.schema == 1, marker.state == "initialized",
-              ledger.schema == 1, ledger.storeID == marker.storeID else { throw ConfirmationError.storageUnavailable }
+              ledger.schema == 1, ledger.storeID == marker.storeID,
+              ledger.unfinished.allSatisfy(Self.validIntent) else {
+            throw ConfirmationError.storageUnavailable
+        }
         return ledger
     }
 
@@ -216,20 +269,81 @@ final class MutationAdmissionStore {
     }
 }
 struct PendingEffectIntent: Codable, Equatable, Sendable {
+    let schemaVersion: UInt32
     let runID: UUID
     let operationID: UUID
     let adapterID: String
-    let bootID: UUID
-    let executablePath: String
-    let executableDevice: UInt64
-    let executableInode: UInt64
+    let binding: PersistedEffectBinding?
+    let bootID: UUID?
+    let executablePath: String?
+    let executableDevice: UInt64?
+    let executableInode: UInt64?
     let childPID: Int32?
     let childStartSeconds: Int64?
     let childStartMicroseconds: Int32?
     let phase: SubmissionPhase
+
+    init(runID: UUID, operationID: UUID, adapterID: String, bootID: UUID,
+         executablePath: String, executableDevice: UInt64, executableInode: UInt64,
+         childPID: Int32?, childStartSeconds: Int64?, childStartMicroseconds: Int32?,
+         phase: SubmissionPhase) {
+        schemaVersion = 1
+        self.runID = runID
+        self.operationID = operationID
+        self.adapterID = adapterID
+        binding = nil
+        self.bootID = bootID
+        self.executablePath = executablePath
+        self.executableDevice = executableDevice
+        self.executableInode = executableInode
+        self.childPID = childPID
+        self.childStartSeconds = childStartSeconds
+        self.childStartMicroseconds = childStartMicroseconds
+        self.phase = phase
+    }
+
+    init(runID: UUID, operationID: UUID, filesystem binding: FilesystemEffectBinding,
+         phase: SubmissionPhase = .prepared) {
+        schemaVersion = 2
+        self.runID = runID
+        self.operationID = operationID
+        adapterID = binding.adapterID
+        self.binding = .filesystem(binding)
+        bootID = nil
+        executablePath = nil
+        executableDevice = nil
+        executableInode = nil
+        childPID = nil
+        childStartSeconds = nil
+        childStartMicroseconds = nil
+        self.phase = phase
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, runID, operationID, adapterID, binding, bootID
+        case executablePath, executableDevice, executableInode
+        case childPID, childStartSeconds, childStartMicroseconds, phase
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decodeIfPresent(UInt32.self, forKey: .schemaVersion) ?? 1
+        runID = try values.decode(UUID.self, forKey: .runID)
+        operationID = try values.decode(UUID.self, forKey: .operationID)
+        adapterID = try values.decode(String.self, forKey: .adapterID)
+        binding = try values.decodeIfPresent(PersistedEffectBinding.self, forKey: .binding)
+        bootID = try values.decodeIfPresent(UUID.self, forKey: .bootID)
+        executablePath = try values.decodeIfPresent(String.self, forKey: .executablePath)
+        executableDevice = try values.decodeIfPresent(UInt64.self, forKey: .executableDevice)
+        executableInode = try values.decodeIfPresent(UInt64.self, forKey: .executableInode)
+        childPID = try values.decodeIfPresent(Int32.self, forKey: .childPID)
+        childStartSeconds = try values.decodeIfPresent(Int64.self, forKey: .childStartSeconds)
+        childStartMicroseconds = try values.decodeIfPresent(Int32.self, forKey: .childStartMicroseconds)
+        phase = try values.decode(SubmissionPhase.self, forKey: .phase)
+    }
 }
 enum SubmissionPhase: String, Codable, Sendable {
-    case prepared, submitted, uncertainAndPossiblyRunning
+    case prepared, releaseArmed, submitted, uncertainAndPossiblyRunning
 }
 
 enum IntentPersistence: Sendable { case append, capturedChild }
