@@ -24,7 +24,7 @@ python3 scripts/verification/privacy-api-inventory.py \
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 701 \
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
   --require-case 'successful scope grants release captured identities and replay still denies' \
@@ -37,6 +37,12 @@ python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --
   --require-case 'corruptAndFutureDowngradeRecoveryPreserveSettingsAuthorityAndRecoveryBytes(name:)' \
   --require-case 'importAndSelectiveResetPreserveIndependentAuthorityAndRecoveryWitnesses' \
   --require-case 'primary temporary and backup renderer outputs remain private after disk materialization' \
+  --require-case 'writer creates one private export with renderer bytes for both cosmetic flag states' \
+  --require-case 'writer never replaces existing regular symlink FIFO directory or hard-linked destinations' \
+  --require-case 'writer rejects a symlinked parent without changing its target' \
+  --require-case 'prepublication failure removes only its exact staging file' \
+  --require-case 'postpublication directory sync failure reports uncertainty and retains private payload' \
+  --require-case 'writer rejects allow ACL parents and clears inherited deny ACLs from exports' \
   --require-case 'selected-project scope with no acknowledged roots performs zero metadata visits' \
   --require-case 'manual Continue consumes bounded cursors and converges without scope expansion' \
   --require-case 'event after guard consumption invalidates the published cursor at suspension' \
@@ -59,7 +65,9 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 144 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 146 \
+  --require-case 'testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending' \
+  --require-case 'testDiagnosticExportSnapshotDefaultsRedactionOnWhenAcknowledgedPolicyUnavailable' \
   --require-case 'testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan' \
   --require-case 'testCancelDuringRescanTargetsNewStartInsteadOfOldTerminalSession' \
   --require-case 'testFreshInstallExplicitScanUsesDefaultsWithoutWritingSettingsOrStartingBackgroundWork' \

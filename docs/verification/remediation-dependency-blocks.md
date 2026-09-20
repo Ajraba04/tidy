@@ -39,3 +39,14 @@ The independent R05 read-only unit is implemented and has current-host native ev
 The remaining platform lead was investigated rather than assumed away: the public SDK's `F_SETLEASE` command returned `EPERM` to an ordinary owned-scratch process. Versioned Apple XNU source requires a private entitlement and describes breakable, non-descendant-wide leases with no owner mapping. [The addendum](remediation-producer-dependency-resume.md#addendum-darwin-f_setlease-is-not-an-r02-dependency-exit) distinguishes published-source and installed-kernel evidence. It does not authorize a private-entitlement or signing bypass.
 
 Completing the original full program therefore still requires a supported real producer/owner/exclusion contract, followed by its positive recovery/effect acceptance, or an explicitly approved change to that product contract and dependency graph. Hardware, human, privacy-purpose and actual installation evidence remain additional independent requirements.
+
+
+## 2026-09-20 independent R08 progress
+
+The producer dependency did not block metadata-only diagnostic export. Its Core writer,
+acknowledged app snapshot and Settings save action are now implemented, with focused
+headless checks and app compilation passing. See [R08 export](remediation-R08-diagnostic-export.md).
+GUI checks are deferred by the user while the laptop is in use. The last compact failure
+now concerns an unnamed Touch Bar element; the auxiliary-control lifecycle is corrected.
+No supported producer/exclusion contract, background authority, mutation admission or
+release requirement was changed by this code-side unit.

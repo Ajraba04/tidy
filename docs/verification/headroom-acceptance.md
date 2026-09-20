@@ -30,13 +30,13 @@ Audit baseline: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a`, 2026-09-17. Continue
 | R05 | `dbf9c72`/`4fe419e`: store-bound canonical defaults, generation/single-use/disk-image checks, explicit first-launch scan, first-save barrier; native Quick journey passes without `config.json` | Controlled tool discovery/handoff and mutation delivery still depend on R02–R04; no blanket revision-zero admission |
 | R06 | Scoped traversal, live constraints, shared cancellation, indexed Continue and atomic watch checkpoint; `76590e3` releases consumed scope/consent metadata; native consent/cancel/reopen journeys pass | Source/current-host functional implementation complete; index-disabled terminal partials truthfully offer no Continue. Physical critical/thermal/LPM/sleep delivery, multiple-volume/remount behavior and measured UI/worker latency gates remain open |
 | R07 | App-owned bounded index/event buffers, restart/catch-up/loss/device checks, real 100k complete parity and metadata-visit reduction | Reference performance, long-run failure/physical matrix and full supported-OS coverage remain separate |
-| R08 | Scene leases, snapshot replay, live policy/history/volume ordering; `b171d85` adds supported-shape/future/corrupt/import/reset fixtures preserving a real unresolved admission record | Future consumers remain R09–R11; diagnostic renderer disk candidates are tested, but production diagnostic export/lifecycle remains unavailable |
+| R08 | Scene leases, snapshot replay, live policy/history/volume ordering; `b171d85` adds supported-shape/future/corrupt/import/reset fixtures preserving a real unresolved admission record | Future consumers remain R09–R11; metadata-only create-only diagnostic export is now implemented and headlessly tested; save-dialog behavior and optional cosmetic fields remain unverified/unavailable |
 | R09 | Minimum earlier ownership foundation retained | Remaining projects/ranking/Build Prep T11–T13 follows the plan's unclosed R02–R08 prerequisites |
 | R10 | Existing inventory/denial boundaries retained | Each remaining ecosystem inventory and mutation/denial unit, supported-version matrix and production integration |
 | R11 | Empty initial unattended allowlist and unavailable consumers retained | Instance-safe rescue, notification rules, separate local standing authority and supported-adapter-dependent assistance |
 | R12 | All 10 project phases/test membership; exact required tests; isolated process-cap gate; runtime flag/bundle/test-target/binary isolation; live privacy-table identity | Single final aggregate: Core701 + isolated1 + models144 + presentation2 passed; production native10/11 with compact audit timeout, exit65; external CI remains distinct |
 | R13 | `be8e34d`: 6/6 real production-scene journeys in a compile-scoped disposable host; 2/2 presentation tests previously pass; exact direct API mapping and limited current-host observation | Human VoiceOver/complete AX journey, appearance/Reduce Motion matrix, reference hardware/OS, full workflow traffic, exact privacy reasons and numeric physical gates |
-| R14 | Local checkpoint ZIP/DMG strict signatures, slices, version/resources/checksums/parity and copy/replace/remove witness rehearsal | Current-source1782b4d ZIP/DMG built and inspected locally; actual supported-host install/launch/upgrade/uninstall, optional signed/notarized path and approved release manifest remain open |
+| R14 | Local checkpoint ZIP/DMG strict signatures, slices, version/resources/checksums/parity and copy/replace/remove witness rehearsal | Last inspected1782b4d ZIP/DMG predates the diagnostic exporter; actual supported-host install/launch/upgrade/uninstall, optional signed/notarized path and approved release manifest remain open |
 
 The original exhaustive mapping remains in `docs/audits/2026-09-17-9e1a500/coverage-ledger.md`. This table does not erase any row or narrow its closure criteria.
 
@@ -82,3 +82,17 @@ still failed on the inactive auxiliary window's visible native title; Clean audi
 not reached. No broad suite or package rebuild followed. The native gate remains open;
 see [window-scope evidence](remediation-R13-audit-window-scope.md) for the exact three
 focused results, screenshots and next fixture-design boundary.
+
+
+### 2026-09-20 code-side continuation
+
+[Metadata-only diagnostic export](remediation-R08-diagnostic-export.md) is implemented:
+acknowledged snapshots, private staged publication, no overwrite, extended-ACL protection
+and explicit uncertain-publication handling. Focused Core/registry15 and model2 passed;
+normal Debug app build and isolation/source checks passed. Current CI floors707/146 are
+registered requirements; no new full aggregate was run.
+
+The latest GUI attempt completed before deferral and failed on an unnamed Touch Bar
+object after verifying auxiliary-control hiding/restoration and cleanup. The user deferred
+further GUI checks until the laptop is not in use. Native audit and save-dialog acceptance
+remain pending; no GUI runner is left active. Previously inspected packages are historical.

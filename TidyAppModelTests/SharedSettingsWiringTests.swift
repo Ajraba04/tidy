@@ -3308,6 +3308,71 @@ extension SharedSettingsWiringTests {
         .init(id: id, name: name, values: t07Values(pairs))
     }
 
+    @MainActor
+    func testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending()
+        async throws {
+        let savedProfileName = "saved-profile-DIAGNOSTIC-SENTINEL"
+        let savedPath = "/Users/personal-DIAGNOSTIC-SENTINEL"
+        let redactionID = t07ID("export.redactDiagnostics")
+        let savedProfile = t07Profile(UUID(), savedProfileName)
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(schemaVersion: 2, gitRoots: [savedPath]),
+            preferences: .init(global: t07Values([
+                (redactionID.rawValue, .bool(false)),
+                ("scope.excludedRoots", .strings([savedPath]))
+            ]), profiles: [savedProfile])))
+
+        try await run(stops: ["config.1"], seed: seed) { _, services, io in
+            let pendingProfileName = "pending-profile-DIAGNOSTIC-SENTINEL"
+            let delta = PreferencesDocumentDelta(baseRevision: 0, global: [
+                .init(id: redactionID, baseValue: .bool(false), editedValue: .bool(true))
+            ], profiles: [.insert(self.t07Profile(UUID(), pendingProfileName))])
+            guard case .accepted = services.configStore.submit(document: delta) else {
+                return XCTFail("Diagnostic fixture edit was rejected")
+            }
+            try await io.probe.waitFor("config.1")
+            XCTAssertEqual(services.configStore.profiles.count, 2,
+                "The pending fixture did not reach displayed settings")
+            XCTAssertEqual(services.configStore.effectivePolicy?.fields[redactionID]?.value,
+                           .stored(.bool(true)))
+
+            let input = services.configStore.makeDiagnosticExportInput()
+            let bytes = try DiagnosticExportRenderer.render(input).primaryCandidate
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes)
+                as? [String: Any])
+            XCTAssertEqual((object["settingsRevision"] as? NSNumber)?.uint64Value, 0)
+            XCTAssertEqual((object["profileCount"] as? NSNumber)?.intValue, 1)
+            XCTAssertEqual((object["cosmeticRedactionEnabled"] as? NSNumber)?.boolValue,
+                           false)
+            let text = String(decoding: bytes, as: UTF8.self)
+            for sensitive in [savedProfileName, pendingProfileName, savedPath] {
+                XCTAssertFalse(text.contains(sensitive))
+            }
+            XCTAssertTrue(input.credentials.isEmpty && input.cookies.isEmpty
+                && input.environment.isEmpty && input.argv.isEmpty
+                && input.remotes.isEmpty && input.personalPaths.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testDiagnosticExportSnapshotDefaultsRedactionOnWhenAcknowledgedPolicyUnavailable()
+        async throws {
+        try await run { _, services, _ in
+            let unresolved = SettingsEnvelope(schemaVersion: 2, revision: 9,
+                config: .init(), preferences: .init(), activeProfileID: UUID())
+            let store = AppConfigStore(loaded: unresolved, bridge: services.policyBridge)
+            XCTAssertNil(store.acknowledgedEffectivePolicy)
+
+            let bytes = try DiagnosticExportRenderer.render(
+                store.makeDiagnosticExportInput()).primaryCandidate
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes)
+                as? [String: Any])
+            XCTAssertEqual((object["settingsRevision"] as? NSNumber)?.uint64Value, 9)
+            XCTAssertEqual((object["cosmeticRedactionEnabled"] as? NSNumber)?.boolValue,
+                           true)
+        }
+    }
+
     func testDocumentActivationInvalidatesSynchronouslyResolvesAndRelaunches() async throws {
         try await run(stops: ["config.2"]) { s, services, io in
             let profileID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!

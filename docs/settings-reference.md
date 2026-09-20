@@ -520,4 +520,4 @@ Generated from the tested Tidy settings registry. MiB and GiB values use powers 
 |ui.ecosystemOrder|[apple, android, node, languages, homebrew, docker, ides, models, git, data]|permutation of ecosystem IDs|preference / none|global, profile|Unavailable: This presentation preference has no application consumer.|
 |ui.showBadges|true|boolean|preference / none|global, profile|Unavailable: This presentation preference has no application consumer.|
 |ui.advancedSettings|false|boolean|preference / none|global, profile|Available: Settings search and advanced-row visibility|
-|export.redactDiagnostics|true|boolean|preference / none|global, profile|Unavailable: Diagnostic export is not implemented.|
+|export.redactDiagnostics|true|boolean|preference / none|global, profile|Unavailable: Metadata-only diagnostics are available; optional cosmetic redaction is not implemented.|

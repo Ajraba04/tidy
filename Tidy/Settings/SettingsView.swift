@@ -1573,6 +1573,9 @@ struct SettingsView: View {
                 .accessibilityIdentifier("settings.showAdvanced")
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    if selectedSection == .experience {
+                        DiagnosticExportControl(store: store)
+                    }
                     RegistrySettingsContent(rows: rows) { id, value in
                         _ = model.submit(id: id, value: value)
                     }
@@ -1583,6 +1586,74 @@ struct SettingsView: View {
             }
             .accessibilityIdentifier("settings.content")
         }.padding().frame(minWidth: 480, minHeight: 520).navigationTitle("Settings")
+    }
+}
+
+@MainActor
+private struct DiagnosticExportControl: View {
+    let store: AppConfigStore
+    @State private var isExporting = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Export Diagnostics…", action: chooseDestination)
+                .disabled(isExporting)
+                .accessibilityIdentifier("settings.diagnostics.export")
+            Text("Saved settings metadata only. Logs, paths, setting values and profile names are excluded.")
+                .font(.caption)
+                .foregroundStyle(.primary)
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("settings.diagnostics.status")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Diagnostic export")
+    }
+
+    private func chooseDestination() {
+        guard !isExporting else { return }
+        let input = store.makeDiagnosticExportInput()
+        let panel = NSSavePanel()
+        panel.title = "Export Diagnostics"
+        panel.message = "Choose a new file for saved settings metadata. Existing files are never replaced."
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "tidy-diagnostics-\(UUID().uuidString.prefix(8)).json"
+        isExporting = true
+        message = nil
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else {
+                isExporting = false
+                return
+            }
+            let scoped = destination.startAccessingSecurityScopedResource()
+            Task { @MainActor in
+                defer {
+                    if scoped { destination.stopAccessingSecurityScopedResource() }
+                    isExporting = false
+                }
+                do {
+                    _ = try await Task.detached(priority: .utility) {
+                        try DiagnosticExportWriter.write(input, to: destination)
+                    }.value
+                    message = "Diagnostic metadata exported."
+                } catch let error as DiagnosticExportWriteError {
+                    switch error {
+                    case .publicationUncertain:
+                        message = "The export was published, but its final state could not be confirmed. Check the selected location before trying again."
+                    case .failure(.publication, let code) where code == POSIXErrorCode.EEXIST.rawValue:
+                        message = "A file with that name already exists. Choose a new filename."
+                    case .failure:
+                        message = "Diagnostics could not be exported. Choose a private writable folder and a new filename."
+                    }
+                } catch {
+                    message = "Diagnostics could not be exported."
+                }
+            }
+        }
     }
 }
 

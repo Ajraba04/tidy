@@ -46,6 +46,8 @@ No privacy-manifest reason or category change is justified by this review. Its b
 | Dedicated runtime-verification target: `RuntimePerformanceComposition.lstat/fstat` | Root/state/proceed-token type, owner, mode and size; fixture entry type, owner, link count, logical size and allocated blocks | Validate the owned observer handshake and fixed 50k synthetic fixture, measure its composition, and publish bounded result documents | Test-only storage and fixture measurements; no new reason is asserted. This code must remain absent from the distributed artifact. |
 | Dedicated runtime-verification target: `RuntimeTestComposition.statfs` | Available blocks and block size | Refuse performance fixture setup unless at least 2 GiB is available on its temporary volume | Test-only sufficient-write-space guard; no new manifest reason is asserted by this source refresh. The test target remains excluded from distribution. |
 
+| `DiagnosticExportWriter` `fstat/fstatat` and extended-ACL inspection | Device/inode, owner, mode, link count, size, and ACL grant/deny tags; no timestamp fields are consumed | Validate the selected output parent, private staging inode and atomic create-only publication; parent ACL grants are rejected and staging ACLs are cleared before payload writes | The source uses an explicit save-panel destination and exports only metadata. No new manifest reason is asserted for parent/staging safety checks; privacy-purpose classification and GUI delivery remain separate gates. ACL entries are never serialized. |
+
 ## Direct source inventory
 
 The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ files in the app and core source roots, including conditionally compiled runtime-host source. It intentionally does not infer private framework implementation from ordinary `FileManager` methods. Generic `fgetattrlist` is reported in both categories because Apple lists it in both. `kern.boottime` and `kern.bootsessionuuid` are separate review rows because Apple's current required-reason list names neither.
@@ -71,6 +73,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Execution/ResourcePreflight.swift` | Disk space | `fgetattrlist`@180; `fstatfs`@167 |
 | `TidyCore/Sources/TidyCore/Measure/DiskStats.swift` | Disk space | `URLResourceKey.volumeAvailableCapacityForImportantUsageKey`@31,47,56; `URLResourceKey.volumeAvailableCapacityKey`@30,45,53; `URLResourceKey.volumeTotalCapacityKey`@29,44,51 |
 | `TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift` | Boot identity (not in current Apple required-reason list) | `kern.boottime`@32,34 |
+| `TidyCore/Sources/TidyCore/Policy/DiagnosticExport.swift` | File timestamp | `fstat`@141,203,223,312; `fstatat`@233,266,342 |
 | `TidyCore/Sources/TidyCore/Policy/OptionalRunHistory.swift` | File timestamp | `fstat`@124,138; `fstatat`@175 |
 | `TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift` | File timestamp | `fstat`@75,109,144; `fstatat`@134,415 |
 | `TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift` | Disk space | `fstatfs`@69 |

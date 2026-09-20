@@ -1,5 +1,10 @@
 # R14 local package preparation — 2026-09-19
 
+**2026-09-20 status:** the inspected1782b4d artifacts below predate the new diagnostic
+exporter. They remain historical packages; no new package was built during code-side
+work, and the current save-dialog/GUI acceptance is deferred by the user.
+
+
 ## Current resumed checkpoint — source `1782b4d`
 
 The final-source package build and bounded inspector both exited 0. The normal app was
