@@ -156,10 +156,10 @@ Generated from the tested Tidy settings registry. MiB and GiB values use powers 
 |cleanup.inactiveDays|60|integer 7...365|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.transcriptDays|45|integer 7...365|preference / invalidate|global, profile, project, run|Unavailable: The corresponding cleanup effect has no accepted production adapter.|
 |cleanup.recentProtectionDays|7|integer 1...90|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
-|cleanup.warmProjectCount|5|integer 0...50|preference / invalidate|global, profile, project, run|Unavailable: The corresponding cleanup effect has no accepted production adapter.|
+|cleanup.warmProjectCount|5|integer 0...50|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.minimumCandidateMiB|100|integer 1...102400|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.minimumItemMiB|1|integer 0...102400|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
-|cleanup.retainRecentArtifacts|2|integer 0...100|preference / invalidate|global, profile, project, run|Unavailable: The corresponding cleanup effect has no accepted production adapter.|
+|cleanup.retainRecentArtifacts|2|integer 0...100|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.costCeiling|low|low, medium, high|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.requestedBatchGiB|10|integer 1...100|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|
 |cleanup.requestedBatchItems|20|integer 1...100|preference / invalidate|global, profile, project, run|Available: Eligibility ranking and bounded Build Prep selection; effects require accepted adapters|

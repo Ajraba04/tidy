@@ -11,6 +11,13 @@ public enum AllocationKnowledge: Equatable, Sendable {
     case unknown
 }
 
+/// Adapter classification used only to withhold recommendations. It conveys no
+/// ownership or execution authority. Archives, models and data are not artifacts.
+public enum ArtifactRetention: Sendable {
+    case notArtifact
+    case projectArtifact(createdAt: Date?)
+}
+
 /// Display/planning information is not an execution grant. Only an internal
 /// adapter can attach producer evidence; the coordinator still seals execution.
 public struct CleanupCandidate: Sendable {
@@ -20,23 +27,28 @@ public struct CleanupCandidate: Sendable {
     public let lastActivityAt: Date?
     public let manualRisk: Bool
     public let allocation: AllocationKnowledge
+    public let artifactRetention: ArtifactRetention
     let ownership: CandidateOwnership?
 
     public init(record: InventoryRecord, catalogID: String, cost: CleanupCost,
                 lastActivityAt: Date?, manualRisk: Bool = false,
-                allocation: AllocationKnowledge = .unknown) {
+                allocation: AllocationKnowledge = .unknown,
+                artifactRetention: ArtifactRetention = .notArtifact) {
         self.record = record; self.catalogID = catalogID; self.cost = cost
         self.lastActivityAt = lastActivityAt; self.manualRisk = manualRisk
         self.allocation = allocation; self.ownership = nil
+        self.artifactRetention = artifactRetention
     }
 
     init(record: InventoryRecord, catalogID: String, cost: CleanupCost,
          lastActivityAt: Date?, manualRisk: Bool = false,
          allocation: AllocationKnowledge = .exclusiveEstimate,
-         association: ResourceAssociationEvidence, lease: any ProducerExclusionLease) {
+         association: ResourceAssociationEvidence, lease: any ProducerExclusionLease,
+         artifactRetention: ArtifactRetention = .notArtifact) {
         self.record = record; self.catalogID = catalogID; self.cost = cost
         self.lastActivityAt = lastActivityAt; self.manualRisk = manualRisk
         self.allocation = allocation
+        self.artifactRetention = artifactRetention
         self.ownership = CandidateOwnership(association: association, lease: lease)
     }
 }

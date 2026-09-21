@@ -67,7 +67,9 @@ public actor MaintenanceAuthorization {
                              authority: LocalAuthoritySnapshot,
                              featureEnabled: Bool,
                              currentPolicyRevision: UInt64,
-                             nowMonotonicNanoseconds: UInt64) throws -> MaintenanceNotification {
+                             bootID: UUID,
+                             nowMonotonicNanoseconds: UInt64,
+                             nowWallDate: Date) throws -> MaintenanceNotification {
         guard grant.mode == .notifyOnly,
               authority.permits(.maintenanceNotifyOnly(grant)) else {
             throw MaintenanceDenial.authorityMissing
@@ -77,6 +79,8 @@ public actor MaintenanceAuthorization {
             featureEnabled: featureEnabled, currentPolicyRevision: currentPolicyRevision,
             nowMonotonicNanoseconds: nowMonotonicNanoseconds,
             requireImmutableScope: false)
+        try requireInterval(grant: grant, bootID: bootID,
+            nowMonotonicNanoseconds: nowMonotonicNanoseconds, nowWallDate: nowWallDate)
         return MaintenanceNotification(ruleID: grant.ruleID,
             capabilityID: grant.capabilityID, navigation: .reviewCache,
             observedBytes: candidate.allocatedBytes!)
@@ -176,7 +180,19 @@ public actor MaintenanceAuthorization {
                                  nowMonotonicNanoseconds: UInt64,
                                  nowWallDate: Date) throws {
         guard scheduleValid else { throw MaintenanceDenial.clockDiscontinuity }
-        guard let previous = schedule[grant.ruleID] else { return }
+        try MaintenanceScheduleInterval.require(grant: grant,
+            previous: schedule[grant.ruleID], bootID: bootID,
+            nowMonotonicNanoseconds: nowMonotonicNanoseconds, nowWallDate: nowWallDate)
+    }
+}
+
+enum MaintenanceScheduleInterval {
+    static func require(grant: MaintenanceGrant,
+                        previous: MaintenanceScheduleRecord?,
+                        bootID: UUID,
+                        nowMonotonicNanoseconds: UInt64,
+                        nowWallDate: Date) throws {
+        guard let previous else { return }
         let intervalSeconds = TimeInterval(grant.minimumIntervalHours * 3_600)
         if previous.bootID == bootID {
             guard nowMonotonicNanoseconds >= previous.monotonicNanoseconds else {
@@ -187,8 +203,8 @@ public actor MaintenanceAuthorization {
                 throw MaintenanceDenial.frequencyLimited
             }
         } else {
-            // Across boots, monotonic values cannot be compared. A wall clock
-            // rollback or insufficient elapsed wall time therefore denies work.
+            // Across boots, monotonic values cannot be compared. Wall rollback
+            // and insufficient elapsed wall time both remain fail-closed.
             guard nowWallDate >= previous.wallDate,
                   nowWallDate.timeIntervalSince(previous.wallDate) >= intervalSeconds else {
                 throw MaintenanceDenial.clockDiscontinuity

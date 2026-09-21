@@ -21,6 +21,7 @@ final class AssistanceModel {
     private(set) var budgetVolumeID: UUID?
     private(set) var requestedNavigation: AssistanceNavigation?
     private(set) var errorMessage: String?
+    private(set) var maintenanceStatuses: [MaintenanceRuleStatus] = []
 
     @ObservationIgnored private let sceneLease: MonitorSceneLeaseController
     @ObservationIgnored private var bootstrapTask: Task<Void, Never>?
@@ -29,6 +30,9 @@ final class AssistanceModel {
     @ObservationIgnored private var authorityGeneration: UInt64 = 0
     @ObservationIgnored private var pressureState = PressureNotificationState()
     @ObservationIgnored private var budgetEvaluations: [UUID: BudgetEvaluation] = [:]
+    @ObservationIgnored private var maintenanceInventory: InstalledMaintenanceInventory?
+    @ObservationIgnored private var maintenanceTask: Task<Void, Never>?
+    @ObservationIgnored private var maintenanceGeneration: UInt64 = 0
 
     init(services: AppExecutionServices,
          notificationBrokerFactory: NotificationBrokerFactory? = {
@@ -65,6 +69,7 @@ final class AssistanceModel {
     deinit {
         bootstrapTask?.cancel()
         signalTask?.cancel()
+        maintenanceTask?.cancel()
         sceneLease.dispose()
     }
 
@@ -130,6 +135,7 @@ final class AssistanceModel {
             }
             reconcileSignalSubscription()
             considerBudgetNotifications()
+            reevaluateMaintenanceNotifications()
         } catch {
             if reportErrors {
                 errorMessage = "Notification state is unavailable; delivery remains disabled: \(String(describing: error))"
@@ -144,6 +150,7 @@ final class AssistanceModel {
         // update avoids UI lag while the same snapshot is queued there.
         guard snapshot.isCurrent else { return }
         authoritySnapshot = snapshot
+        reevaluateMaintenanceNotifications()
     }
 
     /// Inventory adapters may feed only known, already measured allocations.
@@ -187,6 +194,21 @@ final class AssistanceModel {
         budgetEvaluations = [:]
     }
 
+    /// Installs one explicit developer inventory result. The source revision is
+    /// required because display scope IDs are not authority. Passing nil clears
+    /// every installed maintenance candidate and starts no replacement scan.
+    func installMaintenanceInventory(_ inventory: DeveloperInventorySnapshot?,
+                                     sourcePolicyRevision: UInt64) {
+        if let inventory {
+            maintenanceInventory = InstalledMaintenanceInventory(snapshot: inventory,
+                sourcePolicyRevision: sourcePolicyRevision,
+                receivedAtMonotonicNanoseconds: DispatchTime.now().uptimeNanoseconds)
+        } else {
+            maintenanceInventory = nil
+        }
+        reevaluateMaintenanceNotifications()
+    }
+
     private func applyAuthority(_ snapshot: LocalAuthoritySnapshot?,
                                 services: AppExecutionServices) async {
         let (next, overflow) = authorityGeneration.addingReportingOverflow(1)
@@ -207,6 +229,7 @@ final class AssistanceModel {
             initializeNotificationBroker(reportErrors: false)
         }
         reconcileSignalSubscription()
+        reevaluateMaintenanceNotifications()
     }
 
     private func reconcileSignalSubscription() {
@@ -234,7 +257,194 @@ final class AssistanceModel {
                     }
                 }
                 await considerPressureNotification(snapshot)
+                reevaluateMaintenanceNotifications()
             }
+        }
+    }
+
+    private func reevaluateMaintenanceNotifications() {
+        let (nextGeneration, overflow) = maintenanceGeneration.addingReportingOverflow(1)
+        maintenanceTask?.cancel()
+        maintenanceTask = nil
+        guard !overflow else {
+            maintenanceInventory = nil
+            maintenanceStatuses = []
+            errorMessage = "Maintenance evaluation overflowed; notify-only delivery remains denied."
+            return
+        }
+        maintenanceGeneration = nextGeneration
+        let grants = notifyOnlyMaintenanceGrants
+        guard !grants.isEmpty else {
+            maintenanceStatuses = []
+            return
+        }
+        guard let installation = maintenanceInventory else {
+            maintenanceStatuses = grants.map {
+                MaintenanceRuleStatus(id: $0.ruleID, state: .denied,
+                    detail: "No explicit Developer Workspace inventory is installed.")
+            }
+            return
+        }
+        guard let policy = effectivePolicy,
+              policy.allowedFeatures.contains("maintenance") else {
+            maintenanceStatuses = grants.map {
+                MaintenanceRuleStatus(id: $0.ruleID, state: .denied,
+                    detail: "Maintenance is disabled by the acknowledged policy.")
+            }
+            return
+        }
+
+        var candidates: [(MaintenanceGrant, MaintenanceCandidate)] = []
+        maintenanceStatuses = grants.map { grant in
+            let projection = MaintenanceInventoryProjector.project(
+                grant: grant, installation: installation)
+            if let candidate = projection.candidate, projection.denialReasons.isEmpty {
+                candidates.append((grant, candidate))
+                return MaintenanceRuleStatus(id: grant.ruleID, state: .eligible,
+                    detail: "Complete notify-only evidence is ready for final validation.")
+            }
+            return MaintenanceRuleStatus(id: grant.ruleID, state: .denied,
+                detail: projection.denialReasons.joined(separator: " "))
+        }
+        guard !candidates.isEmpty else { return }
+        guard let broker = notificationBroker, let authoritySnapshot else {
+            for (grant, _) in candidates {
+                updateMaintenanceStatus(ruleID: grant.ruleID, state: .denied,
+                    detail: "Notification controls or current local authority are unavailable.",
+                    generation: nextGeneration)
+            }
+            return
+        }
+        let configuration = NotificationConfiguration.resolve(
+            policy: policy, authority: authoritySnapshot)
+        let bootID = Self.notificationBootID(latestSystemSnapshot?.bootIdentity)
+        maintenanceTask = Task { @MainActor [weak self, weak broker] in
+            guard let self, let broker else { return }
+            for (grant, candidate) in candidates {
+                guard !Task.isCancelled, maintenanceGeneration == nextGeneration else { return }
+                let now = DispatchTime.now().uptimeNanoseconds
+                let wall = Date()
+                do {
+                    let initial = MaintenanceAuthorization(
+                        scheduleRecords: broker.maintenanceScheduleRecords)
+                    _ = try await initial.notification(for: grant, candidate: candidate,
+                        authority: authoritySnapshot, featureEnabled: true,
+                        currentPolicyRevision: installation.sourcePolicyRevision,
+                        bootID: bootID, nowMonotonicNanoseconds: now,
+                        nowWallDate: wall)
+                    try await broker.deliverMaintenance(grant: grant,
+                        configuration: configuration, bootID: bootID,
+                        validateStillCurrent: {
+                            guard !Task.isCancelled,
+                                  self.maintenanceGeneration == nextGeneration,
+                                  self.maintenanceInventory?.sourcePolicyRevision
+                                    == installation.sourcePolicyRevision,
+                                  let currentAuthority = self.authoritySnapshot,
+                                  currentAuthority.isCurrent,
+                                  currentAuthority.permits(.maintenanceNotifyOnly(grant)),
+                                  currentAuthority.permits(.notifications),
+                                  self.effectivePolicy?.allowedFeatures.contains("maintenance") == true,
+                                  self.policyRevision == installation.sourcePolicyRevision else {
+                                throw MaintenanceDenial.policyChanged
+                            }
+                            guard (try? LocalRootApproval.verify(directory: URL(
+                                fileURLWithPath: grant.root.canonicalPath,
+                                isDirectory: true))) == grant.root else {
+                                throw MaintenanceDenial.identityMismatch
+                            }
+                        }) {
+                        guard !Task.isCancelled,
+                              self.maintenanceGeneration == nextGeneration,
+                              self.maintenanceInventory?.sourcePolicyRevision
+                                == installation.sourcePolicyRevision,
+                              let liveAuthority = self.authoritySnapshot,
+                              liveAuthority.isCurrent,
+                              liveAuthority.permits(.maintenanceNotifyOnly(grant)),
+                              liveAuthority.permits(.notifications),
+                              let livePolicy = self.effectivePolicy,
+                              livePolicy.allowedFeatures.contains("maintenance"),
+                              self.policyRevision == installation.sourcePolicyRevision else {
+                            throw MaintenanceDenial.policyChanged
+                        }
+                        let live = MaintenanceAuthorization(
+                            scheduleRecords: broker.maintenanceScheduleRecords)
+                        let notice = try await live.notification(for: grant,
+                            candidate: candidate, authority: liveAuthority,
+                            featureEnabled: true,
+                            currentPolicyRevision: self.policyRevision,
+                            bootID: bootID,
+                            nowMonotonicNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                            nowWallDate: Date())
+                        guard !Task.isCancelled,
+                              self.maintenanceGeneration == nextGeneration,
+                              self.maintenanceInventory?.sourcePolicyRevision
+                                == installation.sourcePolicyRevision,
+                              let finalAuthority = self.authoritySnapshot,
+                              finalAuthority.isCurrent,
+                              finalAuthority.permits(.maintenanceNotifyOnly(grant)),
+                              finalAuthority.permits(.notifications),
+                              self.effectivePolicy?.allowedFeatures.contains("maintenance") == true,
+                              self.policyRevision == installation.sourcePolicyRevision else {
+                            throw MaintenanceDenial.policyChanged
+                        }
+                        return notice
+                    }
+                    updateMaintenanceStatus(ruleID: grant.ruleID, state: .delivered,
+                        detail: "Review notification accepted; no cleanup was run.",
+                        generation: nextGeneration)
+                } catch let denial as MaintenanceDenial {
+                    updateMaintenanceStatus(ruleID: grant.ruleID, state: .denied,
+                        detail: denial.maintenanceStatusText, generation: nextGeneration)
+                } catch NotificationBrokerError.permissionDenied {
+                    updateMaintenanceStatus(ruleID: grant.ruleID, state: .denied,
+                        detail: "macOS notification permission is unavailable.",
+                        generation: nextGeneration)
+                } catch NotificationBrokerError.suppressed(let reason) {
+                    updateMaintenanceStatus(ruleID: grant.ruleID, state: .denied,
+                        detail: Self.maintenanceSuppressionText(reason),
+                        generation: nextGeneration)
+                } catch {
+                    updateMaintenanceStatus(ruleID: grant.ruleID, state: .denied,
+                        detail: "Notification delivery is unavailable; the rule remains notify-only.",
+                        generation: nextGeneration)
+                }
+            }
+            if maintenanceGeneration == nextGeneration { maintenanceTask = nil }
+        }
+    }
+
+    private var notifyOnlyMaintenanceGrants: [MaintenanceGrant] {
+        (authoritySnapshot?.scopes ?? []).compactMap { scope in
+            if case .maintenanceNotifyOnly(let grant) = scope { return grant }
+            return nil
+        }.sorted { $0.ruleID.uuidString < $1.ruleID.uuidString }
+    }
+
+    private func updateMaintenanceStatus(ruleID: UUID,
+                                         state: MaintenanceRuleStatus.State,
+                                         detail: String,
+                                         generation: UInt64) {
+        guard maintenanceGeneration == generation,
+              let index = maintenanceStatuses.firstIndex(where: { $0.id == ruleID }) else { return }
+        maintenanceStatuses[index] = MaintenanceRuleStatus(id: ruleID,
+            state: state, detail: detail)
+    }
+
+    private static func maintenanceSuppressionText(_ reason: NotificationSuppression) -> String {
+        switch reason {
+        case .disabled: return "Notification consent is disabled."
+        case .permissionRequired: return "macOS notification permission has not been requested."
+        case .permissionDenied: return "macOS notification permission was denied."
+        case .notEligible: return "The rule is no longer eligible."
+        case .quietHours: return "Quiet hours suppressed this notification."
+        case .cooldown: return "The global notification cooldown has not elapsed."
+        case .monotonicDiscontinuity: return "Notification clock continuity is unavailable."
+        case .maintenanceFrequencyLimited:
+            return "The saved per-rule notification interval has not elapsed."
+        case .maintenanceClockDiscontinuity:
+            return "Clock continuity cannot prove that the per-rule interval elapsed."
+        case .maintenanceScheduleCapacity:
+            return "The bounded maintenance notification history is full."
         }
     }
 

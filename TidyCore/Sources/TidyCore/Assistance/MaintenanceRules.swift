@@ -101,6 +101,7 @@ public struct MaintenanceCandidate: Hashable, Codable, Sendable {
     public let itemCount: Int?
     public let ageDays: Int?
     public let activity: MaintenanceActivity
+    public let ownerEvidenceKnown: Bool
     public let evidenceOrigin: MaintenanceEvidenceOrigin
     public let evidenceValidUntilMonotonicNanoseconds: UInt64
     public let immutableOrQuiescentScopeHeld: Bool
@@ -110,6 +111,7 @@ public struct MaintenanceCandidate: Hashable, Codable, Sendable {
     public init(capabilityID: MaintenanceCapabilityID, root: LocalRootApproval,
                 allocatedBytes: Int64?, itemCount: Int?, ageDays: Int?,
                 activity: MaintenanceActivity, evidenceOrigin: MaintenanceEvidenceOrigin,
+                ownerEvidenceKnown: Bool = true,
                 evidenceValidUntilMonotonicNanoseconds: UInt64,
                 immutableOrQuiescentScopeHeld: Bool, ruleVersion: UInt64,
                 policyRevision: UInt64) {
@@ -119,6 +121,7 @@ public struct MaintenanceCandidate: Hashable, Codable, Sendable {
         self.itemCount = itemCount
         self.ageDays = ageDays
         self.activity = activity
+        self.ownerEvidenceKnown = ownerEvidenceKnown
         self.evidenceOrigin = evidenceOrigin
         self.evidenceValidUntilMonotonicNanoseconds = evidenceValidUntilMonotonicNanoseconds
         self.immutableOrQuiescentScopeHeld = immutableOrQuiescentScopeHeld
@@ -135,6 +138,7 @@ public enum MaintenanceDenial: String, Error, Codable, Equatable, Sendable {
     case policyChanged
     case ruleChanged
     case measurementUnknown
+    case ownerUnknown
     case staleEvidence
     case activeOrUnknown
     case importedOrManualEvidence
@@ -149,7 +153,7 @@ public enum MaintenanceDenial: String, Error, Codable, Equatable, Sendable {
     case expiredReview
 }
 
-public enum MaintenanceNavigation: String, Codable, Equatable, Sendable {
+public enum MaintenanceNavigation: String, Codable, Hashable, Sendable {
     case reviewCache
 }
 
@@ -187,6 +191,7 @@ enum MaintenanceRules {
         guard nowMonotonicNanoseconds <= candidate.evidenceValidUntilMonotonicNanoseconds else {
             throw MaintenanceDenial.staleEvidence
         }
+        guard candidate.ownerEvidenceKnown else { throw MaintenanceDenial.ownerUnknown }
         guard candidate.activity == .knownIdle else { throw MaintenanceDenial.activeOrUnknown }
         guard let bytes = candidate.allocatedBytes, bytes >= 0,
               let items = candidate.itemCount, items > 0,

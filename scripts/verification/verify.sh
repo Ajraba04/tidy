@@ -27,6 +27,9 @@ python3 scripts/verification/privacy-api-inventory.py \
 python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
+  --require-case 'artifactAliasesDoNotConsumeRetentionSlotsOrBypassProtection' \
+  --require-case 'presentation consumes its scope on success and on invalid resource without granting mutation' \
+  --require-case 'maintenance capacity denial leaves shared notification state encodable' \
   --require-case 'consumed project scopes expire and invalidate during a pending policy transition' \
   --require-case 'local consent revocation stops hidden monitoring independently of settings revision' \
   --require-case 'authorized root nested repositories worktrees exclusions and option-like names are data' \

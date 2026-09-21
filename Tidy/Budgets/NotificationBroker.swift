@@ -1,4 +1,5 @@
 import Darwin
+import Dispatch
 import Foundation
 import TidyCore
 import UserNotifications
@@ -103,6 +104,73 @@ final class NotificationBroker: NSObject, UNUserNotificationCenterDelegate {
         try await center.add(request)
     }
 
+    /// Delivers one review-only maintenance notice. The final validator runs
+    /// after notification permission has been awaited and immediately before
+    /// the synchronous state commit and system dispatch. The per-rule interval
+    /// is committed with dedup state only after all permission/quiet/cooldown
+    /// gates accept delivery. If system dispatch then fails ambiguously, the
+    /// committed interval remains as the conservative result.
+    func deliverMaintenance(
+        grant: MaintenanceGrant,
+        configuration: NotificationConfiguration,
+        bootID: UUID,
+        calendar: Calendar = .current,
+        validateStillCurrent: @escaping @MainActor () throws -> Void,
+        revalidateBeforeDispatch: @escaping @MainActor () async throws
+            -> MaintenanceNotification
+    ) async throws {
+        guard stateAvailable else { throw NotificationBrokerError.stateUnavailable }
+        let livePermission = await permission()
+        guard livePermission == .authorized else { throw NotificationBrokerError.permissionDenied }
+        guard configuration.enabled else {
+            throw NotificationBrokerError.suppressed(.disabled)
+        }
+        let notice = try await revalidateBeforeDispatch()
+        try validateStillCurrent()
+        guard notice.ruleID == grant.ruleID,
+              notice.capabilityID == grant.capabilityID,
+              notice.navigation == .reviewCache else {
+            throw NotificationBrokerError.suppressed(.notEligible)
+        }
+        let acceptedMonotonicNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let acceptedWallDate = Date()
+
+        var candidate = state
+        let decision = candidate.decideMaintenance(grant: grant,
+            navigation: notice.navigation, configuration: configuration,
+            permission: livePermission, bootID: bootID,
+            nowMonotonicNanoseconds: acceptedMonotonicNanoseconds,
+            nowWallDate: acceptedWallDate, calendar: calendar)
+        guard case .deliver = decision else {
+            if case .suppress(let reason) = decision {
+                throw NotificationBrokerError.suppressed(reason)
+            }
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Cache review available"
+        content.body = "Tidy has complete evidence for a saved notify-only rule. Open Developer Workspace to review \(ByteCountFormatter.string(fromByteCount: notice.observedBytes, countStyle: .file))."
+        content.userInfo = ["tidy-navigation": Self.encode(.maintenance(notice.navigation))]
+        let request = UNNotificationRequest(identifier: UUID().uuidString,
+                                            content: content, trigger: nil)
+        do {
+            try storage.save(candidate)
+            state = candidate
+        } catch {
+            stateAvailable = false
+            throw NotificationBrokerError.stateUnavailable
+        }
+        guard configuration.enabled else {
+            throw NotificationBrokerError.suppressed(.disabled)
+        }
+        try await center.add(request)
+    }
+
+    var maintenanceScheduleRecords: [MaintenanceScheduleRecord] {
+        state.maintenanceScheduleRecords
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -124,12 +192,18 @@ final class NotificationBroker: NSObject, UNUserNotificationCenterDelegate {
         case .headroomReview: return "headroom"
         case .budgetReview(let id, let volumeID):
             return "budget|\(id.rawValue)|\(volumeID.uuidString)"
+        case .maintenance(let destination):
+            return "maintenance|\(destination.rawValue)"
         }
     }
 
     private nonisolated static func decode(_ raw: String) -> AssistanceNavigation? {
         if raw == "headroom" { return .headroomReview }
         let fields = raw.split(separator: "|", omittingEmptySubsequences: false)
+        if fields.count == 2, fields[0] == "maintenance",
+           let destination = MaintenanceNavigation(rawValue: String(fields[1])) {
+            return .maintenance(destination)
+        }
         guard fields.count == 3, fields[0] == "budget",
               let id = BudgetID(rawValue: String(fields[1])),
               let volume = UUID(uuidString: String(fields[2])) else { return nil }

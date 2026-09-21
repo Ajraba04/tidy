@@ -51,6 +51,7 @@ struct AssistanceView: View {
                         snapshot: model.authoritySnapshot,
                         policy: model.effectivePolicy,
                         policyRevision: model.policyRevision,
+                        ruleStatuses: model.maintenanceStatuses,
                         onAuthorityChange: model.acceptAuthoritySnapshot)
                         .padding(20)
                 }
@@ -115,6 +116,8 @@ struct AssistanceView: View {
                 openWindow(id: WindowID.headroom)
             case .budgetReview:
                 tab = .budgets
+            case .maintenance(.reviewCache):
+                openWindow(id: WindowID.developer)
             }
             model.consumeNavigation()
         }
