@@ -92,6 +92,7 @@
 		A30BC700EB1C1939358B930D /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E72E66F717B290C37C642E2 /* ModeButton.swift */; };
 		A4A60D8F3BF28987988ABA4A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4CB5D28287440D580A3BB067 /* Assets.xcassets */; };
 		A8DBBEB804C605BE52DFE91A /* LocalConsentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0C41A47B8843753813C973 /* LocalConsentView.swift */; };
+		A9A1B84756D38E17E9E42916 /* MaintenanceInventoryConsumer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF1DD883AD610B963D63138 /* MaintenanceInventoryConsumer.swift */; };
 		AA55757274C2179E71248DA1 /* CleanPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B41F103AEAACD7A2F5B9CA1 /* CleanPlanView.swift */; };
 		AC50511C959A512EC0CC880E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A92F89D44FA1B72DC2B8F0 /* SettingsView.swift */; };
 		B170D1BBD16A8A1883F6ED84 /* RescueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 489178EC1929A2C030226347 /* RescueView.swift */; };
@@ -111,6 +112,7 @@
 		C9ACB01A900890AD260C35AC /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8D66BF4CCE7907F7DD3916 /* OnboardingViewModel.swift */; };
 		CA3E99ECAC4FEBFC88E3BD38 /* ApplicationTerminator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BB0D68F345DE5FCB28D24CF /* ApplicationTerminator.swift */; };
 		CAE8CC220BE8F6D0405863B8 /* AppFeatureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AB5D11B24E984D2FE96586 /* AppFeatureModels.swift */; };
+		D1DB519950979EE3400D6153 /* MaintenanceInventoryConsumer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF1DD883AD610B963D63138 /* MaintenanceInventoryConsumer.swift */; };
 		D234437FBCDC2BF4EF88FA08 /* ScanReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DE9AF810FD928BD55D38E2 /* ScanReportView.swift */; };
 		D65E88E0B18491210BE597A7 /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
 		D8AAF482525D2486EDF8250D /* PlanSelectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272546CD38084AADAD8DC85E /* PlanSelectionModel.swift */; };
@@ -221,6 +223,7 @@
 		F5B25FBF7AF0C67F87CE9B53 /* RuntimeTestComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeTestComposition.swift; sourceTree = "<group>"; };
 		F8497D2A753B1C45290D9995 /* ProductionObservationRuntimeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionObservationRuntimeUITests.swift; sourceTree = "<group>"; };
 		FA69EF3C9FCA9924E5D920E2 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
+		FDF1DD883AD610B963D63138 /* MaintenanceInventoryConsumer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaintenanceInventoryConsumer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -448,6 +451,7 @@
 			children = (
 				9964D35EDAD9B5BDFC916D23 /* AssistanceModel.swift */,
 				D9C798FFA26E086AD70B0C10 /* AssistanceView.swift */,
+				FDF1DD883AD610B963D63138 /* MaintenanceInventoryConsumer.swift */,
 			);
 			path = Assistance;
 			sourceTree = "<group>";
@@ -736,6 +740,7 @@
 				8922B0A2B0607397C492E018 /* InventoryBudgetProjection.swift in Sources */,
 				B5946D7E2FC613910B8611BA /* LaunchAtLoginView.swift in Sources */,
 				5F94C35D4916B6F0F16258ED /* LocalConsentView.swift in Sources */,
+				A9A1B84756D38E17E9E42916 /* MaintenanceInventoryConsumer.swift in Sources */,
 				28BF93C73C1E9CE86366464A /* MaintenanceSettingsView.swift in Sources */,
 				86469023E78C5EB9A3FCF57C /* MenuBarContentView.swift in Sources */,
 				A30BC700EB1C1939358B930D /* ModeButton.swift in Sources */,
@@ -787,6 +792,7 @@
 				759E833E907441B6E7DCCB91 /* InventoryBudgetProjection.swift in Sources */,
 				8591E174FAEF9E7114016EF0 /* LaunchAtLoginView.swift in Sources */,
 				A8DBBEB804C605BE52DFE91A /* LocalConsentView.swift in Sources */,
+				D1DB519950979EE3400D6153 /* MaintenanceInventoryConsumer.swift in Sources */,
 				1BA8468432A58191ABE49660 /* MaintenanceSettingsView.swift in Sources */,
 				6CE1E7F6FB0E372DD834CED2 /* MenuBarContentView.swift in Sources */,
 				3480EB2B83905ED9D757BCF1 /* ModeButton.swift in Sources */,

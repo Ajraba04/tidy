@@ -15,8 +15,10 @@ final class AppFeatureModels {
         developer = DeveloperWorkspaceModel(services: services)
         assistance = AssistanceModel(services: services)
         configStore = services.configStore
-        developer.onInventoryChange = { [weak assistance] inventory in
+        developer.onInventoryChange = { [weak assistance, weak configStore = services.configStore] inventory in
             guard let assistance else { return }
+            assistance.installMaintenanceInventory(inventory,
+                sourcePolicyRevision: configStore?.acknowledgedSettingsRevision ?? 0)
             guard let inventory else {
                 assistance.clearBudgetMeasurements()
                 return

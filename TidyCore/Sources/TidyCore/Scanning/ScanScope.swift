@@ -85,6 +85,30 @@ public struct AuthorizedScanScope: Sendable {
     func checkValidity() throws {
         guard validity() else { throw ScanScopeAuthorizationError.expiredConsent }
     }
+
+    /// Consumes this one-use presentation grant before validating a resource
+    /// against its acknowledged project scope. This returns no traversal or
+    /// mutation authority; callers must still revalidate the displayed exact
+    /// resource identity before handing its URL to the system UI.
+    public func consumeForPresentation(resource: ResourceIdentity, ownerID: UUID,
+                                       environment: CleanEnvironment) throws {
+        // Consumption deliberately precedes resource validation so malformed,
+        // stale and out-of-scope reveal attempts cannot retain a reusable grant.
+        try consumeForStart(ownerID: ownerID, environment: environment)
+        guard case .filesystem(let identity) = resource else {
+            throw ScanScopeAuthorizationError.invalidRoot
+        }
+        let path = identity.canonicalPath
+        guard PathGuard.canonicalize(path) == path,
+              roots.contains(where: { PathGuard.isEqualOrDescendant(path, of: $0) }),
+              !excludedRoots.contains(where: { PathGuard.isEqualOrDescendant(path, of: $0) }),
+              !environment.protectedRoots.map(PathGuard.canonicalize).contains(where: {
+                  PathGuard.isEqualOrDescendant(path, of: $0)
+              }) else {
+            throw ScanScopeAuthorizationError.invalidRoot
+        }
+        try checkValidity()
+    }
 }
 
 private final class ScanScopeGrantLedger: @unchecked Sendable {

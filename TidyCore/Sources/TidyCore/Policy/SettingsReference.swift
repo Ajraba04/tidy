@@ -42,7 +42,8 @@ public extension SettingsPresentationRegistry {
             || raw == "scope.pinnedProjects" {
             return .connected("Scoped project inventory and target-limited Build Prep planning")
         }
-        if ["cleanup.inactiveDays", "cleanup.recentProtectionDays", "cleanup.minimumCandidateMiB",
+        if ["cleanup.inactiveDays", "cleanup.recentProtectionDays", "cleanup.warmProjectCount",
+            "cleanup.retainRecentArtifacts", "cleanup.minimumCandidateMiB",
             "cleanup.minimumItemMiB", "cleanup.costCeiling", "cleanup.requestedBatchGiB",
             "cleanup.requestedBatchItems", "cleanup.hardBatchGiB", "cleanup.hardBatchItems"].contains(raw) {
             return .connected("Eligibility ranking and bounded Build Prep selection; effects require accepted adapters")

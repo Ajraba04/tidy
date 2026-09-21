@@ -4,6 +4,32 @@ import Testing
 
 @Suite("Production scan scope authorization", .serialized)
 struct ScanScopeTests {
+    @Test("presentation consumes its scope on success and on invalid resource without granting mutation")
+    @MainActor
+    func presentationScopeIsConsumedOnEveryResourceAttempt() async throws {
+        let rig = try await ScanScopeRig.make(defaultScope: "quick", gitRoots: [])
+        defer { rig.remove() }
+        let cache = rig.home.appendingPathComponent("Library/Caches/typescript")
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let identity = try ResourcePreflight.captureFile(at: PathGuard.canonicalize(cache.path))
+        let environment = TidyConfig(schemaVersion: 2).makePolicyEnvironment(
+            homeDirectory: rig.home.path, detectedTools: [])
+        let scope = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        try scope.consumeForPresentation(resource: .filesystem(identity), ownerID: rig.ownerID,
+                                         environment: environment)
+        #expect(rig.scopeAuthority.retainedGrantCountForTesting == 0)
+        #expect(throws: ScanScopeAuthorizationError.consumedConsent) {
+            try scope.consumeForPresentation(resource: .filesystem(identity), ownerID: rig.ownerID,
+                                             environment: environment)
+        }
+        let invalid = try rig.scopeAuthority.authorizePolicyDefault(ownerID: rig.ownerID)
+        #expect(throws: ScanScopeAuthorizationError.invalidRoot) {
+            try invalid.consumeForPresentation(resource: .simulator(udid: UUID(), runtimeID: "fixture"),
+                ownerID: rig.ownerID, environment: environment)
+        }
+        #expect(rig.scopeAuthority.retainedGrantCountForTesting == 0)
+    }
+
     @Test("consumed project scopes expire and invalidate during a pending policy transition")
     @MainActor
     func liveProjectScopeChecksPolicyAndExpiry() async throws {

@@ -7,6 +7,14 @@ public enum CandidateRanker {
                             pinnedOwnerIDs: Set<String> = [], currentOwnerID: String? = nil,
                             now: Date = Date()) throws -> CandidateRanking {
         guard candidates.count <= maximumCandidates else { throw PlanningError.tooManyCandidates }
+        var ownerReferences = 0
+        for candidate in candidates {
+            if case .filesystem(let file) = candidate.record.resource,
+               file.canonicalPath.utf8.count > 4_096 { throw PlanningError.invalidLimits }
+            guard candidate.record.ownerIDs.count <= 256 else { throw PlanningError.tooManyCandidates }
+            ownerReferences += candidate.record.ownerIDs.count
+            guard ownerReferences <= 100_000 else { throw PlanningError.tooManyCandidates }
+        }
         let duplicateIDs = Set(Dictionary(grouping: candidates, by: { $0.record.id })
             .filter { $0.value.count > 1 }.keys)
         let ordered = candidates.sorted { left, right in
@@ -17,9 +25,13 @@ public enum CandidateRanker {
             if lb != rb { return lb > rb }
             return left.record.id < right.record.id
         }
+        let workingSet = CandidateWorkingSet.protectedReasons(candidates, policy: policy, now: now)
         let monotonicNow = ContinuousClock().now
         var overlap = OverlapLedger()
         let rows = ordered.map { candidate -> RankedCleanupCandidate in
+            if let reason = workingSet[candidate.record.id] {
+                return .init(candidate: candidate, marginalBytes: nil, eligible: false, reason: reason)
+            }
             if let reason = rejection(candidate, policy: policy, duplicateIDs: duplicateIDs,
                                       pinned: pinnedOwnerIDs, current: currentOwnerID,
                                       now: now, monotonicNow: monotonicNow) {

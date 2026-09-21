@@ -4244,8 +4244,13 @@ extension SharedSettingsWiringTests {
             }
             XCTAssertFalse(readOnlyGlobalRows.isEmpty)
             for row in readOnlyGlobalRows {
-                guard case .unavailable = row.availability else {
-                    return XCTFail("read-only global P/R row not unavailable: \(row.id.rawValue)")
+                if ["scope.currentProject", "scope.pinnedProjects"].contains(row.id.rawValue) {
+                    XCTAssertEqual(row.availability,
+                        .deferred("Manage project protection in Developer Workspace."))
+                } else {
+                    guard case .unavailable = row.availability else {
+                        return XCTFail("read-only global P/R row not unavailable: \(row.id.rawValue)")
+                    }
                 }
                 XCTAssertNil(model.submit(id: row.id,
                     value: row.setting.definition.defaultValue))

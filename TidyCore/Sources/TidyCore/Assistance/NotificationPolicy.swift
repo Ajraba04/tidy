@@ -9,11 +9,13 @@ public enum NotificationPermission: String, Codable, Equatable, Sendable {
 public enum AssistanceNotificationEvent: Hashable, Codable, Sendable {
     case pressure
     case budget(BudgetID, volumeID: UUID)
+    case maintenance(UUID)
 }
 
 public enum AssistanceNavigation: Hashable, Codable, Sendable {
     case headroomReview
     case budgetReview(BudgetID, volumeID: UUID)
+    case maintenance(MaintenanceNavigation)
 }
 
 public enum NotificationSuppression: String, Codable, Equatable, Sendable {
@@ -24,6 +26,9 @@ public enum NotificationSuppression: String, Codable, Equatable, Sendable {
     case quietHours
     case cooldown
     case monotonicDiscontinuity
+    case maintenanceFrequencyLimited
+    case maintenanceClockDiscontinuity
+    case maintenanceScheduleCapacity
 }
 
 public enum NotificationDecision: Equatable, Sendable {
@@ -98,8 +103,72 @@ public struct NotificationDedupState: Codable, Equatable, Sendable {
     }
     private var records: [AssistanceNotificationEvent: Record] = [:]
     private var global: Record?
+    // Optional preserves decoding of the v1 file written before maintenance
+    // delivery existed. A present array is bounded and unique by rule ID.
+    private var maintenanceRecords: [MaintenanceScheduleRecord]?
 
     public init() {}
+
+    public var maintenanceScheduleRecords: [MaintenanceScheduleRecord] {
+        (maintenanceRecords ?? []).sorted { $0.ruleID.uuidString < $1.ruleID.uuidString }
+    }
+
+    public mutating func decideMaintenance(
+        grant: MaintenanceGrant,
+        navigation: MaintenanceNavigation,
+        configuration: NotificationConfiguration,
+        permission: NotificationPermission,
+        bootID: UUID,
+        nowMonotonicNanoseconds: UInt64,
+        nowWallDate: Date,
+        calendar: Calendar
+    ) -> NotificationDecision {
+        let original = self
+        let maximumIntervalNanoseconds = UInt64(168 * 3_600) * 1_000_000_000
+        let maximumIntervalSeconds = TimeInterval(168 * 3_600)
+        let retained = maintenanceScheduleRecords.filter { record in
+            if record.bootID == bootID {
+                guard nowMonotonicNanoseconds >= record.monotonicNanoseconds else { return true }
+                return nowMonotonicNanoseconds - record.monotonicNanoseconds
+                    < maximumIntervalNanoseconds
+            }
+            guard nowWallDate >= record.wallDate else { return true }
+            return nowWallDate.timeIntervalSince(record.wallDate) < maximumIntervalSeconds
+        }
+        let existing = retained.first { $0.ruleID == grant.ruleID }
+        do {
+            try MaintenanceScheduleInterval.require(grant: grant, previous: existing,
+                bootID: bootID, nowMonotonicNanoseconds: nowMonotonicNanoseconds,
+                nowWallDate: nowWallDate)
+        } catch MaintenanceDenial.frequencyLimited {
+            return .suppress(.maintenanceFrequencyLimited)
+        } catch {
+            return .suppress(.maintenanceClockDiscontinuity)
+        }
+        guard existing != nil || retained.count < 256 else {
+            return .suppress(.maintenanceScheduleCapacity)
+        }
+        let decision = decide(event: .maintenance(grant.ruleID),
+            navigation: .maintenance(navigation), eligible: true,
+            configuration: configuration, permission: permission, bootID: bootID,
+            nowMonotonicNanoseconds: nowMonotonicNanoseconds,
+            nowWallDate: nowWallDate, calendar: calendar)
+        guard case .deliver = decision else { return decision }
+        var next = retained.filter { $0.ruleID != grant.ruleID }
+        next.append(MaintenanceScheduleRecord(ruleID: grant.ruleID, bootID: bootID,
+            monotonicNanoseconds: nowMonotonicNanoseconds, wallDate: nowWallDate))
+        maintenanceRecords = next
+        do {
+            _ = try encoded()
+        } catch {
+            // Maintenance capacity must not make the shared broker unavailable
+            // for pressure or budget notifications. Restore the pre-decision
+            // state and deny only this maintenance notice.
+            self = original
+            return .suppress(.maintenanceScheduleCapacity)
+        }
+        return decision
+    }
 
     public mutating func decide(event: AssistanceNotificationEvent,
                                 navigation: AssistanceNavigation,
@@ -150,7 +219,11 @@ public struct NotificationDedupState: Codable, Equatable, Sendable {
         guard bytes.count <= maximumBytes else { throw NotificationStateError.capacity }
         _ = try StrictJSON.parse(bytes)
         let value = try JSONDecoder().decode(Self.self, from: bytes)
-        guard value.records.count <= 64 else { throw NotificationStateError.capacity }
+        let maintenance = value.maintenanceScheduleRecords
+        guard value.records.count <= 64, maintenance.count <= 256,
+              Set(maintenance.map(\.ruleID)).count == maintenance.count else {
+            throw NotificationStateError.capacity
+        }
         return value
     }
 }

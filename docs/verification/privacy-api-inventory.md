@@ -54,10 +54,12 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 
 | Source | Direct API category | Matched tokens and lines |
 |---|---|---|
-| `Tidy/Assistance/AssistanceModel.swift` | File timestamp | `fstat`@364,375,398 |
-| `Tidy/Assistance/AssistanceModel.swift` | Disk space | `fstatfs`@364,375 |
-| `Tidy/Budgets/NotificationBroker.swift` | File timestamp | `fstat`@157,226,239,264; `fstatat`@243 |
-| `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@226,239 |
+| `Tidy/Assistance/AssistanceModel.swift` | File timestamp | `fstat`@574,585,608 |
+| `Tidy/Assistance/AssistanceModel.swift` | Disk space | `fstatfs`@574,585 |
+| `Tidy/Budgets/NotificationBroker.swift` | File timestamp | `fstat`@231,300,313,338; `fstatat`@317 |
+| `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@300,313 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@495; `fstat`@431,442,458; `fstatat`@450,465 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@495; `fstatfs`@461 |
 | `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@714 |
 | `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@410,437; `lstat`@388 |
 | `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@655; `lstat`@279,546,630 |
@@ -93,7 +95,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift` | File timestamp | `fstat`@1251,1291,1362; `fstatat`@1348; `lstat`@1232,1259 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift` | File timestamp | `lstat`@213,228 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift` | File timestamp | `stat`@335 |
-| `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@177 |
+| `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@201 |
 
 ## Reproduction and limits
 

@@ -286,6 +286,9 @@ struct SettingsSurfaceModel {
             if !definition.layers.contains(.global) {
                 return .unavailable("This setting is not editable at the global layer.")
             }
+            if ["scope.currentProject", "scope.pinnedProjects"].contains(definition.id.rawValue) {
+                return .deferred("Manage project protection in Developer Workspace.")
+            }
             if control == .readOnly {
                 return .unavailable("This setting needs a bounded editor that is not implemented.")
             }
@@ -1569,6 +1572,8 @@ struct SettingsView: View {
             }.pickerStyle(.segmented)
             Button("Manage Local Consent…") { openWindow(id: "assistance") }
                 .accessibilityIdentifier("settings.localConsent")
+            Button("Manage Project Protection…") { openWindow(id: "developer") }
+                .accessibilityIdentifier("settings.projectProtection")
             TextField("Search settings", text: $query)
                 .accessibilityLabel("Search settings")
                 .accessibilityIdentifier("settings.search")

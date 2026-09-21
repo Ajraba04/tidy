@@ -8,6 +8,7 @@ struct MaintenanceSettingsView: View {
     private let inputSnapshot: LocalAuthoritySnapshot?
     private let policy: EffectivePolicy?
     private let policyRevision: UInt64
+    private let ruleStatuses: [MaintenanceRuleStatus]
     private let onAuthorityChange: @MainActor (LocalAuthoritySnapshot) -> Void
 
     @State private var owner = LocalAuthorityOwner()
@@ -18,11 +19,13 @@ struct MaintenanceSettingsView: View {
 
     init(authority: LocalAuthorityStore?, snapshot: LocalAuthoritySnapshot?,
          policy: EffectivePolicy?, policyRevision: UInt64,
+         ruleStatuses: [MaintenanceRuleStatus] = [],
          onAuthorityChange: @escaping @MainActor (LocalAuthoritySnapshot) -> Void) {
         self.authority = authority
         inputSnapshot = snapshot
         self.policy = policy
         self.policyRevision = policyRevision
+        self.ruleStatuses = ruleStatuses
         self.onAuthorityChange = onAuthorityChange
         _currentSnapshot = State(initialValue: snapshot)
     }
@@ -117,6 +120,12 @@ struct MaintenanceSettingsView: View {
                 Text(stale ? "Identity changed; this rule has no authority."
                             : "Notify only · up to \(ByteFormat.human(grant.maxBytes)) / \(grant.maxItems) items")
                     .font(.caption2).foregroundStyle(.secondary)
+                if !stale, let status = ruleStatuses.first(where: { $0.id == grant.ruleID }) {
+                    Text(statusLabel(status))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("maintenance.ruleStatus.\(grant.ruleID.uuidString)")
+                }
             }
             Spacer()
             Button("Revoke", role: .destructive) { revoke(grant) }.disabled(busy)
@@ -196,6 +205,16 @@ struct MaintenanceSettingsView: View {
         + "Volume: \(grant.root.volumeID.uuidString)\n"
         + "Maximum: \(ByteFormat.human(grant.maxBytes)), \(grant.maxItems) items\n"
         + "Minimum age: \(grant.minimumAgeDays) days · interval: \(grant.minimumIntervalHours) hours"
+    }
+
+    private func statusLabel(_ status: MaintenanceRuleStatus) -> String {
+        let prefix: String
+        switch status.state {
+        case .denied: prefix = "Denied"
+        case .eligible: prefix = "Eligible"
+        case .delivered: prefix = "Notification accepted"
+        }
+        return "\(prefix): \(status.detail)"
     }
 }
 
