@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import pathlib,re; old=pathlib.Path(\"Tidy.xcodeproj/project.pbxproj\").read_text(); new=pathlib.Path(\"/private/tmp/tidy-audit-9e1a500-generated/Tidy.xcodeproj/project.pbxproj\").read_text(); print(\"Missing source/resource build memberships:\"); a=set(re.findall(r\"/\\* ([^*]+ in (?:Sources|Resources)) \\*/ = \",old));b=set(re.findall(r\"/\\* ([^*]+ in (?:Sources|Resources)) \\*/ = \",new)); print(\"\\\\n\".join(sorted(a-b))); print(\"Added:\",sorted(b-a));print(\"old_headroom_tests\",old.count(\"HeadroomViewModelTests.swift in Sources\"),\"new\",new.count(\"HeadroomViewModelTests.swift in Sources\"));print(\"old_scan_wiring_tests\",old.count(\"ScanOrchestrationWiringTests.swift in Sources\"),\"new\",new.count(\"ScanOrchestrationWiringTests.swift in Sources\"))"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:44:56.396425+00:00",
+  "ended_utc": "2026-09-17T15:44:56.461409+00:00",
+  "seconds": 0.065,
+  "exit_code": 1
+}

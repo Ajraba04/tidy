@@ -3,6 +3,8 @@ public enum ResourceIdentity: Hashable, Sendable {
     case filesystem(FileResourceIdentity)
     case simulator(udid: UUID, runtimeID: String)
     case snapshot(volumeID: UUID, exactSnapshotID: String)
+    case localService(adapterID: String, exactObjectID: String,
+                      endpoint: LocalSocketApproval)
 }
 public struct FileResourceIdentity: Hashable, Sendable {
     public let volumeID: UUID
@@ -21,9 +23,12 @@ public struct FileNodeIdentity: Hashable, Sendable {
     public let device: UInt64
     public let inode: UInt64
     public let generation: UInt64?
+    public let mode: UInt32
 }
 public struct ReviewedManifestIdentity: Hashable, Sendable {
+    public let schemaVersion: UInt32
     public let digest: Data
+    public let protectionDigest: Data
     public let batchIDs: [UUID]
     public let nodeCount: Int
     public let encodedBytes: Int

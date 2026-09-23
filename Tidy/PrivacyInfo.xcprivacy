@@ -10,30 +10,22 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!--
-		Disk space APIs: DiskStats.swift (.volumeTotalCapacityKey,
-		.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
-		.volumeUUIDStringKey), read for every volume Scan/Headroom shows. The
-		free/used figures are always displayed directly in the app UI
-		(StatsGaugeRow, HeadroomView, ScanView), never used off-device or to
-		gate a hidden decision, which is the documented fit for E174.1.
-		-->
+		<!-- DiskStats displays capacity/availability in the app: 85F4.1.
+        fstatfs uses for local-volume/identity checks and external file metadata
+        are separately inventoried in docs/verification/privacy-api-inventory.md;
+        this manifest is not a completed distribution privacy acceptance. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<string>E174.1</string>
+				<string>85F4.1</string>
 			</array>
 		</dict>
-		<!--
-		System boot time APIs: SystemMonitor.swift's LiveSystemProbe reads
-		kern.boottime (via sysctlbyname) solely to detect that the Mac
-		rebooted since the last sample, so a cumulative swap page-out counter
-		is not misread as a negative/impossible delta across that reset. The
-		value is used only for this in-app comparison and is never persisted,
-		displayed as a wall-clock boot time, or transmitted off-device.
-		-->
+			<!-- ProcessInfo.systemUptime drives scheduler observation epochs and
+			one-run scan-consent expiry: elapsed-time/timer reason 35F9.1.
+			The separate kern.boottime and kern.bootsessionuuid identity uses are
+			inventoried as unresolved rows in privacy-api-inventory.md. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>

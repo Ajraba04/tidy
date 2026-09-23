@@ -1,0 +1,13 @@
+{
+  "command": [
+    "xcodebuild",
+    "-list",
+    "-project",
+    "Tidy.xcodeproj"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:08:00.038722+00:00",
+  "ended_utc": "2026-09-17T15:08:43.900876+00:00",
+  "seconds": 43.862,
+  "exit_code": 0
+}

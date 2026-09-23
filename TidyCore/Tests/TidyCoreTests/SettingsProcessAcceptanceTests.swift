@@ -43,6 +43,42 @@ private func a2pWrite(_ data: Data, _ url: URL) throws {
         offset += n
     }
 }
+private func a2pPublishRelease(_ control: URL, _ name: String) throws {
+    guard name == "resume" || name == "retry" else { throw A2PError.invalid }
+    let directory = open(control.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard directory >= 0 else { throw A2PError.invalid }
+    defer { close(directory) }
+    var directoryInfo = stat()
+    guard fstat(directory, &directoryInfo) == 0, directoryInfo.st_uid == getuid(),
+          (directoryInfo.st_mode & S_IFMT) == S_IFDIR,
+          directoryInfo.st_mode & 0o777 == 0o700 else { throw A2PError.invalid }
+
+    let temporary = ".release-\(UUID().uuidString)"
+    let fd = openat(directory, temporary,
+                    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { throw A2PError.invalid }
+    defer { _ = unlinkat(directory, temporary, 0) }
+    var fileOpen = true
+    defer { if fileOpen { close(fd) } }
+    guard fchmod(fd, 0o600) == 0 else { throw A2PError.invalid }
+    var byte: UInt8 = 82
+    while true {
+        let count = Darwin.write(fd, &byte, 1)
+        if count < 0 && errno == EINTR { continue }
+        guard count == 1 else { throw A2PError.invalid }
+        break
+    }
+    var fileInfo = stat()
+    guard fstat(fd, &fileInfo) == 0, fileInfo.st_uid == getuid(),
+          (fileInfo.st_mode & S_IFMT) == S_IFREG, fileInfo.st_size == 1,
+          fileInfo.st_mode & 0o777 == 0o600 else { throw A2PError.invalid }
+    let closeResult = close(fd)
+    fileOpen = false
+    guard closeResult == 0 else { throw A2PError.invalid }
+    guard renameatx_np(directory, temporary, directory, name, UInt32(RENAME_EXCL)) == 0 else {
+        throw A2PError.invalid
+    }
+}
 private func a2pRoot() throws -> URL {
     guard let p = realpath("/private/tmp", nil) else { throw A2PError.invalid }
     defer { free(p) }
@@ -106,42 +142,14 @@ private actor A2PBuild {
         let root = try a2pRoot()
         let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let names = """
-        Browsers/ChromiumCookieCleaner.swift Browsers/CookieDomainSuggester.swift
-        Catalog/CleanCatalog.swift Catalog/CleanCatalog+Android.swift Catalog/CleanCatalog+Browsers.swift
-        Catalog/CleanCatalog+DependencyCaches.swift Catalog/CleanCatalog+Extras.swift Catalog/CleanCatalog+Git.swift
-        Catalog/CleanCatalog+Helpers.swift Catalog/CleanCatalog+Memory.swift Catalog/CleanCatalog+SafeCaches.swift
-        Catalog/CleanCatalog+System.swift Catalog/CleanCatalog+Xcode.swift
-        Detect/ContainerSpaceInfo.swift Detect/GitRepoScanner.swift Detect/GitRootDiscovery.swift
-        Detect/LargestItemsScanner.swift Detect/LaunchAgentsSurvey.swift Detect/ProcessSurvey.swift
-        Detect/RestartReclaimSurvey.swift Detect/SimctlClient.swift Detect/SnapshotLister.swift
-        Detect/StaleNodeModulesScanner.swift Detect/ToolchainDetector.swift Detect/TranscriptPruneScanner.swift
-        Detect/UnclaimedSpaceScanner.swift
-        Engine/CleanEngine.swift Engine/DefaultCustomActionExecutors.swift
-        Engine/GitHousekeeper.swift Engine/MemoryReclaimer.swift Engine/RunLog.swift Engine/ScanEngine.swift
-        Engine/SimulatorPruner.swift Engine/SnapshotDeleter.swift
-        Exec/CleanupCommandRunner.swift Exec/ProcessRunner.swift Exec/ProcessSession.swift
-        Exec/ProcessIdentity.swift Exec/ProcessJobGate.swift Exec/ToolLocator.swift
-        Execution/CapabilityRegistry.swift Execution/ConfirmedPlan.swift Execution/DerivedDataEffectAdapter.swift
-        Execution/ExecutionCoordinator.swift
-        Execution/ExecutionPolicyBridge.swift Execution/GuardedFileDeleter.swift Execution/JournalPOSIXIO.swift
-        Execution/JournalStorage.swift Execution/MutationAdmissionStore.swift Execution/PolicyInvalidationBarrier.swift
-        Execution/ResourcePreflight.swift Execution/RunJournal.swift
-        Measure/ByteFormat.swift Measure/DiskStats.swift Measure/HomeSurvey.swift Measure/MemoryStats.swift
-        Measure/PathDisplay.swift Measure/SizeScanner.swift Measure/SwapStats.swift
-        Model/ActionDescriptor.swift Model/CleanAction.swift Model/CleanCategory.swift Model/CleanEnvironment.swift
-        Model/CleanItem.swift Model/CleanPlan.swift Model/PlanSelection.swift Model/ResourceIdentity.swift
-        Model/RunReport.swift Model/ScanReport.swift Model/TargetPath.swift Model/TidyConfig.swift
-        Model/Tier.swift Model/ToolchainID.swift
-        Policy/FeatureSettings.swift Policy/ScanSettings.swift Policy/CleanupSettings.swift
-        Policy/ExperienceSettings.swift Policy/PolicyDefaults.swift Policy/PolicyResolver.swift Policy/PolicyValidator.swift
-        Policy/SessionProfile.swift Policy/StrictJSON.swift Policy/SettingsEnvelope.swift
-        Policy/SettingsPublication.swift Policy/SettingsStore.swift Policy/SettingsTransfer.swift
-        Safety/AppRunningCheck.swift Safety/PathGuard.swift Safety/PermissionBroker.swift
-        Scanning/BoundedTraversal.swift Scanning/ScanIndex.swift Scanning/ScanInvalidation.swift
-        Scanning/ScanSession.swift Scanning/WorkScheduler.swift
-        """.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        var sources = names.map { package.appendingPathComponent("Sources/TidyCore/\($0)") }
+        let sourceRoot = package.appendingPathComponent("Sources/TidyCore")
+        guard let enumerator = FileManager.default.enumerator(at: sourceRoot,
+            includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
+            throw A2PError.missing
+        }
+        var sources = enumerator.compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "swift" }.sorted { $0.path < $1.path }
+        guard !sources.isEmpty else { throw A2PError.missing }
         sources.append(package.appendingPathComponent("Tests/TidyCoreTests/Fixtures/T05SettingsProcessDriver.swift"))
         var manifest: [String: String] = [:]
         for source in sources {
@@ -162,6 +170,7 @@ private actor A2PBuild {
         throw A2PError.invalid
         #endif
         let args = ["swiftc", "-parse-as-library", "-swift-version", "5", "-Onone", "-j", "2", "-target", target,
+                    "-module-cache-path", root.appendingPathComponent("module-cache").path,
                     "-module-name", "TidySettingsProcessFixture"] + sources.map(\.path) + ["-lsqlite3", "-o", output.path]
         try a2pWrite(try JSONEncoder().encode(args), root.appendingPathComponent("compiler-arguments.json"))
         let compiler = try await ProcessSession.launchForTesting(ProcessTestRequest(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
@@ -225,7 +234,7 @@ private final class A2PRun {
         throw A2PError.timeout
     }
     func release(_ control: URL, _ name: String) throws {
-        try a2pWrite(Data([82]), control.appendingPathComponent(name))
+        try a2pPublishRelease(control, name)
     }
     func snapshot() throws -> [String: A2PFile] {
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
@@ -293,6 +302,23 @@ private func a2pMetadata(_ files: [String: A2PFile]) throws -> String {
 
 @Suite(.serialized)
 struct SettingsProcessAcceptanceTests {
+    @Test func releaseSignalPublicationIsAtomicAndNoReplace() throws {
+        let root = try a2pRoot()
+        let control = root.appendingPathComponent(UUID().uuidString)
+        guard mkdir(control.path, 0o700) == 0 else { throw A2PError.invalid }
+
+        try a2pPublishRelease(control, "resume")
+        let published = try a2pFile(control.appendingPathComponent("resume"))
+        #expect(published.data == Data([82]))
+        #expect(published.mode == 0o600)
+
+        #expect(throws: A2PError.self) {
+            try a2pPublishRelease(control, "resume")
+        }
+        #expect(try a2pFile(control.appendingPathComponent("resume")) == published)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: control.path) == ["resume"])
+    }
+
     @Test(arguments: ["bootstrap-hold", "stable-hold"])
     func independentWritersContendThenRejectStaleLoadedBytes(_ mode: String) async throws {
         try await withA2P { run in

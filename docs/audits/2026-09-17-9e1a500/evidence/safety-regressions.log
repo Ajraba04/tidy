@@ -1,0 +1,210 @@
+Building for debugging...
+[Pre-planning 1 / 125]
+[Planning deferred tasks]
+[40 / 67] TidyCore_TidyCoreTests
+[42 / 67]
+[43 / 68] TidyCore
+[48 / 143]
+[53 / 143]
+[54 / 143]
+[57 / 143]
+[61 / 143]
+[66 / 143]
+[68 / 143]
+[72 / 143]
+[74 / 143]
+[76 / 143]
+[79 / 143]
+[84 / 143]
+[86 / 143]
+[89 / 143]
+[90 / 143]
+[94 / 143]
+[98 / 143]
+[102 / 143]
+[105 / 143]
+[107 / 143]
+[109 / 143] TidyCore/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+
+[110 / 143] TidyCore
+[112 / 143] TidyCore
+[119 / 143] TidyCore
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift:379:40: warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+377 |         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+378 |             queue.async {
+379 |                 FSEventStreamFlushSync(streamRef)
+    |                                        `- warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+380 |                 continuation.resume()
+381 |             }
+
+Swift.OpaquePointer:1:23: note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+1 | @frozen public struct OpaquePointer {
+  |                       `- note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+2 | }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[120 / 143] TidyCoreTests-product
+[121 / 143] TidyCore
+[123 / 143] TidyCore
+[124 / 143] TidyCore
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+[124 / 143]
+[126 / 143] TidyCore
+[133 / 144] TidyCoreTests-product
+[134 / 157]
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+[138 / 157] TidyCoreTests-product
+[140 / 157] TidyCoreTests-product
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:243:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+241 |                 counter: { PageOutCounter(count: UInt64(callCount.get()) * 100, pageSizeBytes: 4_096) }),
+242 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+243 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+244 | 
+245 |         _ = await monitor.requestSnapshot() // establishes baseline under firstBoot
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:266:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+264 |                 }),
+265 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+266 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+267 | 
+268 |         _ = await monitor.requestSnapshot()
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:289:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+287 |             }),
+288 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+289 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+290 | 
+291 |         _ = await monitor.requestSnapshot()
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/SimulatorPrunerTests.swift:69:40: warning: 'listDevicesSync()' is deprecated: T08.4 must use async listDevices() [#DeprecatedDeclaration]
+67 |         // eligibility filter, so even a bug in the matching logic could at
+68 |         // worst make this assertion fail, not delete anything.
+69 |         let realDevices = SimctlClient.listDevicesSync()
+   |                                        `- warning: 'listDevicesSync()' is deprecated: T08.4 must use async listDevices() [#DeprecatedDeclaration]
+70 |         let eligible = SimulatorPruner.devicesEligibleForDeletion(
+71 |             allDevices: realDevices,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[145 / 157] TidyCoreTests-product
+[147 / 157] TidyCoreTests-product
+[148 / 157] TidyCoreTests-product
+[149 / 157] TidyCoreTests-product
+[150 / 157] TidyCoreTests-product
+[151 / 157] TidyCoreTests-product
+[151 / 157] AllIncludingTests
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/ScanIndexTests.swift:129:9: warning: no 'async' operations occur within 'await' expression [#UnnecessaryEffectMarker]
+127 |         try Data("not a sqlite database".utf8).write(to: dbURL)
+128 | 
+129 |         await #expect(throws: ScanIndexError.corrupted) {
+    |         `- warning: no 'async' operations occur within 'await' expression [#UnnecessaryEffectMarker]
+130 |             _ = try ScanIndexStore(databaseURL: dbURL)
+131 |         }
+
+[#UnnecessaryEffectMarker]: <https://docs.swift.org/compiler/documentation/diagnostics/unnecessary-effect-marker>
+[151 / 157] TidyCoreTests-product
+[153 / 157] TidyCoreTests-product
+[155 / 157] TidyCoreTests-product
+Build complete! (55.25 sec)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Safety audit regression" started.
+◇ Test "A descendant created after confirmation cannot gain delete authority" started.
+✘ Test "A descendant created after confirmation cannot gain delete authority" recorded an issue at SafetyAuditRegressionTests.swift:58:9: Expectation failed: FileManager.default.fileExists(atPath: late.path)
+↳ FileManager.default.fileExists(atPath: late.path) → false
+↳   FileManager.default → <NSFileManager: 0x100b45140>
+↳   late.path → "<USER_TMP>/T/tidy-safety-audit-76EE2071-95CA-487F-9F85-F0CA5E2BC01F/home/Library/Developer/Xcode/DerivedData/not-reviewed"
+✘ Test "A descendant created after confirmation cannot gain delete authority" failed after 0.044 seconds with 1 issue.
+◇ Test "A reviewed descendant that grows after confirmation is withheld" started.
+✘ Test "A reviewed descendant that grows after confirmation is withheld" recorded an issue at SafetyAuditRegressionTests.swift:70:9: Expectation failed: FileManager.default.fileExists(atPath: leaf.path)
+↳ FileManager.default.fileExists(atPath: leaf.path) → false
+↳   FileManager.default → <NSFileManager: 0x100b45140>
+↳   leaf.path → "<USER_TMP>/T/tidy-safety-audit-DA90A708-16B9-4421-AFA8-23644C0402E5/home/Library/Developer/Xcode/DerivedData/original"
+✘ Test "A reviewed descendant that grows after confirmation is withheld" failed after 0.038 seconds with 1 issue.
+◇ Test "A root replaced after confirmation cannot inherit the old root authority" started.
+✘ Test "A root replaced after confirmation cannot inherit the old root authority" recorded an issue at SafetyAuditRegressionTests.swift:85:9: Expectation failed: FileManager.default.fileExists(atPath: leaf.path)
+↳ FileManager.default.fileExists(atPath: leaf.path) → false
+↳   FileManager.default → <NSFileManager: 0x100b45140>
+↳   leaf.path → "<USER_TMP>/T/tidy-safety-audit-24D1E43B-79DA-45FE-AD51-DF7CACBD048A/home/Library/Developer/Xcode/DerivedData/replacement-witness"
+✘ Test "A root replaced after confirmation cannot inherit the old root authority" failed after 0.042 seconds with 1 issue.
+◇ Test "A protected descendant remains protected when its parent is selected" started.
+✘ Test "A protected descendant remains protected when its parent is selected" recorded an issue at SafetyAuditRegressionTests.swift:100:9: Expectation failed: FileManager.default.fileExists(atPath: leaf.path)
+↳ FileManager.default.fileExists(atPath: leaf.path) → false
+↳   FileManager.default → <NSFileManager: 0x100b45140>
+↳   leaf.path → "<USER_TMP>/T/tidy-safety-audit-B7707A31-2006-4C67-B903-39FD5EDA229E/home/Library/Developer/Xcode/DerivedData/protected-subtree/keep"
+✘ Test "A protected descendant remains protected when its parent is selected" failed after 0.042 seconds with 1 issue.
+◇ Test "No owner mapping or quiescence evidence means no eligible mutation" started.
+✘ Test "No owner mapping or quiescence evidence means no eligible mutation" recorded an issue at SafetyAuditRegressionTests.swift:111:9: Expectation failed: FileManager.default.fileExists(atPath: s.target.appendingPathComponent("original").path)
+↳ FileManager.default.fileExists(atPath: s.target.appendingPathComponent("original").path) → false
+↳   FileManager.default → <NSFileManager: 0x100b45140>
+↳   s.target.appendingPathComponent("original").path → "<USER_TMP>/T/tidy-safety-audit-A1F3A2D8-9FED-40C9-9DB0-4B35E89B26C2/home/Library/Developer/Xcode/DerivedData/original"
+✘ Test "No owner mapping or quiescence evidence means no eligible mutation" failed after 0.041 seconds with 1 issue.
+◇ Test "A real successful effect has durable started, terminal and finished events" started.
+✘ Test "A real successful effect has durable started, terminal and finished events" recorded an issue at SafetyAuditRegressionTests.swift:130:9: Expectation failed: phases.contains(.started)
+↳ phases.contains(.started) → false
+↳   phases → [TidyCore.JournalPhase.planned, TidyCore.JournalPhase.confirmed]
+✘ Test "A real successful effect has durable started, terminal and finished events" recorded an issue at SafetyAuditRegressionTests.swift:131:9: Expectation failed: phases.contains(.itemTerminal)
+↳ phases.contains(.itemTerminal) → false
+↳   phases → [TidyCore.JournalPhase.planned, TidyCore.JournalPhase.confirmed]
+✘ Test "A real successful effect has durable started, terminal and finished events" recorded an issue at SafetyAuditRegressionTests.swift:132:9: Expectation failed: phases.contains(.finished)
+↳ phases.contains(.finished) → false
+↳   phases → [TidyCore.JournalPhase.planned, TidyCore.JournalPhase.confirmed]
+✘ Test "A real successful effect has durable started, terminal and finished events" failed after 0.039 seconds with 3 issues.
+◇ Test "Successful completed runs release their bounded active journal slots" started.
+✘ Test "Successful completed runs release their bounded active journal slots" recorded an issue at SafetyAuditRegressionTests.swift:144:13: Expectation failed: report.disposition == .completed
+↳ Completed run 9 must release active storage
+↳ report.disposition == .completed → false
+↳   report.disposition → .storageUnavailable
+✘ Test "Successful completed runs release their bounded active journal slots" recorded an issue at SafetyAuditRegressionTests.swift:145:13: Expectation failed: report.results.first?.succeeded == true
+↳ report.results.first?.succeeded == true → false
+↳   report.results.first?.succeeded → nil
+↳     some → true
+✘ Test "Successful completed runs release their bounded active journal slots" failed after 0.190 seconds with 2 issues.
+✘ Suite "Safety audit regression" failed after 0.438 seconds with 10 issues.
+✘ Test run with 7 tests in 1 suite failed after 0.439 seconds with 10 issues.
+Note: Some test targets reported failures:
+  - TidyCoreTests (Swift Testing)

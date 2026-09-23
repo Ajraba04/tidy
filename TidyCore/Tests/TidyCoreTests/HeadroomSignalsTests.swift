@@ -6,6 +6,13 @@ import Testing
 
 private enum FixtureError: Error, Equatable, Sendable { case denied }
 
+private final class ProbeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func increment() { lock.lock(); value += 1; lock.unlock() }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 private struct FakeSystemProbing: SystemProbing {
     var bootIdentityResult: Result<BootIdentity, FixtureError> = .success(BootIdentity(bootTime: 1_000))
     var diskStatsResult: Result<DiskStats, FixtureError> = .success(
@@ -15,17 +22,19 @@ private struct FakeSystemProbing: SystemProbing {
     var swapPageOutCounterResult: Result<PageOutCounter, FixtureError> = .success(PageOutCounter(count: 0, pageSizeBytes: 16_384))
     var thermal: ProcessInfo.ThermalState?
     var lowPower: Bool?
+    var calls: ProbeCounter?
 
-    func bootIdentity() throws -> BootIdentity { try bootIdentityResult.get() }
-    func diskStats(volumeURL: URL) throws -> DiskStats { try diskStatsResult.get() }
-    func memoryStats() throws -> MemoryStats { try memoryStatsResult.get() }
-    func swapStats() throws -> SwapStats { try swapStatsResult.get() }
+    func bootIdentity() throws -> BootIdentity { calls?.increment(); return try bootIdentityResult.get() }
+    func diskStats(volumeURL: URL) throws -> DiskStats { calls?.increment(); return try diskStatsResult.get() }
+    func memoryStats() throws -> MemoryStats { calls?.increment(); return try memoryStatsResult.get() }
+    func swapStats() throws -> SwapStats { calls?.increment(); return try swapStatsResult.get() }
     func swapPageOutCounter() throws -> (count: UInt64, pageSizeBytes: UInt64) {
+        calls?.increment()
         let value = try swapPageOutCounterResult.get()
         return (value.count, value.pageSizeBytes)
     }
-    func thermalState() -> ProcessInfo.ThermalState? { thermal }
-    func isLowPowerModeEnabled() -> Bool? { lowPower }
+    func thermalState() -> ProcessInfo.ThermalState? { calls?.increment(); return thermal }
+    func isLowPowerModeEnabled() -> Bool? { calls?.increment(); return lowPower }
 }
 
 /// `(count:pageSizeBytes:)` as a concrete Sendable/Equatable value, since
@@ -70,6 +79,20 @@ private struct NoOpPressureObserving: MemoryPressureObserving {
 }
 private struct NoOpSubscription: MemoryPressureSubscription {
     func cancel() {}
+}
+
+private final class ControlledPressureObserving: MemoryPressureObserving, @unchecked Sendable {
+    private let lock = NSLock()
+    private var callbacks: [@Sendable (MemoryPressureLevel) -> Void] = []
+    func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void)
+        -> MemoryPressureSubscription {
+        lock.lock(); callbacks.append(onChange); lock.unlock()
+        return NoOpSubscription()
+    }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return callbacks.count }
+    func emit(_ level: MemoryPressureLevel, subscription index: Int) {
+        lock.lock(); let callback = callbacks[index]; lock.unlock(); callback(level)
+    }
 }
 
 private struct ImmediateScheduling: MonitorScheduling {
@@ -293,7 +316,38 @@ struct HeadroomSignalsTests {
         #expect(second.pageOutRatePerSecond == nil)
     }
 
-    // MARK: RED -- hidden window + monitoring disabled produces zero repeating timers
+    @Test("local consent revocation stops hidden monitoring independently of settings revision")
+    func localConsentRevocationStopsHiddenMonitoring() async throws {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Tidy-monitor-authority-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let store = try LocalAuthorityStore(directory: scratch,
+            installation: LocalInstallationIdentity.verify(directory: scratch))
+        let owner = LocalAuthorityOwner()
+        let review = try await store.beginReview(scope: .backgroundSignals, owner: owner,
+            nowMonotonicNanoseconds: 1)
+        let approved = try await store.confirm(review, owner: owner, nowMonotonicNanoseconds: 2)
+        let monitor = SystemMonitor(configuration: .disabled,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        await monitor.applyLocalAuthority(approved, generation: 1)
+        var configuration = enabledVisibleConfiguration
+        configuration.backgroundEnabled = true
+        _ = await monitor.applyConfiguration(configuration, acknowledgedRevision: 7)
+        #expect(await monitor.isTimerRunningForTesting())
+        _ = try await store.revoke(.backgroundSignals)
+        // Even a stale observer/configuration cannot revive the invalidated snapshot.
+        _ = await monitor.applyConfiguration(configuration, acknowledgedRevision: 7)
+        #expect(!(await monitor.isTimerRunningForTesting()))
+        await monitor.applyLocalAuthority(nil, generation: 2)
+        await monitor.applyLocalAuthority(approved, generation: 1)
+        #expect(!(await monitor.isTimerRunningForTesting()))
+        #expect(await monitor.appliedConfigurationRevisionForTesting() == 7)
+    }
+
+    // MARK: Visibility and explicit-work leases
 
     @Test("hidden and disabled produces no repeating timer at all")
     func hiddenAndDisabledProducesNoTimer() async {
@@ -302,8 +356,199 @@ struct HeadroomSignalsTests {
             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
             instrumentation: instrumentation)
         await monitor.applyConfiguration(.disabled)
-        await monitor.setWindowVisible(false)
         #expect(instrumentation.scheduledCount == 0)
+        #expect(await monitor.isTimerRunningForTesting() == false)
+    }
+
+    @Test("scene leases are independent and duplicate acquire/release is idempotent")
+    func sceneLeasesAreIndependentAndIdempotent() async {
+        let instrumentation = CountingInstrumentation()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling(), instrumentation: instrumentation)
+        let headroom = MonitorLease()
+        let popover = MonitorLease()
+
+        await monitor.acquireSceneLease(headroom)
+        await monitor.acquireSceneLease(headroom)
+        await monitor.acquireSceneLease(popover)
+        #expect(await monitor.activeSceneLeaseCountForTesting() == 2)
+        #expect(await monitor.isTimerRunningForTesting())
+
+        await monitor.releaseSceneLease(headroom)
+        await monitor.releaseSceneLease(headroom)
+        #expect(await monitor.activeSceneLeaseCountForTesting() == 1)
+        #expect(await monitor.isTimerRunningForTesting())
+
+        await monitor.releaseSceneLease(popover)
+        #expect(await monitor.activeSceneLeaseCountForTesting() == 0)
+        #expect(await monitor.isTimerRunningForTesting() == false)
+    }
+
+    @Test("stale out-of-order scene transitions cannot resurrect a hidden lease")
+    func staleSceneTransitionsCannotResurrectLease() async {
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        let scene = MonitorLease()
+        await monitor.updateSceneLease(scene, visible: false, generation: 2)
+        await monitor.updateSceneLease(scene, visible: true, generation: 1)
+        #expect(await monitor.activeSceneLeaseCountForTesting() == 0)
+        #expect(await monitor.isTimerRunningForTesting() == false)
+        await monitor.updateSceneLease(scene, visible: true, generation: 3)
+        #expect(await monitor.activeSceneLeaseCountForTesting() == 1)
+    }
+
+    @Test("stale acknowledged policy delivery cannot overwrite a newer feature disable")
+    func stalePolicyDeliveryCannotOverwriteDisable() async {
+        let calls = ProbeCounter()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            configurationRevision: 1, probe: FakeSystemProbing(calls: calls),
+            pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
+        await monitor.applyConfiguration(.disabled, acknowledgedRevision: 3)
+        await monitor.applyConfiguration(enabledVisibleConfiguration, acknowledgedRevision: 2)
+        let snapshot = await monitor.requestSnapshot()
+        #expect(snapshot.unavailableReason == SystemMonitor.featureDisabledReason)
+        #expect(calls.count == 0)
+        #expect(await monitor.appliedConfigurationRevisionForTesting() == 3)
+    }
+
+    @Test("an acknowledged feature disable immediately publishes unavailable without probing")
+    func acknowledgedDisablePublishesUnavailableWithoutProbe() async {
+        let calls = ProbeCounter()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            configurationRevision: 1, probe: FakeSystemProbing(calls: calls),
+            pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
+        _ = await monitor.requestSnapshot()
+        let probeCount = calls.count
+        let broadcasts = await monitor.broadcastCountForTesting()
+
+        let applied = await monitor.applyConfiguration(.disabled, acknowledgedRevision: 2)
+        let snapshot = await monitor.latestSnapshotForTesting()
+
+        #expect(applied)
+        #expect(snapshot?.unavailableReason == SystemMonitor.featureDisabledReason)
+        #expect(snapshot?.volumes.isEmpty == true && snapshot?.memory == nil)
+        #expect(await monitor.broadcastCountForTesting() == broadcasts + 1)
+        #expect(calls.count == probeCount)
+    }
+
+    @Test("memory-pressure events publish immediately without waiting for a timer or probing")
+    func pressureEventsPublishImmediatelyWithoutProbing() async throws {
+        let calls = ProbeCounter()
+        let pressure = ControlledPressureObserving()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(calls: calls), pressureObserving: pressure,
+            scheduling: ImmediateScheduling())
+        await monitor.acquireSceneLease(MonitorLease())
+        _ = await monitor.requestSnapshot()
+        let probeCount = calls.count
+        let broadcasts = await monitor.broadcastCountForTesting()
+        #expect(pressure.count == 1)
+
+        pressure.emit(.critical, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.broadcastCountForTesting() > broadcasts { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(await monitor.broadcastCountForTesting() == broadcasts + 1)
+        #expect(await monitor.latestPressureLevelForTesting() == .critical)
+        #expect(calls.count == probeCount)
+    }
+
+    @Test("a subscriber registering after publication replays the latest snapshot")
+    func lateSubscriberReceivesLatestSnapshot() async throws {
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        let published = await monitor.requestSnapshot()
+        let receipt = Box<SystemSnapshot?>(nil)
+        let stream = await monitor.subscribe()
+        let task = Task {
+            for await snapshot in stream {
+                receipt.set(snapshot)
+                break
+            }
+        }
+        for _ in 0..<200 {
+            if receipt.get() != nil { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let received = receipt.get()
+        #expect(received?.observedAt == published.observedAt)
+        #expect(received?.volumes.first?.disk?.availableBytes
+            == published.volumes.first?.disk?.availableBytes)
+        task.cancel()
+    }
+
+    @Test("production pressure observation subscribes to nominal recovery")
+    func productionPressureMaskIncludesRecovery() {
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.normal))
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.warning))
+        #expect(LiveMemoryPressureObserving.eventMask.contains(.critical))
+    }
+
+    @Test("the current pressure subscription publishes nominal recovery after critical")
+    func currentPressureSubscriptionPublishesRecovery() async throws {
+        let calls = ProbeCounter()
+        let pressure = ControlledPressureObserving()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(calls: calls), pressureObserving: pressure,
+            scheduling: ImmediateScheduling())
+        await monitor.acquireSceneLease(MonitorLease())
+        _ = await monitor.requestSnapshot()
+        let probeCount = calls.count
+
+        pressure.emit(.critical, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .critical { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        pressure.emit(.normal, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .normal { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        #expect(await monitor.latestPressureLevelForTesting() == .normal)
+        #expect(calls.count == probeCount)
+    }
+
+    @Test("callbacks from a replaced pressure subscription cannot clear a current critical event")
+    func stalePressureCallbackCannotOverwriteCurrentEvent() async throws {
+        let pressure = ControlledPressureObserving()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            configurationRevision: 1, probe: FakeSystemProbing(),
+            pressureObserving: pressure, scheduling: ImmediateScheduling())
+        await monitor.acquireSceneLease(MonitorLease())
+        #expect(pressure.count == 1)
+        await monitor.applyConfiguration(.disabled, acknowledgedRevision: 2)
+        await monitor.applyConfiguration(enabledVisibleConfiguration, acknowledgedRevision: 3)
+        #expect(pressure.count == 2)
+
+        pressure.emit(.critical, subscription: 1)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .critical { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        pressure.emit(.normal, subscription: 0)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        #expect(await monitor.latestPressureLevelForTesting() == .critical)
+    }
+
+    @Test("an explicit-work lease keeps observations alive while every scene is hidden")
+    func explicitWorkLeaseKeepsObservationAliveWhenHidden() async {
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: NoOpPressureObserving(),
+            scheduling: ImmediateScheduling())
+        let scan = MonitorLease()
+        await monitor.acquireExplicitWorkLease(scan)
+        await monitor.acquireExplicitWorkLease(scan)
+        #expect(await monitor.activeExplicitWorkLeaseCountForTesting() == 1)
+        #expect(await monitor.isTimerRunningForTesting())
+        await monitor.releaseExplicitWorkLease(scan)
+        await monitor.releaseExplicitWorkLease(scan)
+        #expect(await monitor.activeExplicitWorkLeaseCountForTesting() == 0)
         #expect(await monitor.isTimerRunningForTesting() == false)
     }
 
@@ -316,11 +561,12 @@ struct HeadroomSignalsTests {
         var configuration = enabledVisibleConfiguration
         configuration.backgroundEnabled = false
         await monitor.applyConfiguration(configuration)
-        await monitor.setWindowVisible(true)
+        let scene = MonitorLease()
+        await monitor.acquireSceneLease(scene)
         #expect(instrumentation.scheduledCount >= 1)
         #expect(await monitor.isTimerRunningForTesting())
 
-        await monitor.setWindowVisible(false)
+        await monitor.releaseSceneLease(scene)
         #expect(instrumentation.cancelledCount >= 1)
         #expect(await monitor.isTimerRunningForTesting() == false)
     }
@@ -335,7 +581,6 @@ struct HeadroomSignalsTests {
             suppressHiddenSampling: false, visibleIntervalSeconds: 5, hiddenIntervalSeconds: 60,
             historyEnabled: false, historyHours: 0)
         await monitor.applyConfiguration(configuration)
-        await monitor.setWindowVisible(false)
         #expect(instrumentation.scheduledCount == 0)
     }
 
@@ -349,7 +594,6 @@ struct HeadroomSignalsTests {
             suppressHiddenSampling: true, visibleIntervalSeconds: 5, hiddenIntervalSeconds: 60,
             historyEnabled: false, historyHours: 0)
         await monitor.applyConfiguration(configuration)
-        await monitor.setWindowVisible(false)
         #expect(instrumentation.scheduledCount == 0)
     }
 
@@ -398,14 +642,18 @@ struct HeadroomSignalsTests {
         #expect(history.entries.isEmpty)
     }
 
-    // MARK: Explicit snapshot always allowed, regardless of the repeating-loop gate
+    // MARK: Feature restriction applies at the one-shot probe boundary
 
-    @Test("an explicit requestSnapshot works even while fully disabled")
-    func explicitSnapshotWorksWhileDisabled() async {
-        let monitor = SystemMonitor(configuration: .disabled, probe: FakeSystemProbing(),
+    @Test("an explicit request while disabled invokes zero probes and reports exact unavailability")
+    func explicitSnapshotIsUnavailableWithoutProbingWhileDisabled() async {
+        let calls = ProbeCounter()
+        let monitor = SystemMonitor(configuration: .disabled,
+            probe: FakeSystemProbing(calls: calls),
             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
         let snapshot = await monitor.requestSnapshot()
-        #expect(snapshot.memory != nil)
+        #expect(calls.count == 0)
+        #expect(snapshot.unavailableReason == SystemMonitor.featureDisabledReason)
+        #expect(snapshot.memory == nil && snapshot.volumes.isEmpty)
     }
 
     private var enabledVisibleConfiguration: SystemMonitor.Configuration {

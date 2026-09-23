@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import TidyCore
 
@@ -34,8 +35,144 @@ private func makeRecord(key: ScanIndexKey, totalBytes: Int64 = 4_096, isComplete
         updatedAt: Date())
 }
 
+private actor CatchupOnFlushSource: ScanEventSource {
+    let stream: CatchupOnFlushStream
+    init(changedPath: String, cursor: UInt64) {
+        stream = CatchupOnFlushStream(changedPath: changedPath, cursor: cursor)
+    }
+    func makeStream(roots: [String], resumeCursor: UInt64?, persistedDeviceUUID: String?) async
+      -> any ScanEventStream { stream }
+}
+
+private actor CatchupOnFlushStream: ScanEventStream {
+    let changedPath: String
+    let cursor: UInt64
+    var waiter: CheckedContinuation<ScanEventBatch, Never>?
+    var delivered = false
+    var pendingDelivery = false
+    var stopped = false
+
+    init(changedPath: String, cursor: UInt64) {
+        self.changedPath = changedPath
+        self.cursor = cursor
+    }
+
+    func next() async -> ScanEventBatch {
+        if stopped {
+            return ScanEventBatch(events: [], cursor: cursor, historyReliable: true)
+        }
+        if pendingDelivery {
+            pendingDelivery = false
+            return ScanEventBatch(events: [ScanEvent(path: changedPath)], cursor: cursor,
+                historyReliable: true)
+        }
+        return await withCheckedContinuation { waiter = $0 }
+    }
+
+    func flush() async -> UInt64 {
+        guard !delivered else { return cursor }
+        delivered = true
+        let pending = waiter
+        waiter = nil
+        if let pending {
+            pending.resume(returning: ScanEventBatch(
+                events: [ScanEvent(path: changedPath)], cursor: cursor, historyReliable: true))
+        } else {
+            pendingDelivery = true
+        }
+        return cursor
+    }
+
+    func stop() async {
+        stopped = true
+        let pending = waiter
+        waiter = nil
+        pending?.resume(returning: ScanEventBatch(events: [], cursor: cursor,
+            historyReliable: true))
+    }
+}
+
 @Suite("T09 ScanIndex durable aggregate cache")
 struct ScanIndexTests {
+    @Test("app-owned cache rejects links for every SQLite family file without touching the witness",
+          arguments: ["", "-wal", "-shm", "-journal"], [false, true])
+    func appOwnedCacheRejectsLinkedDatabaseFamilyWithoutTouchingOutsideWitness(
+        suffix: String, hardLink: Bool
+    ) throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexSafety-\(UUID().uuidString)", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let linkedArtifact = URL(fileURLWithPath: database.path + suffix)
+        let outside = root.appendingPathComponent("outside-witness")
+        let witness = Data("must remain byte-identical".utf8)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: cacheDirectory,
+            withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        try witness.write(to: outside)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = hardLink
+            ? link(outside.path, linkedArtifact.path)
+            : symlink(outside.path, linkedArtifact.path)
+        #expect(result == 0)
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: outside) == witness)
+        var info = stat()
+        #expect(lstat(linkedArtifact.path, &info) == 0,
+            "recovery must preserve the rejected linked artifact for diagnosis")
+    }
+
+    @Test func appOwnedCacheRejectsUnsafeDirectoryWithoutTouchingOutsideWitness() throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexDirectory-\(UUID().uuidString)", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let witness = Data("unsafe directory witness".utf8)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: cacheDirectory,
+            withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
+        try witness.write(to: database)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: database) == witness)
+    }
+
+    @Test func appOwnedCacheRejectsSymlinkedDirectoryWithoutTouchingOutsideWitness() throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("TidyR07IndexDirectoryLink-\(UUID().uuidString)", isDirectory: true)
+        let outsideDirectory = root.appendingPathComponent("outside", isDirectory: true)
+        let cacheDirectory = root.appendingPathComponent("scan-index", isDirectory: true)
+        let database = cacheDirectory.appendingPathComponent("cache.sqlite")
+        let outsideDatabase = outsideDirectory.appendingPathComponent("cache.sqlite")
+        let witness = Data("outside directory witness".utf8)
+        try FileManager.default.createDirectory(at: outsideDirectory,
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try witness.write(to: outsideDatabase)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(symlink(outsideDirectory.path, cacheDirectory.path) == 0)
+
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.openAppOwned(databaseURL: database)
+        }
+        #expect(throws: ScanIndexError.unsafeLocation) {
+            _ = try ScanIndexStore.recoverAppOwned(databaseURL: database)
+        }
+        #expect(try Data(contentsOf: outsideDatabase) == witness)
+    }
     // MARK: - ScanRootIdentity: pinning the String(describing:) assumption (T09 review item 8)
 
     @Test("resolveIsStableAndDistinguishesFiles")
@@ -172,6 +309,236 @@ struct ScanIndexTests {
     }
 
     // MARK: - Coordinator: generation/barrier publication protocol
+
+    @Test("persisted generation collision after unreliable restart requires a fresh baseline")
+    func unreliableRestartCannotReuseCollidingGeneration() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let stale = makeRecord(key: key, totalBytes: 111, generation: 1, cursor: 40)
+        _ = try await store.commit(stale, volumeUUID: key.volumeUUID, cursor: 40,
+            deviceUUID: "device-a")
+        let source = FakeScanEventSource(initialBatches: [ScanEventBatch(events: [], cursor: 41,
+            historyReliable: false)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        #expect(await coordinator.beginScan(root: root.path) == 1,
+            "the fixture must reproduce the old process-local generation collision")
+        #expect(await coordinator.status(for: key, root: root.path) != .cached(stale))
+
+        let generation = await coordinator.beginScan(root: root.path)
+        let refreshed = await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 222,
+            processedEntries: 2, isComplete: true, reasons: [])
+        guard case .committed(let record) = refreshed else {
+            Issue.record("fresh complete baseline was not committed: \(refreshed)"); return
+        }
+        #expect(await coordinator.status(for: key, root: root.path) == .cached(record))
+    }
+
+    @Test("status drains pending historical catch-up before returning a cached aggregate")
+    func statusCannotRaceHistoricalCatchup() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let cached = makeRecord(key: key, totalBytes: 111, generation: 0, cursor: 40)
+        _ = try await store.commit(cached, volumeUUID: key.volumeUUID, cursor: 40,
+            deviceUUID: "device-a")
+        let source = CatchupOnFlushSource(
+            changedPath: root.appendingPathComponent("a").path, cursor: 41)
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+
+        guard case .stale(let record) = await coordinator.status(for: key, root: root.path) else {
+            Issue.record("pending catch-up event was not drained before cache status"); return
+        }
+        #expect(record == cached)
+    }
+
+    @Test("cursor without persisted device identity requires a fresh baseline")
+    func missingPersistedDeviceIdentityCannotReuseCache() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let stale = makeRecord(key: key, totalBytes: 111, generation: 1, cursor: 40)
+        _ = try await store.commit(stale, volumeUUID: key.volumeUUID, cursor: 40,
+            deviceUUID: nil)
+        let source = FakeScanEventSource(initialBatches: [ScanEventBatch(events: [], cursor: 41,
+            historyReliable: false)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        #expect(await source.lastResumeCursor == 40)
+        #expect(await source.lastPersistedDeviceUUID == nil)
+        #expect(await coordinator.status(for: key, root: root.path) != .cached(stale))
+        let generation = await coordinator.beginScan(root: root.path)
+        let refreshed = await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 222,
+            processedEntries: 2, isComplete: true, reasons: [])
+        guard case .committed(let record) = refreshed else {
+            Issue.record("fresh complete baseline was not committed: \(refreshed)"); return
+        }
+        #expect(await coordinator.status(for: key, root: root.path) == .cached(record))
+    }
+
+    @Test("unavailable live device identity cannot grant cache trust across restart")
+    func unavailableLiveDeviceIdentityRequiresFreshBaselineAfterRestart() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let first = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: FakeScanEventSource()),
+            deviceUUIDProvider: { _ in nil })
+        await first.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        let firstGeneration = await first.beginScan(root: root.path)
+        guard case .committed = await first.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: firstGeneration, totalBytes: 111,
+            processedEntries: 1, isComplete: true, reasons: []) else {
+            Issue.record("initial baseline failed"); return
+        }
+        #expect(try await store.persistedDeviceUUID(volumeUUID: key.volumeUUID) == nil)
+        await first.stopWatching()
+
+        let source = FakeScanEventSource(initialBatches: [ScanEventBatch(events: [], cursor: 1,
+            historyReliable: false)])
+        let restarted = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source), deviceUUIDProvider: { _ in nil })
+        await restarted.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        guard case .cached = await restarted.status(for: key, root: root.path) else {
+            let generation = await restarted.beginScan(root: root.path)
+            let refreshed = await restarted.commitIfCurrent(key: key, root: root.path,
+                volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 222,
+                processedEntries: 2, isComplete: true, reasons: [])
+            guard case .committed(let record) = refreshed else {
+                Issue.record("fresh baseline after missing device proof failed: \(refreshed)"); return
+            }
+            #expect(await restarted.status(for: key, root: root.path) == .cached(record))
+            return
+        }
+        Issue.record("restart reused a record without live/persisted device identity proof")
+    }
+
+    @Test("event ID wrap cannot collide with and reuse a persisted generation")
+    func eventIDWrapRequiresFreshBaselineBeforeReuse() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let stale = makeRecord(key: key, totalBytes: 111, generation: 1, cursor: 40)
+        _ = try await store.commit(stale, volumeUUID: key.volumeUUID, cursor: 40,
+            deviceUUID: "device-a")
+        let source = FakeScanEventSource(initialBatches: [ScanEventBatch(events: [], cursor: 1,
+            historyReliable: false)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        #expect(await coordinator.beginScan(root: root.path) == stale.generation)
+        #expect(await coordinator.status(for: key, root: root.path) != .cached(stale))
+        let generation = await coordinator.beginScan(root: root.path)
+        let refreshed = await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 222,
+            processedEntries: 2, isComplete: true, reasons: [])
+        guard case .committed(let record) = refreshed else {
+            Issue.record("fresh baseline after wrap failed: \(refreshed)"); return
+        }
+        #expect(await coordinator.status(for: key, root: root.path) == .cached(record))
+    }
+
+    @Test("failed FSEvents startup stays uncacheable even after a complete fresh walk")
+    func failedWatchStartupCannotEstablishReusableBaseline() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let stale = makeRecord(key: key, totalBytes: 111, generation: 1, cursor: 40)
+        _ = try await store.commit(stale, volumeUUID: key.volumeUUID, cursor: 40,
+            deviceUUID: "device-a")
+        let source = FakeScanEventSource(initialBatches: [ScanEventBatch(events: [], cursor: 41,
+            historyReliable: false, deliveryAvailable: false)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        #expect(await coordinator.status(for: key, root: root.path)
+            == .unavailable(.watchInactive))
+        let generation = await coordinator.beginScan(root: root.path)
+        #expect(await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 222,
+            processedEntries: 2, isComplete: true, reasons: [])
+            == .unavailable(.watchInactive))
+        #expect(await coordinator.status(for: key, root: root.path)
+            == .unavailable(.watchInactive))
+    }
+
+    @Test("an event for an already visited file during manual-Continue idle fails closed")
+    func changedVisitedFileDuringContinuationGapCannotResumeRetainedTotals() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let changedFile = root.appendingPathComponent("a").path
+        let source = FakeScanEventSource(initialBatches: [nil,
+            ScanEventBatch(events: [ScanEvent(path: changedFile)], cursor: 1,
+                historyReliable: true)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        let generation = await coordinator.beginScan(root: root.path)
+        guard case .committed = await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 4_096,
+            processedEntries: 1, isComplete: true, reasons: []) else {
+            Issue.record("baseline failed"); return
+        }
+
+        #expect(await coordinator.suspendWatchingForManualContinuation())
+        #expect(await coordinator.isWatchActiveForTesting() == false)
+        #expect(await coordinator.resumeWatchingForManualContinuation() == nil,
+            "changed bytes accumulated before the gap must never survive Continue")
+        #expect(await coordinator.isWatchActiveForTesting() == false)
+    }
+
+    @Test("an event after catch-up but before continuation publication invalidates the guard")
+    func eventAfterContinuationResumeCannotPublishRetainedTotals() async throws {
+        let (dbURL, store) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: dbURL.deletingLastPathComponent()) }
+        let root = try makeFixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = makeKey(root: root)
+        let source = FakeScanEventSource(initialBatches: [nil,
+            ScanEventBatch(events: [], cursor: 0, historyReliable: true)])
+        let coordinator = ScanIndexCoordinator(mode: .enabled, store: store,
+            invalidation: ScanInvalidation(source: source))
+        await coordinator.startWatching(approvedRoots: [root.path], volumeUUID: key.volumeUUID)
+        let generation = await coordinator.beginScan(root: root.path)
+        guard case .committed = await coordinator.commitIfCurrent(key: key, root: root.path,
+            volumeUUID: key.volumeUUID, capturedGeneration: generation, totalBytes: 4_096,
+            processedEntries: 1, isComplete: true, reasons: []) else {
+            Issue.record("baseline failed"); return
+        }
+        #expect(await coordinator.suspendWatchingForManualContinuation())
+        let continuationGuard = try #require(
+            await coordinator.resumeWatchingForManualContinuation())
+
+        await source.emit(events: [ScanEvent(path: root.appendingPathComponent("a").path)],
+            historyReliable: true)
+        #expect(await coordinator.consumeContinuationGuard(continuationGuard) == false)
+    }
 
     @Test("commit succeeds and status reports cached when nothing invalidated the root")
     func commitSucceedsWhenGenerationUnchanged() async throws {

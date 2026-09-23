@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SQLite3
 
 /// Identifies one cacheable aggregate. `rootIdentity` must be a stable
@@ -84,6 +85,7 @@ public enum ScanIndexError: Error, Equatable, Sendable {
     case corrupted
     case statementFailed(String)
     case partialCannotReplaceComplete
+    case unsafeLocation
 }
 
 /// Outcome of one commit attempt through the generation/barrier protocol.
@@ -96,6 +98,14 @@ public enum ScanIndexCommitOutcome: Equatable, Sendable {
     case staleGeneration
     case rejectedPartialOverComplete
     case unavailable(ScanIndexUnavailableReason)
+}
+
+/// Opaque proof that catch-up reached a specific generation immediately before a dormant
+/// traversal resumed. `ScanEngine` consumes it before retaining another cursor or publishing a
+/// terminal result, so an event arriving after the app's initial catch-up Boolean cannot leave
+/// pre-gap accumulated totals trusted.
+public struct ScanContinuationWatchGuard: Equatable, Sendable {
+    fileprivate let id: UUID
 }
 
 /// The sole SQLite authority for the aggregate cache. One file, WAL mode, one
@@ -115,9 +125,17 @@ public actor ScanIndexStore {
         try FileManager.default.createDirectory(
             at: databaseURL.deletingLastPathComponent(),
             withIntermediateDirectories: true)
+        // macOS exposes some otherwise safe temporary roots through `/var` -> `/private/var`.
+        // `SQLITE_OPEN_NOFOLLOW` rejects any symlink component, so resolve the directory only
+        // after it exists and append the already-validated leaf name. Production callers first
+        // lstat the exact app-owned directory and every SQLite family file below.
+        let openedURL = URL(fileURLWithPath: PathGuard.canonicalize(
+            databaseURL.deletingLastPathComponent().path), isDirectory: true)
+            .appendingPathComponent(databaseURL.lastPathComponent)
         var handle: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
-        guard sqlite3_open_v2(databaseURL.path, &handle, flags, nil) == SQLITE_OK,
+        _ = try Self.validateRegularFileIfPresent(openedURL)
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOFOLLOW
+        guard sqlite3_open_v2(openedURL.path, &handle, flags, nil) == SQLITE_OK,
               let opened = handle else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "open failed"
             sqlite3_close_v2(handle)
@@ -158,12 +176,64 @@ public actor ScanIndexStore {
     public static func recover(databaseURL: URL) throws -> ScanIndexStore {
         let fm = FileManager.default
         for suffix in ["", "-wal", "-shm", "-journal"] {
-            let path = databaseURL.path + suffix
-            if fm.fileExists(atPath: path) {
-                try? fm.removeItem(atPath: path)
+            let url = URL(fileURLWithPath: databaseURL.path + suffix)
+            if try validateRegularFileIfPresent(url) {
+                try fm.removeItem(at: url)
             }
         }
         return try ScanIndexStore(databaseURL: databaseURL)
+    }
+
+    /// Production entry point. The cache lives in a dedicated user-owned 0700 directory under
+    /// app storage and uses one exact filename; unknown/symlink/hardlink artifacts are preserved
+    /// and rejected instead of opened, truncated or removed.
+    public static func openAppOwned(databaseURL: URL) throws -> ScanIndexStore {
+        try validateAppOwnedLocation(databaseURL)
+        return try ScanIndexStore(databaseURL: databaseURL)
+    }
+
+    public static func recoverAppOwned(databaseURL: URL) throws -> ScanIndexStore {
+        try validateAppOwnedLocation(databaseURL)
+        let recovered = try recover(databaseURL: databaseURL)
+        try validateAppOwnedLocation(databaseURL)
+        return recovered
+    }
+
+    private static func validateAppOwnedLocation(_ databaseURL: URL) throws {
+        guard databaseURL.lastPathComponent == "cache.sqlite" else {
+            throw ScanIndexError.unsafeLocation
+        }
+        let directory = databaseURL.deletingLastPathComponent()
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory.path) {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+        }
+        var info = stat()
+        guard lstat(directory.path, &info) == 0,
+              info.st_mode & S_IFMT == S_IFDIR,
+              info.st_uid == geteuid(),
+              info.st_mode & 0o077 == 0 else {
+            throw ScanIndexError.unsafeLocation
+        }
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            _ = try validateRegularFileIfPresent(
+                URL(fileURLWithPath: databaseURL.path + suffix))
+        }
+    }
+
+    @discardableResult
+    private static func validateRegularFileIfPresent(_ url: URL) throws -> Bool {
+        var info = stat()
+        if lstat(url.path, &info) != 0 {
+            guard errno == ENOENT else { throw ScanIndexError.unsafeLocation }
+            return false
+        }
+        guard info.st_mode & S_IFMT == S_IFREG,
+              info.st_uid == geteuid(), info.st_nlink == 1 else {
+            throw ScanIndexError.unsafeLocation
+        }
+        return true
     }
 
     deinit {
@@ -584,20 +654,36 @@ public actor ScanIndexCoordinator {
     private let invalidation: ScanInvalidation
     private let capBytes: Int64
     private let maximumAge: TimeInterval
+    private let deviceUUIDProvider: @Sendable (String) -> String?
+    private var watchConfiguration: (approvedRoots: [String], volumeUUID: String)?
+    private var continuationCheckpoint:
+        (cursor: UInt64, generations: [String: UInt64], deviceUUID: String)?
+    private var activeContinuationGuards: [UUID: [String: UInt64]] = [:]
+    /// Generation retained after a guard is consumed and until the resulting terminal partial is
+    /// suspended. An event in that publication window must invalidate the newly retained cursor.
+    private var pendingContinuationPublication: [String: UInt64]?
 
     public init(mode: Mode, store: ScanIndexStore?, invalidation: ScanInvalidation,
-                capBytes: Int64 = 64 * 1024 * 1024, maximumAge: TimeInterval = 7 * 24 * 3_600) {
+                capBytes: Int64 = 64 * 1024 * 1024,
+                maximumAge: TimeInterval = 7 * 24 * 3_600,
+                deviceUUIDProvider: @escaping @Sendable (String) -> String? =
+                    { FSEventsScanEventSource.currentDeviceUUID(forPathOnVolume: $0) }) {
         self.mode = mode
         self.store = mode == .enabled ? store : nil
         self.invalidation = invalidation
         self.capBytes = capBytes
         self.maximumAge = maximumAge
+        self.deviceUUIDProvider = deviceUUIDProvider
     }
 
     /// Must be called before baseline traversal starts. No-op (and no event
     /// stream exists) when indexing is off.
     public func startWatching(approvedRoots: [String], volumeUUID: String) async {
         guard mode == .enabled, let store else { return }
+        watchConfiguration = (approvedRoots, volumeUUID)
+        continuationCheckpoint = nil
+        activeContinuationGuards.removeAll()
+        pendingContinuationPublication = nil
         let resumeCursor = try? await store.persistedCursor(volumeUUID: volumeUUID)
         // Read fresh every start: the persisted device UUID can change between runs (a prior
         // session may have observed and recorded a swap), and threading it through here — rather
@@ -610,7 +696,103 @@ public actor ScanIndexCoordinator {
     }
 
     public func stopWatching() async {
+        continuationCheckpoint = nil
+        activeContinuationGuards.removeAll()
+        pendingContinuationPublication = nil
         await invalidation.stop()
+    }
+
+    /// A terminal partial result is dormant explicit work. Stop all event delivery while the
+    /// user decides whether to Continue, and invalidate every retained aggregate because the
+    /// unwatched interval cannot prove which root changed.
+    public func suspendWatchingForManualContinuation() async -> Bool {
+        guard let watchConfiguration else {
+            await invalidation.stop()
+            return false
+        }
+        do { try await invalidation.barrier() }
+        catch {
+            continuationCheckpoint = nil
+            pendingContinuationPublication = nil
+            await invalidation.invalidateAllApprovedRoots()
+            await invalidation.stop()
+            return false
+        }
+        guard let firstRoot = watchConfiguration.approvedRoots.first,
+              let deviceUUID = deviceUUIDProvider(firstRoot) else {
+            continuationCheckpoint = nil
+            await invalidation.invalidateAllApprovedRoots()
+            await invalidation.stop()
+            return false
+        }
+        let checkpoint = await invalidation.prepareManualContinuationSuspension(
+            expectedGenerations: pendingContinuationPublication)
+        pendingContinuationPublication = nil
+        guard let checkpoint else {
+            continuationCheckpoint = nil
+            await invalidation.invalidateAllApprovedRoots()
+            await invalidation.stop()
+            return false
+        }
+        continuationCheckpoint = (checkpoint.cursor, checkpoint.generations, deviceUUID)
+        await invalidation.stop()
+        return true
+    }
+
+    /// Reinstalls the exact approved watch before consuming the single-use traversal cursor.
+    /// Startup reliability and generation trust still fail closed through `status`; the resumed
+    /// traversal separately validates its retained root/directory identities.
+    public func resumeWatchingForManualContinuation() async -> ScanContinuationWatchGuard? {
+        guard mode == .enabled, let store, let watchConfiguration,
+              let checkpoint = continuationCheckpoint else { return nil }
+        _ = store // Store availability remains part of enabled index ownership.
+        await invalidation.start(approvedRoots: watchConfiguration.approvedRoots,
+            resumeCursor: checkpoint.cursor, persistedDeviceUUID: checkpoint.deviceUUID)
+        do { try await invalidation.barrier() }
+        catch {
+            continuationCheckpoint = nil
+            await invalidation.invalidateAllApprovedRoots()
+            await invalidation.stop()
+            return nil
+        }
+        let active = await invalidation.isWatchActive()
+        let reliable = await invalidation.isHistoryReliable()
+        var unchanged = active && reliable
+        for root in watchConfiguration.approvedRoots where unchanged {
+            unchanged = await invalidation.currentGeneration(for: root)
+                == checkpoint.generations[PathGuard.canonicalize(root)]
+        }
+        continuationCheckpoint = nil
+        guard unchanged else {
+            await invalidation.invalidateAllApprovedRoots()
+            await invalidation.stop()
+            return nil
+        }
+        let guardID = UUID()
+        activeContinuationGuards[guardID] = checkpoint.generations
+        return ScanContinuationWatchGuard(id: guardID)
+    }
+
+    /// Drains events accepted since catch-up and consumes the guard exactly once. A changed root,
+    /// lost history, stopped delivery, wrap, or unavailable stream rejects the retained totals.
+    public func consumeContinuationGuard(_ guardValue: ScanContinuationWatchGuard) async -> Bool {
+        guard let expected = activeContinuationGuards.removeValue(forKey: guardValue.id) else {
+            return false
+        }
+        do { try await invalidation.barrier() }
+        catch { return false }
+        guard await invalidation.isWatchActive(), await invalidation.isHistoryReliable() else {
+            return false
+        }
+        for (root, generation) in expected {
+            guard await invalidation.currentGeneration(for: root) == generation else { return false }
+        }
+        pendingContinuationPublication = expected
+        return true
+    }
+
+    public func isWatchActiveForTesting() async -> Bool {
+        await invalidation.isWatchActive()
     }
 
     /// Explicit widening for signals outside the event stream's vocabulary:
@@ -640,8 +822,18 @@ public actor ScanIndexCoordinator {
         if Date().timeIntervalSince(record.updatedAt) > maximumAge {
             return .unavailable(.expired)
         }
-        let liveGeneration = await invalidation.currentGeneration(for: root)
-        return liveGeneration == record.generation ? .cached(record) : .stale(record)
+        // A matching cursor/device initial handshake only says historical delivery is possible;
+        // it does not say the async pump has applied catch-up yet. Flush and drain before any
+        // cached read, then recheck live delivery/trust because the barrier may expose a gap event,
+        // wrap, drop, or failed stream.
+        do { try await invalidation.barrier() }
+        catch { return .stale(record) }
+        guard await invalidation.isWatchActive() else {
+            return .unavailable(.watchInactive)
+        }
+        let trusted = await invalidation.isCacheGenerationTrusted(for: root,
+            generation: record.generation)
+        return trusted ? .cached(record) : .stale(record)
     }
 
     /// The one publication path. Drains the barrier, re-checks the
@@ -668,11 +860,14 @@ public actor ScanIndexCoordinator {
         // The live device UUID, persisted in the same transaction as the aggregate below, is
         // what lets the *next* `startWatching` on this volume detect a reformat/swap that
         // happened while nothing was watching.
-        let deviceUUID = FSEventsScanEventSource.currentDeviceUUID(forPathOnVolume: root)
+        let deviceUUID = deviceUUIDProvider(root)
         do {
             let committed = try await store.commit(record, volumeUUID: volumeUUID, cursor: cursor,
                 deviceUUID: deviceUUID)
             try await store.evictToFit(capBytes: capBytes)
+            if isComplete {
+                await invalidation.establishCompleteBaseline(for: root, generation: current)
+            }
             return .committed(committed)
         } catch ScanIndexError.partialCannotReplaceComplete {
             return .rejectedPartialOverComplete

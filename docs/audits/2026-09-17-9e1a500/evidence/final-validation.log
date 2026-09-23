@@ -1,0 +1,15 @@
+{
+  "timestamp_utc": "2026-09-17T15:50:48.527588+00:00",
+  "required_deliverables": 6,
+  "dimensions": 20,
+  "safety_requirements": 16,
+  "work_packages": 24,
+  "plan_checkbox_rows": 165,
+  "catalog_rows": 97,
+  "compiled_registry_rows": 128,
+  "combined_scenarios": 15,
+  "primary_tracked_diff": "empty",
+  "source_personal_pattern_matches": 0,
+  "local_markdown_links": "valid",
+  "trailing_whitespace": "none"
+}

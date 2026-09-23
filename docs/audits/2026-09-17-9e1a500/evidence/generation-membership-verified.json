@@ -1,0 +1,11 @@
+{
+  "command": [
+    "python3",
+    "docs/audits/2026-09-17-9e1a500/evidence/compare-membership.py"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:45:26.547527+00:00",
+  "ended_utc": "2026-09-17T15:45:26.623048+00:00",
+  "seconds": 0.075,
+  "exit_code": 0
+}

@@ -19,13 +19,19 @@ struct MenuBarContentView: View {
             Text("Tidy")
                 .font(.headline)
 
+            if let reason = refresher.snapshot?.unavailableReason {
+                Label(reason, systemImage: "pause.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 if let disk {
                     StatsGaugeRow(
                         title: "Disk",
                         usedBytes: disk.usedBytes,
                         totalBytes: disk.totalBytes,
-                        detail: "\(ByteFormat.human(disk.availableForImportantUsageBytes)) free"
+                        detail: "\(ByteFormat.human(disk.availableForImportantUsageBytes, units: unitStyle)) free"
                     )
                 }
 
@@ -34,7 +40,7 @@ struct MenuBarContentView: View {
                         title: "Memory",
                         usedBytes: used,
                         totalBytes: memory.totalBytes,
-                        detail: "\(ByteFormat.human(used)) used"
+                        detail: "\(ByteFormat.human(used, units: unitStyle)) used"
                     )
                 } else if refresher.snapshot != nil {
                     // A denied/unsupported read is reported honestly, never as zero used.
@@ -48,7 +54,7 @@ struct MenuBarContentView: View {
                         title: "Swap",
                         usedBytes: swap.usedBytes,
                         totalBytes: swap.totalBytes,
-                        detail: "\(ByteFormat.human(swap.usedBytes)) used"
+                        detail: "\(ByteFormat.human(swap.usedBytes, units: unitStyle)) used"
                     )
                 }
             }
@@ -74,6 +80,14 @@ struct MenuBarContentView: View {
 
                 ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {
                     open(WindowID.clean, value: Tier.deep)
+                }
+
+                ModeButton(title: "Developer Workspace", subtitle: "Projects, ecosystem inventory and Build Prep") {
+                    open(WindowID.developer)
+                }
+
+                ModeButton(title: "Assistance", subtitle: "Local consent, budgets, Rescue and maintenance") {
+                    open(WindowID.assistance)
                 }
 
                 ModeButton(title: "Custom…", subtitle: "Pick individual items, save presets") {
@@ -102,10 +116,13 @@ struct MenuBarContentView: View {
         .padding(16)
         .frame(width: 300)
         .onAppear {
-            refresher.applyPolicy(configStore.effectivePolicy)
             refresher.onPopoverAppear()
         }
         .onDisappear { refresher.onPopoverDisappear() }
+    }
+
+    private var unitStyle: ByteUnitStyle {
+        resolvedUIUnitStyle(configStore.acknowledgedEffectivePolicy)
     }
 
     private func open(_ id: String) {

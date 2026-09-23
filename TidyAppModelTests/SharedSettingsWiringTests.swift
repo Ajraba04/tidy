@@ -6,6 +6,11 @@ import XCTest
 
 private enum A3Failure: Error { case timeout, setup }
 
+private final class WeakSettingsStoreBox {
+    weak var value: SettingsStore?
+    init(_ value: SettingsStore) { self.value = value }
+}
+
 private struct A3Scratch {
     let root: URL
     var home: URL { root.appendingPathComponent("home", isDirectory: true) }
@@ -1433,6 +1438,7 @@ private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
         case presentationAdmission
         case queuedPermit
         case durablySavedBeforeCommit
+        case freshBootstrapPreparing
     }
 
     private var blocked: Set<Point> = []
@@ -1483,6 +1489,8 @@ private actor T081BridgeGate: ExecutionPolicyBridgeTestHook, SchedulerTestHook {
 
     func receive(_ event: SchedulerTestEvent) async {
         switch event {
+        case .invalidationClaiming(revision: 0):
+            await hit(.freshBootstrapPreparing)
         case .presentationPrepared:
             await hit(.presentationPrepared)
         case .enqueued:
@@ -1540,9 +1548,13 @@ extension SharedSettingsWiringTests {
     }
 
     private func t081Bridge(_ scratch: A3Scratch, _ services: AppExecutionServices,
+                            loaded: SettingsLoadResult? = nil,
+                            bootstrap: SettingsSchedulerBootstrap? = nil,
                             hook: T081BridgeGate) -> ExecutionPolicyBridge {
         ExecutionPolicyBridge(coordinator: services.coordinator, settings: services.settings,
-            loaded: services.settingsLoad, homeDirectory: scratch.home.path, detectedTools: [],
+            loaded: loaded ?? services.settingsLoad,
+            bootstrap: bootstrap,
+            homeDirectory: scratch.home.path, detectedTools: [],
             pendingByteLimit: 32 * 1_048_576, schedulerTestHook: hook, testHook: hook)
     }
 
@@ -1841,14 +1853,66 @@ extension SharedSettingsWiringTests {
         }
     }
 
-    func testT081bInitialZeroRevisionAndRecoveryKeepFacadeUnavailable() async throws {
+    func testT081bOnlyExactFreshDefaultsInstallRevisionZeroSchedulerPolicy() async throws {
         try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            let session = try await bridge.explicitSessions.beginSession(
+                requirements: self.t081HeadroomRequirements())
+            await bridge.explicitSessions.finish(session: session)
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope?.revision, 0)
+
+            let replay = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await replay.drain()
+            XCTAssertNil(replay.acknowledgedScanEnvelope,
+                "Absent-file bootstrap provenance must be single-use")
+
+            var issuingStore: SettingsStore? = SettingsStore(url: scratch.root
+                .appendingPathComponent("foreign/config.json"))
+            let foreignBootstrap = await issuingStore!.loadForSchedulerBootstrap()
+            let retainedIssuingStore = WeakSettingsStoreBox(issuingStore!)
+            issuingStore = nil
+            XCTAssertNotNil(retainedIssuingStore.value,
+                "Bootstrap evidence must retain its issuing actor, not only its address")
+            let foreign = self.t081Bridge(scratch, services,
+                loaded: foreignBootstrap.result, bootstrap: foreignBootstrap,
+                hook: T081BridgeGate())
+            await foreign.drain()
+            XCTAssertNil(foreign.acknowledgedScanEnvelope,
+                "Bootstrap provenance from another SettingsStore must not transfer")
+        }
+
+        try await run(seed: t081Envelope(revision: 0)) { scratch, services, _ in
+            XCTAssertEqual(services.settingsLoad.disposition, .loaded)
             let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
             await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
             do {
                 _ = try await bridge.explicitSessions.beginSession(
                     requirements: self.t081HeadroomRequirements())
-                XCTFail("revision-zero defaults installed a scheduler policy")
+                XCTFail("stored revision-zero settings installed scheduler policy")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUnavailable)
+            }
+        }
+
+        try await run { scratch, services, _ in
+            let forged = SettingsLoadResult(disposition: .newDefaults,
+                envelope: SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion,
+                    revision: 0,
+                    config: TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion)),
+                recoveryReason: nil)
+            let bridge = self.t081Bridge(scratch, services, loaded: forged,
+                hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            do {
+                _ = try await bridge.explicitSessions.beginSession(
+                    requirements: self.t081HeadroomRequirements())
+                XCTFail("caller-forged defaults installed scheduler policy")
             } catch let error as WorkSchedulerError {
                 XCTAssertEqual(error, .admissionUnavailable)
             }
@@ -1865,6 +1929,169 @@ extension SharedSettingsWiringTests {
             } catch let error as WorkSchedulerError {
                 XCTAssertEqual(error, .admissionUnavailable)
             }
+        }
+
+        try await run(seed: Data(#"{"schemaVersion":999,"revision":0,"config":{}}"#.utf8)) {
+          scratch, services, _ in
+            XCTAssertEqual(services.settingsLoad.disposition, .recoveryReadOnly)
+            XCTAssertEqual(services.settingsLoad.recoveryReason, .unsupportedSchema(999))
+            let bridge = self.t081Bridge(scratch, services, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+        }
+    }
+
+    func testT081bFreshDefaultsFirstSaveClosesAdmissionThenInstallsRevisionOne() async throws {
+        try await run { scratch, services, _ in
+            let hook = T081BridgeGate()
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: hook)
+            await bridge.drain()
+            let sessions = bridge.explicitSessions
+            let requirements = try self.t081HeadroomRequirements()
+            let initial = try await sessions.beginSession(requirements: requirements)
+            await sessions.finish(session: initial)
+
+            await hook.block(.invalidatingAdmission)
+            let id = SettingID(rawValue: "cleanup.requestedBatchGiB")
+            guard case .accepted(_, let completion) = bridge.submit(global: .init(baseRevision: 0,
+                id: id, baseValue: nil, editedValue: .integer(12))) else {
+                return XCTFail("first durable settings save was not admitted")
+            }
+            await hook.wait(for: .invalidatingAdmission)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: scratch.paths.settings.path))
+            do {
+                _ = try await sessions.beginSession(requirements: requirements)
+                XCTFail("session crossed the first-save admission barrier")
+            } catch let error as WorkSchedulerError {
+                XCTAssertEqual(error, .admissionUpdating)
+            }
+
+            await hook.release(.invalidatingAdmission)
+            guard case .saved(_, let saved) = await completion.value else {
+                return XCTFail("first settings save did not become durable")
+            }
+            XCTAssertEqual(saved.revision, 1)
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope, saved)
+            let snapshot = await sessions.snapshot()
+            XCTAssertEqual(snapshot.settingsRevision, 1)
+            let after = try await sessions.beginSession(requirements: requirements)
+            await sessions.finish(session: after)
+        }
+    }
+
+    func testT081bFreshDefaultProvenanceExpiresAfterLaterStoreLoadAndUpdate() async throws {
+        try await run { scratch, services, _ in
+            let stale = await services.settings.loadForSchedulerBootstrap()
+            _ = await services.settings.load()
+            let bridge = self.t081Bridge(scratch, services, loaded: stale.result,
+                bootstrap: stale, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A later load must invalidate absent-file provenance")
+        }
+
+        try await run { scratch, services, _ in
+            let stale = await services.settings.loadForSchedulerBootstrap()
+            _ = try await services.settings.update(expectedRevision: 0,
+                change: .transcriptAgeDays(60))
+            let bridge = self.t081Bridge(scratch, services, loaded: stale.result,
+                bootstrap: stale, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A later update must invalidate absent-file provenance")
+        }
+
+        try await run { scratch, services, _ in
+            await services.settings.forceSchedulerBootstrapGenerationForTesting(UInt64.max)
+            let exhausted = await services.settings.loadForSchedulerBootstrap()
+            XCTAssertEqual(exhausted.result.disposition, .recoveryReadOnly)
+            XCTAssertEqual(exhausted.result.recoveryReason, .unavailable)
+            let bridge = self.t081Bridge(scratch, services, loaded: exhausted.result,
+                bootstrap: exhausted, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "Bootstrap generation exhaustion must fail closed")
+        }
+    }
+
+    func testT081bFreshBootstrapReservationSerializesSettingsAccess() async throws {
+        try await run { scratch, services, _ in
+            let hook = T081BridgeGate()
+            await hook.block(.freshBootstrapPreparing)
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: hook)
+            let installing = Task { @MainActor in await bridge.drain() }
+            await hook.wait(for: .freshBootstrapPreparing)
+
+            let blockedLoad = await services.settings.load()
+            XCTAssertEqual(blockedLoad.disposition, .recoveryReadOnly)
+            XCTAssertEqual(blockedLoad.recoveryReason, .unavailable)
+            do {
+                _ = try await services.settings.update(expectedRevision: 0,
+                    change: .transcriptAgeDays(60))
+                XCTFail("Settings update crossed the bootstrap reservation")
+            } catch let error as SettingsStoreError {
+                XCTAssertEqual(error, .unavailable)
+            }
+
+            await hook.release(.freshBootstrapPreparing)
+            await installing.value
+            XCTAssertEqual(bridge.acknowledgedScanEnvelope?.revision, 0)
+        }
+    }
+
+    func testT081bExternalSettingsCreationAndReplacementDenyFreshBootstrapWithoutWrites()
+      async throws {
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let external = SettingsStore(url: scratch.paths.settings)
+            let externalLoad = await external.load()
+            XCTAssertEqual(externalLoad.disposition, .newDefaults)
+            _ = try await external.update(expectedRevision: 0, change: .transcriptAgeDays(120))
+            let names = ["config.json", "config.backup.json", "config.lock", "config.store.json"]
+            let before = try Dictionary(uniqueKeysWithValues: names.compactMap { name in
+                let url = scratch.support.appendingPathComponent(name)
+                return FileManager.default.fileExists(atPath: url.path)
+                    ? (name, try Data(contentsOf: url)) : nil
+            })
+
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope,
+                "A second SettingsStore publication must invalidate fresh defaults")
+            let after = try Dictionary(uniqueKeysWithValues: names.compactMap { name in
+                let url = scratch.support.appendingPathComponent(name)
+                return FileManager.default.fileExists(atPath: url.path)
+                    ? (name, try Data(contentsOf: url)) : nil
+            })
+            XCTAssertEqual(after, before, "Denied bootstrap must preserve every settings byte")
+        }
+
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            let corrupt = Data("{broken".utf8)
+            try corrupt.write(to: scratch.paths.settings)
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), corrupt)
+        }
+
+        try await run { scratch, services, _ in
+            let bootstrap = await services.settings.loadForSchedulerBootstrap()
+            try Data("first external bytes".utf8).write(to: scratch.paths.settings)
+            let future = Data(#"{"schemaVersion":999,"revision":0,"config":{}}"#.utf8)
+            try future.write(to: scratch.paths.settings, options: .atomic)
+            let bridge = self.t081Bridge(scratch, services, loaded: bootstrap.result,
+                bootstrap: bootstrap, hook: T081BridgeGate())
+            await bridge.drain()
+            XCTAssertNil(bridge.acknowledgedScanEnvelope)
+            XCTAssertEqual(try Data(contentsOf: scratch.paths.settings), future)
         }
     }
 
@@ -2067,6 +2294,192 @@ private final class A3RealIO: JournalPOSIXIO, @unchecked Sendable {
 
 @MainActor
 final class SharedSettingsWiringTests: XCTestCase {
+    @MainActor func testAcknowledgedPolicyObserverPublishesOnlyDurableRevisions() async throws {
+        try await run(stops: ["config.1"]) { _, services, io in
+            var revisions: [UInt64] = []
+            var headroomEnabled: [Bool] = []
+            let token = services.configStore.observeAcknowledgedPolicy { revision, policy in
+                revisions.append(revision)
+                headroomEnabled.append(policy?.allowedFeatures.contains("headroom") == true)
+            }
+            defer { services.configStore.removeAcknowledgedPolicyObserver(token) }
+            XCTAssertEqual(revisions, [0])
+            XCTAssertEqual(headroomEnabled, [true])
+
+            guard case .accepted(_, let outcome) = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false))
+            else { return XCTFail("settings edit rejected") }
+            try await io.probe.waitFor("config.1")
+            XCTAssertEqual(revisions, [0], "optimistic state is not an acknowledged policy")
+            io.probe.release("config.1")
+            guard case .saved = await outcome.value else { return XCTFail("settings edit not saved") }
+            XCTAssertEqual(revisions, [0, 1])
+            XCTAssertEqual(headroomEnabled, [true, false])
+        }
+    }
+
+    @MainActor func testMonotonicVolumeEpochAcceptsNewerMissingAndRemountedObservations()
+        async throws {
+        try await run { _, services, _ in
+            let store = services.configStore
+            let firstVolumeID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+            let remountedVolumeID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+            store.updateSelectedVolume(identity: firstVolumeID.uuidString,
+                capacityBytes: 100 * 1_073_741_824,
+                observationEpoch: 10)
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           10 * 1_073_741_824)
+
+            store.updateSelectedVolume(identity: nil,
+                capacityBytes: nil,
+                observationEpoch: 11)
+            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                         "a newer missing-volume observation must win despite wall-clock rollback")
+
+            store.updateSelectedVolume(identity: remountedVolumeID.uuidString,
+                capacityBytes: 200 * 1_073_741_824,
+                observationEpoch: 12)
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           20 * 1_073_741_824,
+                           "a newer remounted volume must replace the missing state")
+
+            store.updateSelectedVolume(identity: firstVolumeID.uuidString,
+                capacityBytes: 100 * 1_073_741_824,
+                observationEpoch: 11)
+            XCTAssertEqual(resolvedHeadroomTargetBytes(store.effectivePolicy),
+                           20 * 1_073_741_824,
+                           "an old epoch cannot restore stale volume identity or capacity")
+
+            store.updateSelectedVolume(identity: "/path/is/not/authority",
+                capacityBytes: 100 * 1_073_741_824,
+                observationEpoch: 13)
+            XCTAssertNil(resolvedHeadroomTargetBytes(store.effectivePolicy))
+        }
+    }
+
+    @MainActor func testExecutionServicesTeardownCancelsVolumeObservationAndOnlyItsPolicyObserver()
+        async throws {
+        let scratch = try A3Scratch()
+        defer { scratch.remove() }
+        let probe = A3Probe(stops: [])
+        let io = A3RealIO(probe: probe)
+        let settings = SettingsStore(url: scratch.paths.settings, io: io)
+        var services: AppExecutionServices? = await AppExecutionServices.bootstrap(
+            paths: scratch.paths, settings: settings, observe: { probe.hit($0.rawValue) })
+        weak var releasedServices = services
+        let store = try XCTUnwrap(services?.configStore)
+        let monitor = try XCTUnwrap(services?.systemMonitor)
+        var unrelatedObserverCalls = 0
+        let unrelatedToken = store.observeAcknowledgedPolicy { _, _ in
+            unrelatedObserverCalls += 1
+        }
+        defer { store.removeAcknowledgedPolicyObserver(unrelatedToken) }
+
+        var deadline = Date().addingTimeInterval(2)
+        var subscriberCount = await monitor.subscriberCountForTesting()
+        while subscriberCount != 1, Date() < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+            subscriberCount = await monitor.subscriberCountForTesting()
+        }
+        XCTAssertEqual(subscriberCount, 1)
+        XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 2)
+
+        services = nil
+        deadline = Date().addingTimeInterval(2)
+        subscriberCount = await monitor.subscriberCountForTesting()
+        while (releasedServices != nil || subscriberCount != 0 ||
+               store.acknowledgedPolicyObserverCountForTesting != 1), Date() < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+            subscriberCount = await monitor.subscriberCountForTesting()
+        }
+
+        XCTAssertNil(releasedServices)
+        XCTAssertEqual(subscriberCount, 0)
+        XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 1)
+        XCTAssertEqual(unrelatedObserverCalls, 1)
+        try scratch.intact()
+    }
+
+    @MainActor func testExplicitMonitoringDisposalIsIdempotentAndStopsBinderCallbacks()
+        async throws {
+        try await run { _, services, _ in
+            let store = services.configStore
+            let monitor = services.systemMonitor
+            var unrelatedObserverCalls = 0
+            let unrelatedToken = store.observeAcknowledgedPolicy { _, _ in
+                unrelatedObserverCalls += 1
+            }
+            defer { store.removeAcknowledgedPolicyObserver(unrelatedToken) }
+
+            var deadline = Date().addingTimeInterval(2)
+            var subscriberCount = await monitor.subscriberCountForTesting()
+            while subscriberCount != 1, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+                subscriberCount = await monitor.subscriberCountForTesting()
+            }
+            XCTAssertEqual(subscriberCount, 1)
+            XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 2)
+
+            services.disposeMonitoring()
+            services.disposeMonitoring()
+            deadline = Date().addingTimeInterval(2)
+            subscriberCount = await monitor.subscriberCountForTesting()
+            while subscriberCount != 0, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+                subscriberCount = await monitor.subscriberCountForTesting()
+            }
+            XCTAssertEqual(subscriberCount, 0)
+            XCTAssertEqual(store.acknowledgedPolicyObserverCountForTesting, 1)
+            let monitorRevision = await monitor.appliedConfigurationRevisionForTesting()
+
+            guard case .accepted(_, let completion) = store.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false)),
+                  case .saved = await completion.value else {
+                return XCTFail("settings edit was not saved after monitoring disposal")
+            }
+            XCTAssertEqual(unrelatedObserverCalls, 2)
+            let appliedRevision = await monitor.appliedConfigurationRevisionForTesting()
+            XCTAssertEqual(appliedRevision, monitorRevision,
+                           "a disposed binder must not apply later acknowledged revisions")
+        }
+    }
+
+    @MainActor func testVisibleHeadroomAppliesAcknowledgedFeatureDisableImmediately() async throws {
+        try await run { _, services, _ in
+            let model = HeadroomViewModel(monitor: services.systemMonitor,
+                cardOrder: resolvedUICardOrder(services.configStore.acknowledgedEffectivePolicy))
+            model.onAppear()
+            var deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if await services.systemMonitor.isTimerRunningForTesting() { break }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let runningBeforeDisable = await services.systemMonitor.isTimerRunningForTesting()
+            XCTAssertTrue(runningBeforeDisable)
+
+            guard case .accepted(_, let completion) = services.configStore.setGlobalPreference(
+                SettingID(rawValue: "feature.headroom"), to: .bool(false)),
+                  case .saved = await completion.value else {
+                return XCTFail("feature disable was not acknowledged")
+            }
+            deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                let running = await services.systemMonitor.isTimerRunningForTesting()
+                if !running { break }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let runningAfterDisable = await services.systemMonitor.isTimerRunningForTesting()
+            XCTAssertFalse(runningAfterDisable)
+            model.refreshNow()
+            deadline = Date().addingTimeInterval(2)
+            while model.snapshot?.unavailableReason == nil, Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            XCTAssertEqual(model.snapshot?.unavailableReason, SystemMonitor.featureDisabledReason)
+            model.onDisappear()
+        }
+    }
+
     private func run(stops: Set<String> = [], seed: Data? = nil,
                      fault: A3RealIO.Fault = .none,
                      _ body: (A3Scratch, AppExecutionServices, A3RealIO) async throws -> Void) async throws {
@@ -2893,6 +3306,71 @@ extension SharedSettingsWiringTests {
     private func t07Profile(_ id: UUID, _ name: String,
                             _ pairs: [(String, SettingValue)] = []) -> SavedProfile {
         .init(id: id, name: name, values: t07Values(pairs))
+    }
+
+    @MainActor
+    func testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending()
+        async throws {
+        let savedProfileName = "saved-profile-DIAGNOSTIC-SENTINEL"
+        let savedPath = "/Users/personal-DIAGNOSTIC-SENTINEL"
+        let redactionID = t07ID("export.redactDiagnostics")
+        let savedProfile = t07Profile(UUID(), savedProfileName)
+        let seed = try SettingsDecoding.encode(SettingsEnvelope(schemaVersion: 2, revision: 0,
+            config: .init(schemaVersion: 2, gitRoots: [savedPath]),
+            preferences: .init(global: t07Values([
+                (redactionID.rawValue, .bool(false)),
+                ("scope.excludedRoots", .strings([savedPath]))
+            ]), profiles: [savedProfile])))
+
+        try await run(stops: ["config.1"], seed: seed) { _, services, io in
+            let pendingProfileName = "pending-profile-DIAGNOSTIC-SENTINEL"
+            let delta = PreferencesDocumentDelta(baseRevision: 0, global: [
+                .init(id: redactionID, baseValue: .bool(false), editedValue: .bool(true))
+            ], profiles: [.insert(self.t07Profile(UUID(), pendingProfileName))])
+            guard case .accepted = services.configStore.submit(document: delta) else {
+                return XCTFail("Diagnostic fixture edit was rejected")
+            }
+            try await io.probe.waitFor("config.1")
+            XCTAssertEqual(services.configStore.profiles.count, 2,
+                "The pending fixture did not reach displayed settings")
+            XCTAssertEqual(services.configStore.effectivePolicy?.fields[redactionID]?.value,
+                           .stored(.bool(true)))
+
+            let input = services.configStore.makeDiagnosticExportInput()
+            let bytes = try DiagnosticExportRenderer.render(input).primaryCandidate
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes)
+                as? [String: Any])
+            XCTAssertEqual((object["settingsRevision"] as? NSNumber)?.uint64Value, 0)
+            XCTAssertEqual((object["profileCount"] as? NSNumber)?.intValue, 1)
+            XCTAssertEqual((object["cosmeticRedactionEnabled"] as? NSNumber)?.boolValue,
+                           false)
+            let text = String(decoding: bytes, as: UTF8.self)
+            for sensitive in [savedProfileName, pendingProfileName, savedPath] {
+                XCTAssertFalse(text.contains(sensitive))
+            }
+            XCTAssertTrue(input.credentials.isEmpty && input.cookies.isEmpty
+                && input.environment.isEmpty && input.argv.isEmpty
+                && input.remotes.isEmpty && input.personalPaths.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testDiagnosticExportSnapshotDefaultsRedactionOnWhenAcknowledgedPolicyUnavailable()
+        async throws {
+        try await run { _, services, _ in
+            let unresolved = SettingsEnvelope(schemaVersion: 2, revision: 9,
+                config: .init(), preferences: .init(), activeProfileID: UUID())
+            let store = AppConfigStore(loaded: unresolved, bridge: services.policyBridge)
+            XCTAssertNil(store.acknowledgedEffectivePolicy)
+
+            let bytes = try DiagnosticExportRenderer.render(
+                store.makeDiagnosticExportInput()).primaryCandidate
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes)
+                as? [String: Any])
+            XCTAssertEqual((object["settingsRevision"] as? NSNumber)?.uint64Value, 9)
+            XCTAssertEqual((object["cosmeticRedactionEnabled"] as? NSNumber)?.boolValue,
+                           true)
+        }
     }
 
     func testDocumentActivationInvalidatesSynchronouslyResolvesAndRelaunches() async throws {
@@ -3766,8 +4244,13 @@ extension SharedSettingsWiringTests {
             }
             XCTAssertFalse(readOnlyGlobalRows.isEmpty)
             for row in readOnlyGlobalRows {
-                guard case .unavailable = row.availability else {
-                    return XCTFail("read-only global P/R row not unavailable: \(row.id.rawValue)")
+                if ["scope.currentProject", "scope.pinnedProjects"].contains(row.id.rawValue) {
+                    XCTAssertEqual(row.availability,
+                        .deferred("Manage project protection in Developer Workspace."))
+                } else {
+                    guard case .unavailable = row.availability else {
+                        return XCTFail("read-only global P/R row not unavailable: \(row.id.rawValue)")
+                    }
                 }
                 XCTAssertNil(model.submit(id: row.id,
                     value: row.setting.definition.defaultValue))
@@ -3796,8 +4279,18 @@ extension SharedSettingsWiringTests {
                 row.setting.definition.layers.contains(.global) && row.controlKind != .readOnly {
                 XCTAssertEqual(row.controlKind,
                                expectedSettingsControl(row.setting.definition))
-                guard case .editable = row.availability else {
-                    return XCTFail("supported global P/R row is not editable: \(row.id.rawValue)")
+                let support = SettingsPresentationRegistry.consumerSupport(
+                    for: row.setting.definition)
+                if support.isConnected {
+                    guard case .editable = row.availability else {
+                        return XCTFail("connected global P/R row is not editable: \(row.id.rawValue)")
+                    }
+                } else {
+                    guard case .unavailable = row.availability else {
+                        return XCTFail("unimplemented row is not visibly unavailable: \(row.id.rawValue)")
+                    }
+                    XCTAssertNil(model.submit(id: row.id,
+                        value: row.setting.definition.defaultValue))
                 }
             }
             for row in all {
@@ -3816,6 +4309,36 @@ extension SharedSettingsWiringTests {
     }
 
     @MainActor
+    func testLocalAuthorityProjectionDoesNotWritePortableSettings() async throws {
+        try await run { scratch, services, _ in
+            let directory = scratch.root.appendingPathComponent("authority")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+            let authority = try LocalAuthorityStore(directory: directory,
+                installation: LocalInstallationIdentity.verify(directory: directory))
+            let before = try? Data(contentsOf: scratch.paths.settings)
+            let revision = services.configStore.acknowledgedSettingsRevision
+            let owner = LocalAuthorityOwner()
+            let token = try await authority.beginReview(scope: .notifications, owner: owner,
+                nowMonotonicNanoseconds: 1)
+            let approved = try await authority.confirm(token, owner: owner,
+                nowMonotonicNanoseconds: 2)
+            services.configStore.installLocalAuthority(approved)
+            let id = SettingID(rawValue: "notifications.enabled")
+            XCTAssertEqual(services.configStore.acknowledgedEffectivePolicy?.fields[id]?.value,
+                           .stored(.bool(true)))
+            XCTAssertNil(services.configStore.preferences.global.fields[id])
+            XCTAssertEqual(services.configStore.acknowledgedSettingsRevision, revision)
+            XCTAssertEqual(try? Data(contentsOf: scratch.paths.settings), before)
+            _ = try await authority.revoke(.notifications)
+            // The captured snapshot denies even before the stream installs its replacement.
+            XCTAssertNotEqual(services.configStore.acknowledgedEffectivePolicy?.fields[id]?.value,
+                              .stored(.bool(true)))
+            services.configStore.installLocalAuthority(nil)
+        }
+    }
+
+    @MainActor
     func testSettingsRepresentativeGlobalControlsUseSharedStore() async throws {
         try await run { _, services, _ in
             let bundle = Bundle(for: SharedSettingsWiringTests.self)
@@ -3823,8 +4346,8 @@ extension SharedSettingsWiringTests {
             let second = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
             let edits: [(String, SettingValue)] = [
                 ("feature.headroom", .bool(false)),
-                ("cleanup.inactiveDays", .integer(61)),
-                ("cleanup.hardBatchGiB", .integer(20)),
+                ("scan.preset", .choice("balanced")),
+                ("monitor.visibleIntervalSeconds", .integer(6)),
                 ("ui.units", .choice("decimal"))
             ]
 
@@ -3848,6 +4371,15 @@ extension SharedSettingsWiringTests {
                 XCTAssertEqual(second.rows(query: raw, showsAdvanced: false)
                     .first { $0.id == id }?.storedValue, value)
             }
+
+            let unavailableID = SettingID(rawValue: "ecosystem.apple.manualActions")
+            let unavailable = try XCTUnwrap(first.rows(query: unavailableID.rawValue,
+                showsAdvanced: false).first { $0.id == unavailableID })
+            guard case .unavailable(let reason) = unavailable.availability else {
+                return XCTFail("Unaccepted mutation controls must be visibly unavailable")
+            }
+            XCTAssertTrue(reason.contains("accepted production effect adapter"))
+            XCTAssertNil(first.submit(id: unavailableID, value: .bool(true)))
         }
     }
 
@@ -3870,7 +4402,7 @@ extension SharedSettingsWiringTests {
             XCTAssertTrue(rows.allSatisfy { !$0.defaultText.isEmpty && !$0.effectiveText.isEmpty &&
                 !$0.sourceText.isEmpty && !$0.ruleText.isEmpty && !$0.consequence.isEmpty })
             XCTAssertEqual(SettingsVisualContract.titleRole, .primary)
-            XCTAssertEqual(SettingsVisualContract.metadataRole, .secondary)
+            XCTAssertEqual(SettingsVisualContract.metadataRole, .primary)
             XCTAssertEqual(SettingsVisualContract.unavailableRole, .warning)
             XCTAssertEqual(SettingsVisualContract.layoutMode(for: .large), .columns)
             XCTAssertEqual(SettingsVisualContract.layoutMode(for: .accessibility1), .stacked)

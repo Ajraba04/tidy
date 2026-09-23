@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/usr/bin/time",
+    "-l",
+    "swift",
+    "test",
+    "--jobs",
+    "2",
+    "--no-parallel",
+    "--filter",
+    "PolicyAuditPerformanceTests"
+  ],
+  "cwd": "/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore",
+  "started_utc": "2026-09-17T15:33:48.864999+00:00",
+  "ended_utc": "2026-09-17T15:33:52.421386+00:00",
+  "seconds": 3.556,
+  "exit_code": 0
+}

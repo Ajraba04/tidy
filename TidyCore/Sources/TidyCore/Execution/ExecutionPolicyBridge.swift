@@ -3,6 +3,80 @@ import Observation
 
 public typealias SettingsIntentID = UUID
 
+private final class SettingsSchedulerBootstrapUse: @unchecked Sendable {
+    private let lock = NSLock()
+    private var consumed = false
+
+    func consume() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !consumed else { return false }
+        consumed = true
+        return true
+    }
+}
+
+/// Store-bound bootstrap evidence. Its initializer is file-private, so an app
+/// caller cannot manufacture absent-file provenance from a default envelope or
+/// replay provenance from another `SettingsStore` actor.
+public struct SettingsSchedulerBootstrap: @unchecked Sendable {
+    public let result: SettingsLoadResult
+    fileprivate let store: SettingsStore
+    fileprivate let generation: UInt64?
+    fileprivate let image: SettingsDiskImage?
+    fileprivate let use: SettingsSchedulerBootstrapUse
+
+    fileprivate init(result: SettingsLoadResult, store: SettingsStore,
+                     generation: UInt64?, image: SettingsDiskImage?) {
+        self.result = result
+        self.store = store
+        self.generation = generation
+        self.image = image
+        self.use = SettingsSchedulerBootstrapUse()
+    }
+
+    fileprivate func belongs(to store: SettingsStore, result: SettingsLoadResult) -> Bool {
+        self.store === store && self.result == result && generation != nil && image != nil
+    }
+}
+
+private struct SettingsSchedulerBootstrapLease: Sendable {
+    let id: UUID
+}
+
+public extension SettingsStore {
+    /// Loads settings and binds the exact result to this actor for app bootstrap.
+    /// Ordinary `load()` remains data only and cannot opt revision zero into the scheduler.
+    func loadForSchedulerBootstrap() -> SettingsSchedulerBootstrap {
+        let result = load()
+        let generation = schedulerBootstrapGenerationExhausted
+            ? nil : schedulerBootstrapGeneration
+        let image = schedulerBootstrapImageForIssue()
+        return SettingsSchedulerBootstrap(result: result, store: self,
+            generation: generation, image: image)
+    }
+
+    fileprivate func acquireSchedulerBootstrap(
+        _ bootstrap: SettingsSchedulerBootstrap
+    ) -> SettingsSchedulerBootstrapLease? {
+        guard bootstrap.store === self, bootstrap.result.disposition == .newDefaults,
+              let generation = bootstrap.generation,
+              generation == schedulerBootstrapGeneration,
+              !schedulerBootstrapGenerationExhausted,
+              schedulerBootstrapReservation == nil,
+              let image = bootstrap.image,
+              bootstrap.use.consume(),
+              revalidateSchedulerBootstrapImage(image) else { return nil }
+        let lease = SettingsSchedulerBootstrapLease(id: UUID())
+        schedulerBootstrapReservation = lease.id
+        return lease
+    }
+
+    fileprivate func releaseSchedulerBootstrap(_ lease: SettingsSchedulerBootstrapLease) {
+        guard schedulerBootstrapReservation == lease.id else { return }
+        schedulerBootstrapReservation = nil
+    }
+}
+
 public enum SettingsSubmissionRejection: Equatable, Sendable {
     case invalid, unsupportedAuthority, queueFull, unavailable
 }
@@ -60,9 +134,16 @@ public struct BridgeExplicitSessions: Sendable {
     /// Awaits the bridge's own pending initial-install/settle work (see `ExecutionPolicyBridge
     /// .drain()`) without granting any additional authority. A caller that needs to know whether
     /// the scheduler is genuinely installed should call this first, then read `snapshot()
-    /// .availability` — a revision-zero/fresh-install envelope deliberately leaves availability
-    /// `.unavailable` until a real settings save completes, so this never fabricates readiness.
+    /// .availability`. Exact in-memory defaults from an absent settings file may install
+    /// read-only explicit-scan policy; arbitrary revision-zero documents remain unavailable.
     public func awaitInitialInstall() async { await bridge.drain() }
+
+    public func updateLiveObservation(epoch: UInt64, monotonicNanoseconds: UInt64,
+                                      observation: SchedulerLiveObservation) async
+      -> SchedulerLiveObservationResult {
+        await bridge.updateLiveObservation(epoch: epoch,
+            monotonicNanoseconds: monotonicNanoseconds, observation: observation)
+    }
 }
 
 @Observable @MainActor
@@ -74,6 +155,10 @@ public final class ExecutionPolicyBridge {
     public private(set) var persistenceError: String?
     public private(set) var durableSettingsRevision: UInt64?
     public private(set) var acknowledgedEnvelope: SettingsEnvelope?
+    /// The exact envelope accepted by the read-only scheduler. This may be
+    /// revision zero only for canonical in-memory `.newDefaults`; mutation
+    /// authority continues to use the separately quarantined coordinator.
+    internal private(set) var acknowledgedScanEnvelope: SettingsEnvelope?
     internal private(set) var pendingSnapshotCount = 0
     internal private(set) var pendingSnapshotBytes = 0
 
@@ -106,6 +191,8 @@ public final class ExecutionPolicyBridge {
     private var pendingSchedulerInvalidations: Set<SettingsIntentID> = []
     private var pendingSchedulerTickets: [SettingsIntentID: SchedulerAdmissionTicket] = [:]
     private var pendingSchedulerHolds: [SettingsIntentID: SchedulerAdmissionHold] = [:]
+    private var liveObservationEpoch: UInt64 = 0
+    private var criticalResumeNotBefore: UInt64?
 
     private enum SchedulerPreparation {
         case invalidating(PreparedSchedulerPolicy)
@@ -164,13 +251,24 @@ public final class ExecutionPolicyBridge {
                             loaded: SettingsLoadResult, homeDirectory: String,
                             detectedTools: Set<ToolchainID>) {
         self.init(coordinator: coordinator, settings: settings, loaded: loaded,
-                  homeDirectory: homeDirectory, detectedTools: detectedTools,
+                  bootstrap: nil, homeDirectory: homeDirectory, detectedTools: detectedTools,
                   pendingByteLimit: Self.maximumPendingBytes, schedulerTestHook: nil,
                   testHook: nil)
     }
 
+    public convenience init(coordinator: ExecutionCoordinator, settings: SettingsStore,
+                            bootstrap: SettingsSchedulerBootstrap, homeDirectory: String,
+                            detectedTools: Set<ToolchainID>) {
+        self.init(coordinator: coordinator, settings: settings, loaded: bootstrap.result,
+                  bootstrap: bootstrap, homeDirectory: homeDirectory,
+                  detectedTools: detectedTools, pendingByteLimit: Self.maximumPendingBytes,
+                  schedulerTestHook: nil, testHook: nil)
+    }
+
     internal init(coordinator: ExecutionCoordinator, settings: SettingsStore,
-                  loaded: SettingsLoadResult, homeDirectory: String,
+                  loaded: SettingsLoadResult,
+                  bootstrap: SettingsSchedulerBootstrap? = nil,
+                  homeDirectory: String,
                   detectedTools: Set<ToolchainID>, pendingByteLimit: Int,
                   schedulerTestHook: (any SchedulerTestHook)? = nil,
                   testHook: (any ExecutionPolicyBridgeTestHook)? = nil) {
@@ -210,14 +308,29 @@ public final class ExecutionPolicyBridge {
             catch { self.persistenceError = "Settings could not be applied. Cleanup remains disabled." }
         }
 
+        let initialSchedulerOrigin: SchedulerPolicyOrigin?
         if let envelope, envelope.revision > 0, loaded.disposition != .recoveryReadOnly {
+            initialSchedulerOrigin = .durable
+        } else if let envelope, bootstrap?.belongs(to: settings, result: loaded) == true,
+                  loaded.disposition == .newDefaults,
+                  envelope == Self.canonicalFreshDefaults {
+            initialSchedulerOrigin = .freshDefaults
+        } else {
+            initialSchedulerOrigin = nil
+        }
+        if let envelope, let initialSchedulerOrigin {
             initialSchedulerInstall = Task { @MainActor [weak self] in
-                await self?.installInitialScheduler(envelope)
+                await self?.installInitialScheduler(envelope, origin: initialSchedulerOrigin,
+                    bootstrap: bootstrap)
             }
         }
     }
 
     @discardableResult
+    internal func scanScopeValidity() -> @Sendable () -> Bool {
+        schedulerController.readValidity()
+    }
+
     public func observeOutcomes(
         _ observer: @escaping @MainActor (SettingsIntentOutcome) -> Void
     ) -> UUID {
@@ -653,6 +766,7 @@ public final class ExecutionPolicyBridge {
         lastSuccessfullyPersistedRevision = saved.revision
         durableSettingsRevision = saved.revision
         acknowledgedEnvelope = saved
+        acknowledgedScanEnvelope = nil
         issuedImportBinding = nil
         _ = advanceImportLifecycle()
         guard schedulerCommitted else {
@@ -666,6 +780,7 @@ public final class ExecutionPolicyBridge {
             }
             return .saved(id, saved)
         }
+        acknowledgedScanEnvelope = saved
         if let ticket {
             let environment = saved.config.makePolicyEnvironment(
                 homeDirectory: homeDirectory, detectedTools: detectedTools)
@@ -939,19 +1054,40 @@ public final class ExecutionPolicyBridge {
         return true
     }
 
-    private func installInitialScheduler(_ envelope: SettingsEnvelope) async {
-        // A positive loaded revision is a durable acknowledgement, but it still
-        // enters the scheduler through the same first-install invalidating path.
-        // A competing accepted bridge handoff wins; its barrier remains closed.
+    private static var canonicalFreshDefaults: SettingsEnvelope {
+        SettingsEnvelope(schemaVersion: TidyConfig.currentSchemaVersion, revision: 0,
+            config: TidyConfig(schemaVersion: TidyConfig.currentSchemaVersion))
+    }
+
+    private func installInitialScheduler(_ envelope: SettingsEnvelope,
+                                         origin: SchedulerPolicyOrigin,
+                                         bootstrap: SettingsSchedulerBootstrap?) async {
+        // Durable policy and exact absent-file defaults both enter through the
+        // first-install invalidating path. A competing accepted bridge handoff
+        // wins; its barrier remains closed.
+        if origin == .freshDefaults {
+            guard let bootstrap,
+                  let lease = await settings.acquireSchedulerBootstrap(bootstrap) else { return }
+            await installInitialSchedulerUnderLease(envelope, origin: origin)
+            await settings.releaseSchedulerBootstrap(lease)
+            return
+        }
+        await installInitialSchedulerUnderLease(envelope, origin: origin)
+    }
+
+    private func installInitialSchedulerUnderLease(_ envelope: SettingsEnvelope,
+                                                   origin: SchedulerPolicyOrigin) async {
         guard schedulerAdmissionPendingCount == 0 else { return }
         let admission: SchedulerAdmissionTicket
         do { admission = try schedulerController.beginAdmissionTransition(using: schedulerCapability) }
         catch { return }
         let preparation = await schedulerController.prepare(admission, candidate: envelope,
-            observation: .unknown, using: schedulerCapability)
+            observation: .unknown, origin: origin, using: schedulerCapability)
         guard case .prepared(let prepared, _) = preparation else { return }
-        _ = await schedulerController.commit(prepared, acknowledgedEnvelope: envelope,
-            using: schedulerCapability)
+        if case .committed = await schedulerController.commit(prepared,
+            acknowledgedEnvelope: envelope, using: schedulerCapability) {
+            acknowledgedScanEnvelope = envelope
+        }
     }
 
     fileprivate func beginExplicitSession(requirements: SchedulerRequirements) async throws -> WorkSession {
@@ -982,6 +1118,62 @@ public final class ExecutionPolicyBridge {
 
     fileprivate func explicitSessionSnapshot() async -> WorkSchedulerSnapshot {
         await scheduler.snapshot()
+    }
+
+    fileprivate func updateLiveObservation(epoch: UInt64, monotonicNanoseconds: UInt64,
+                                           observation: SchedulerLiveObservation) async
+      -> SchedulerLiveObservationResult {
+        guard epoch > liveObservationEpoch else {
+            return .rejectedStale(current: liveObservationEpoch)
+        }
+        guard let envelope = acknowledgedScanEnvelope,
+              schedulerAdmissionPendingCount == 0 else {
+            return .unavailable
+        }
+        let raw: SchedulerObservation
+        switch observation {
+        case .unknown: raw = .unknown
+        case .nominal: raw = .nominal
+        case .constrained: raw = .constrained
+        case .critical: raw = .critical
+        }
+        let effective: SchedulerObservation
+        if raw == .critical {
+            let policy = await schedulerController.resolvedPolicy(
+                using: schedulerCapability)
+            let seconds: UInt64
+            if case .stored(.integer(let configured))? = policy?.fields[
+                SettingID(rawValue: "scan.resumeAfterCriticalSeconds")]?.value,
+               configured >= 0, let exact = UInt64(exactly: configured) {
+                seconds = exact
+            } else {
+                seconds = 120
+            }
+            let (delay, delayOverflow) = seconds.multipliedReportingOverflow(by: 1_000_000_000)
+            let (deadline, deadlineOverflow) = monotonicNanoseconds.addingReportingOverflow(delay)
+            guard !delayOverflow, !deadlineOverflow else { return .unavailable }
+            criticalResumeNotBefore = deadline
+            effective = .critical
+        } else if let deadline = criticalResumeNotBefore,
+                  monotonicNanoseconds < deadline {
+            effective = .critical
+        } else {
+            criticalResumeNotBefore = nil
+            effective = raw
+        }
+        let result = await schedulerController.updateObservation(epoch: epoch,
+            observation: effective, acknowledgedEnvelope: envelope,
+            using: schedulerCapability)
+        switch result {
+        case .applied:
+            liveObservationEpoch = epoch
+            return .applied
+        case .rejectedStale(let current):
+            liveObservationEpoch = max(liveObservationEpoch, current)
+            return .rejectedStale(current: current)
+        case .failedClosed:
+            return .unavailable
+        }
     }
 
     public func drain() async {

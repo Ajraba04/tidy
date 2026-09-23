@@ -1,4 +1,5 @@
 import Foundation
+import CoreServices
 import Testing
 @testable import TidyCore
 
@@ -11,13 +12,19 @@ actor FakeScanEventSource: ScanEventSource {
     private(set) var lastResumeCursor: UInt64?
     private(set) var lastPersistedDeviceUUID: String?
     private var streams: [FakeScanEventStream] = []
+    private var initialBatches: [ScanEventBatch?]
+
+    init(initialBatches: [ScanEventBatch?] = []) {
+        self.initialBatches = initialBatches
+    }
 
     func makeStream(roots: [String], resumeCursor: UInt64?,
                     persistedDeviceUUID: String?) async -> any ScanEventStream {
         makeStreamCallCount += 1
         lastResumeCursor = resumeCursor
         lastPersistedDeviceUUID = persistedDeviceUUID
-        let stream = FakeScanEventStream(resumeCursor: resumeCursor)
+        let initial = initialBatches.isEmpty ? nil : initialBatches.removeFirst()
+        let stream = FakeScanEventStream(resumeCursor: resumeCursor, initialBatch: initial)
         streams.append(stream)
         return stream
     }
@@ -47,11 +54,18 @@ actor FakeScanEventStream: ScanEventStream {
     private var pending: [ScanEventBatch] = []
     private var waiter: CheckedContinuation<ScanEventBatch, Never>?
     private var cursor: UInt64
+    private var startupBatch: ScanEventBatch?
     private(set) var stopped = false
     private(set) var flushCount = 0
 
-    init(resumeCursor: UInt64?) {
+    init(resumeCursor: UInt64?, initialBatch: ScanEventBatch? = nil) {
         cursor = resumeCursor ?? 0
+        startupBatch = initialBatch
+    }
+
+    func initialBatch() async -> ScanEventBatch? {
+        defer { startupBatch = nil }
+        return startupBatch
     }
 
     func enqueue(events: [ScanEvent], historyReliable: Bool) {
@@ -94,6 +108,118 @@ actor FakeScanEventStream: ScanEventStream {
 
 @Suite("T09 ScanInvalidation generation ledger")
 struct ScanInvalidationTests {
+    @Test func historyDoneMarkerIsNotTreatedAsFilesystemMutation() {
+        #expect(!fsEventRepresentsMutation(
+            FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone)))
+        #expect(fsEventRepresentsMutation(FSEventStreamEventFlags(
+            kFSEventStreamEventFlagNone)))
+    }
+    @Test func liveDeliveryQueueIsBoundedAndOverflowFailsClosed() async {
+        let box = FSEventsDeliveryBox()
+        for cursor in 1...100 {
+            box.deliver(ScanEventBatch(events: [ScanEvent(path: "/fixture/\(cursor)")],
+                cursor: UInt64(cursor), historyReliable: true))
+        }
+        #expect(box.pendingBatchCountForTesting() <= 64)
+        var sawUnreliable = false
+        for _ in 0..<box.pendingBatchCountForTesting() {
+            let batch = await box.next()
+            if !batch.historyReliable { sawUnreliable = true }
+            #expect(batch.events.count <= 4_096)
+        }
+        #expect(sawUnreliable)
+
+        let oversized = (0..<4_100).map { ScanEvent(path: "/fixture/e\($0)") }
+        box.deliver(ScanEventBatch(events: oversized, cursor: 101, historyReliable: true))
+        let bounded = await box.next()
+        #expect(bounded.events.isEmpty,
+            "overflow collapses to a marker without retaining a discarded prefix")
+        #expect(!bounded.historyReliable)
+    }
+
+    @Test("long callback paths are rejected before Swift bridging and pending bytes stay bounded")
+    func longPathStormIsByteBoundedAndFailsClosed() async {
+        let oversized = NSString(string: "/fixture/" + String(repeating: "x",
+            count: FSEventsDeliveryBox.maximumUTF8BytesPerPath + 1))
+        let callbackPaths: NSArray = Array(repeating: oversized, count: 8_192) as NSArray
+        let converted = boundedFSEventCallbackPaths(callbackPaths, eventCount: 8_192)
+        #expect(converted.events.isEmpty)
+        #expect(converted.utf8Bytes == 0)
+        #expect(converted.didOverflow)
+        #expect(converted.convertedPathCount <= FSEventsDeliveryBox.maximumEventsPerBatch)
+
+        let nearLimit = "/fixture/" + String(repeating: "y",
+            count: FSEventsDeliveryBox.maximumUTF8BytesPerPath - 9)
+        let batchOverflowBox = FSEventsDeliveryBox()
+        let pathsToExceedBatchBytes =
+            FSEventsDeliveryBox.maximumUTF8BytesPerBatch / nearLimit.utf8.count + 1
+        batchOverflowBox.deliver(ScanEventBatch(
+            events: Array(repeating: ScanEvent(path: nearLimit),
+                count: pathsToExceedBatchBytes), cursor: 1, historyReliable: true))
+        let batchOverflow = await batchOverflowBox.next()
+        #expect(batchOverflow.events.isEmpty)
+        #expect(!batchOverflow.historyReliable)
+
+        let pendingOverflowBox = FSEventsDeliveryBox()
+        let pathsPerRetainedBatch = max(1,
+            FSEventsDeliveryBox.maximumUTF8BytesPerBatch / nearLimit.utf8.count / 2)
+        let bytesPerRetainedBatch = pathsPerRetainedBatch * nearLimit.utf8.count
+        let batchesToExceedPendingBytes =
+            FSEventsDeliveryBox.maximumPendingUTF8Bytes / bytesPerRetainedBatch + 1
+        for cursor in 1...batchesToExceedPendingBytes {
+            pendingOverflowBox.deliver(ScanEventBatch(
+                events: Array(repeating: ScanEvent(path: nearLimit),
+                    count: pathsPerRetainedBatch),
+                cursor: UInt64(cursor), historyReliable: true))
+        }
+        #expect(pendingOverflowBox.pendingUTF8BytesForTesting()
+            <= FSEventsDeliveryBox.maximumPendingUTF8Bytes)
+        #expect(pendingOverflowBox.pendingBatchCountForTesting() == 1)
+        let overflow = await pendingOverflowBox.next()
+        #expect(overflow.events.isEmpty)
+        #expect(!overflow.historyReliable)
+    }
+
+    @Test("FSEvents startup requires cursor and both matching device identities")
+    func startupHistoryTrustRequiresCompleteDeviceProof() {
+        #expect(FSEventsStartupHistory.isReliable(resumeCursor: 9,
+            persistedDeviceUUID: "device-a", liveDeviceUUID: "device-a", streamStarted: true))
+        #expect(!FSEventsStartupHistory.isReliable(resumeCursor: 9,
+            persistedDeviceUUID: nil, liveDeviceUUID: "device-a", streamStarted: true))
+        #expect(!FSEventsStartupHistory.isReliable(resumeCursor: 9,
+            persistedDeviceUUID: "device-a", liveDeviceUUID: nil, streamStarted: true))
+        #expect(!FSEventsStartupHistory.isReliable(resumeCursor: 9,
+            persistedDeviceUUID: "device-a", liveDeviceUUID: "device-b", streamStarted: true))
+        #expect(!FSEventsStartupHistory.isReliable(resumeCursor: nil,
+            persistedDeviceUUID: "device-a", liveDeviceUUID: "device-a", streamStarted: true))
+    }
+
+    @Test("suspension atomically rejects an event after expected-generation capture")
+    func suspensionCheckpointCannotNormalizeInterleavingEvent() async {
+        let root = "/fixture/root"
+        let invalidation = ScanInvalidation(source: FakeScanEventSource())
+        await invalidation.start(approvedRoots: [root], resumeCursor: 0,
+            persistedDeviceUUID: "device-a")
+        let expected = [root: await invalidation.currentGeneration(for: root)]
+        let rejected = await invalidation.prepareManualContinuationSuspension(
+            expectedGenerations: expected,
+            interleavingBatchForTesting: ScanEventBatch(
+                events: [ScanEvent(path: root + "/already-visited")], cursor: 1,
+                historyReliable: true))
+        #expect(rejected == nil)
+        #expect(await invalidation.currentGeneration(for: root) == 1,
+            "the event must remain visible, not be folded into a new checkpoint")
+        await invalidation.stop()
+
+        let clean = ScanInvalidation(source: FakeScanEventSource())
+        await clean.start(approvedRoots: [root], resumeCursor: 0,
+            persistedDeviceUUID: "device-a")
+        let checkpoint = await clean.prepareManualContinuationSuspension(
+            expectedGenerations: [root: 0])
+        #expect(checkpoint?.generations[PathGuard.canonicalize(root)] == 1)
+        #expect(await clean.isWatchActive() == false)
+        await clean.stop()
+    }
     @Test("a deeply changed descendant bumps the root's generation even though the root path itself never appears in the event")
     func deeplyChangedDescendantBumpsRootGeneration() async throws {
         let source = FakeScanEventSource()
@@ -218,17 +344,20 @@ struct ScanInvalidationTests {
         let invalidation = ScanInvalidation(source: source)
         let root = "/tmp/fixture-root"
         await invalidation.start(approvedRoots: [root], resumeCursor: nil)
+        let generationBeforeStop = await invalidation.currentGeneration(for: root)
         // `stop()` awaits the pump task's own completion (`await pumpTask?.value`) after
         // unblocking it via the stream's `stop()`, so by the time this call returns the pump is
         // guaranteed to have exited — no polling loop needed to make this assertion safe.
         await invalidation.stop()
         #expect(await source.lastStreamIsStopped())
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop,
+            "the neutral batch used to unblock a cancelled pump must not invalidate roots")
         await invalidation.invalidateRoot(root)
-        #expect(await invalidation.currentGeneration(for: root) == 1,
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop + 1,
             "the ledger itself still works after stop(); only the event pump is gone")
 
         await source.emit(events: [ScanEvent(path: root + "/x")], historyReliable: true)
-        #expect(await invalidation.currentGeneration(for: root) == 1,
+        #expect(await invalidation.currentGeneration(for: root) == generationBeforeStop + 1,
             "an event emitted after stop() has no running pump left to apply it")
     }
 

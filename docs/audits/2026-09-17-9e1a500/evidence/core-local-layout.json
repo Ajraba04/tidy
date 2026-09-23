@@ -1,0 +1,16 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--jobs",
+    "2",
+    "--no-parallel",
+    "--skip",
+    "SimctlClientTests|SafetyAuditRegressionTests|PolicyAuditRegressionTests"
+  ],
+  "cwd": "/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore",
+  "started_utc": "2026-09-17T15:28:37.716591+00:00",
+  "ended_utc": "2026-09-17T15:31:25.643497+00:00",
+  "seconds": 167.927,
+  "exit_code": 0
+}

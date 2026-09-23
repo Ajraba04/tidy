@@ -29,12 +29,31 @@ private func waitForBudgetQueue(_ gate: ProcessJobGate, readers: Int? = nil,
     Issue.record("process-budget queue did not reach the expected state")
 }
 
+private final class RawLaunchProbeBundleMarker: NSObject {}
+
 private func compileRawLaunchProbe(_ source: String) async throws -> BoundedProcessOutput {
-    let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    let package = tests.deletingLastPathComponent().deletingLastPathComponent()
-    let modules = package.appendingPathComponent(".build/debug")
-    let module = modules.appendingPathComponent("TidyCore.swiftmodule")
-    guard FileManager.default.fileExists(atPath: module.path) else {
+    // Resolve the module next to the actual loaded test product. SwiftPM's
+    // native and Xcode build systems use different layouts, including when
+    // --scratch-path is external to the package.
+    var candidates: [URL] = []
+    var loadedProducts = [Bundle(for: RawLaunchProbeBundleMarker.self).bundleURL,
+                          Bundle.main.bundleURL,
+                          URL(fileURLWithPath: CommandLine.arguments[0])]
+    if let flag = CommandLine.arguments.firstIndex(of: "--test-bundle-path"),
+       CommandLine.arguments.indices.contains(flag + 1) {
+        loadedProducts.append(URL(fileURLWithPath: CommandLine.arguments[flag + 1]))
+    }
+    for product in loadedProducts {
+        var directory = product.deletingLastPathComponent()
+        for _ in 0..<5 {
+            candidates.append(directory)
+            candidates.append(directory.appendingPathComponent("Modules"))
+            directory.deleteLastPathComponent()
+        }
+    }
+    guard let modules = candidates.first(where: {
+        FileManager.default.fileExists(atPath: $0.appendingPathComponent("TidyCore.swiftmodule").path)
+    }) else {
         throw CocoaError(.fileNoSuchFile)
     }
     let root = FileManager.default.temporaryDirectory
@@ -224,6 +243,8 @@ struct ProcessBudgetIntegrationTests {
     }
 
     @Test func rawMutationGateAndSessionLaunchDoNotCompileForImporters() async throws {
+        let positive = try await compileRawLaunchProbe("import TidyCore\nlet count = CleanCatalog.allItems.count")
+        #expect(positive.end == .exited(0), "The actual built TidyCore module must import before checking denial")
         let output = try await compileRawLaunchProbe("""
         import Foundation
         @testable import TidyCore

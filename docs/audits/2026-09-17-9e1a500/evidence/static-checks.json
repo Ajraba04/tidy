@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess,pathlib,plistlib; p=subprocess.run([\"rg\",\"-n\",\"binjamshid|albayyan|claude\\\\.ai|/Users/[A-Za-z]\",\"TidyCore/Sources\",\"Tidy\"],capture_output=True,text=True); print(\"personal-pattern-search exit\",p.returncode,\"matches\",p.stdout); [print(str(f),\"valid\",bool(plistlib.loads(f.read_bytes()))) for f in [pathlib.Path(\"Tidy/PrivacyInfo.xcprivacy\"),pathlib.Path(\"Tidy/Tidy.entitlements\")]]; subprocess.run([\"git\",\"diff\",\"--check\"]);subprocess.run([\"bash\",\"-n\",\"scripts/make-release.sh\"])"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:37:46.902191+00:00",
+  "ended_utc": "2026-09-17T15:37:47.038111+00:00",
+  "seconds": 0.136,
+  "exit_code": 0
+}

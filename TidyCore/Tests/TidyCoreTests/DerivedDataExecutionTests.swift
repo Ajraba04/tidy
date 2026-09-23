@@ -3,12 +3,9 @@ import Darwin
 import Testing
 @testable import TidyCore
 
-/// End-to-end fixture coverage for the first accepted production effect:
-/// `safe.xcode.derived-data` / `.deleteContents`, dispatched through the
-/// real sealed path (`ExecutionCoordinator.execute` ->
-/// `DerivedDataEffectAdapter` -> `GuardedFileDeleter`). Every fixture lives
-/// under a generated UUID scratch directory; none of these tests touch the
-/// real user home.
+/// Quarantine coverage for the retained DerivedData inventory row. Every
+/// fixture lives under a generated UUID scratch directory; none of these
+/// tests touch the real user home.
 private struct DerivedDataScratch {
     let root: URL
     let home: URL
@@ -54,131 +51,56 @@ private struct DerivedDataScratch {
     }
 }
 
-private func interruptedDerivedDataIntent(runID: UUID = UUID()) -> PendingEffectIntent {
-    PendingEffectIntent(
-        runID: runID, operationID: UUID(), adapterID: "legacy.unreconciled",
-        bootID: UUID(), executablePath: "/unavailable/previous-run",
-        executableDevice: 99, executableInode: 123,
-        childPID: nil, childStartSeconds: nil, childStartMicroseconds: nil,
-        phase: .submitted)
-}
-
-@Suite("Derived data execution")
+@Suite("Derived data quarantine")
 struct DerivedDataExecutionTests {
-    @Test("Confirmed execution really deletes DerivedData contents, keeps the directory, and reports real free-space deltas")
-    func realDeletionSucceeds() async throws {
+    @Test("DerivedData remains visible with an explicit quarantine reason and cannot be selected")
+    func inventoryVisibleButSelectionDenied() async throws {
         let s = try DerivedDataScratch(); defer { s.cleanup() }
         let (artifact, nested) = try s.populateFixtureProject()
         let c = s.coordinator()
         let review = try await c.prepareReview(engine: CleanEngine(sizeScanner: SizeScanner()),
                                                tier: .safe, selectDefaults: false)
         let row = try #require(review.plan.reviewItems.first { $0.id == "safe.xcode.derived-data" })
-        #expect(row.review.isSelectable, "denialReason must return nil for the accepted item/action")
-        let selected = try await c.setSelection(planID: review.binding.planID, selectedIDs: [row.id])
-        let token = try await c.confirm(binding: selected.binding)
-
-        let report = await c.execute(token, currentPolicyRevision: review.binding.policyRevision)
-
-        #expect(report.disposition == .completed)
-        #expect(report.coordinatorMeasurementsAvailable == true)
-        #expect(report.freeSpaceBeforeBytes >= 0 && report.freeSpaceAfterBytes >= 0)
-        let result = try #require(report.results.first { $0.id == "safe.xcode.derived-data" })
-        #expect(result.succeeded)
-        #expect(result.effectStatus == .succeeded)
-        #expect(result.freedBytes > 0)
-
-        #expect(!FileManager.default.fileExists(atPath: artifact.path))
-        #expect(!FileManager.default.fileExists(atPath: nested.path))
-        var isDirectory: ObjCBool = false
-        let stillThere = FileManager.default.fileExists(atPath: s.derivedData.path, isDirectory: &isDirectory)
-        #expect(stillThere && isDirectory.boolValue, "deleteContents keeps the directory itself")
-        #expect(try FileManager.default.contentsOfDirectory(atPath: s.derivedData.path).isEmpty)
+        #expect(!row.review.isSelectable)
+        #expect(row.review.reason == CapabilityRegistry.quarantineReason)
+        await #expect(throws: ConfirmationError.unavailableSelection) {
+            _ = try await c.setSelection(planID: review.binding.planID, selectedIDs: [row.id])
+        }
+        #expect(FileManager.default.fileExists(atPath: artifact.path))
+        #expect(FileManager.default.fileExists(atPath: nested.path))
         try s.sentinelIntact()
-
-        // Diagnostic journal recorded the confirmed intent to run. Per-operation
-        // started/itemTerminal is deliberately not recorded here: RunJournal's
-        // `.started` transition requires a durably persisted `PendingEffectIntent`,
-        // and no accepted API removes one afterward, so recording it would
-        // permanently block every future mutation after this one real run.
-        let names = try FileManager.default.contentsOfDirectory(atPath: s.journal.path)
-        let journalName = try #require(names.first { $0.hasPrefix("run-") && $0.hasSuffix(".journal") })
-        let runID = try #require(UUID(uuidString: String(journalName.dropFirst(4).dropLast(8))))
-        let store = try MutationAdmissionStore(directory: s.journal)
-        #expect(store.acquire() == .ready)
-        defer { store.release() }
-        let journal = try RunJournal(store: store, storage: try DurableJournalStorage(directory: s.journal))
-        let phases = try journal.events(runID: runID).map(\.phase)
-        #expect(phases == [.planned, .confirmed])
-
-        // The tool must stay usable: no unfinished intent was left behind.
-        #expect(store.readAdmissionWhileLocked() == .ready)
+        let journalNames = try FileManager.default.contentsOfDirectory(atPath: s.journal.path)
+        #expect(!journalNames.contains { $0.hasPrefix("run-") && $0.hasSuffix(".journal") })
     }
 
-    @Test("A second real run after a successful one still works: the capability is not one-shot")
-    func repeatedRunsRemainAvailable() async throws {
+    @Test("Repeated selection attempts remain denied without changing admission or fixture bytes")
+    func repeatedAttemptsRemainDenied() async throws {
         let s = try DerivedDataScratch(); defer { s.cleanup() }
-        _ = try s.populateFixtureProject()
+        let (artifact, _) = try s.populateFixtureProject()
+        let original = try Data(contentsOf: artifact)
         let c = s.coordinator()
-        func runOnce() async throws -> RunReport {
+        for _ in 0..<2 {
             let review = try await c.prepareReview(engine: CleanEngine(sizeScanner: SizeScanner()),
                                                    tier: .safe, selectDefaults: false)
             let row = try #require(review.plan.reviewItems.first { $0.id == "safe.xcode.derived-data" })
-            let selected = try await c.setSelection(planID: review.binding.planID, selectedIDs: [row.id])
-            let token = try await c.confirm(binding: selected.binding)
-            return await c.execute(token, currentPolicyRevision: review.binding.policyRevision)
+            await #expect(throws: ConfirmationError.unavailableSelection) {
+                _ = try await c.setSelection(planID: review.binding.planID, selectedIDs: [row.id])
+            }
         }
-        let first = try await runOnce()
-        #expect(first.disposition == .completed)
-        _ = try s.populateFixtureProject()
-        let second = try await runOnce()
-        #expect(second.disposition == .completed)
-        #expect(second.results.first?.effectStatus == .succeeded)
+        #expect(await c.mutationAdmission() == .ready)
+        #expect(try Data(contentsOf: artifact) == original)
         try s.sentinelIntact()
     }
 
-    @Test("Every catalog item except the one accepted pair stays denied")
-    func denialRemainsMandatoryForEverythingElse() throws {
+    @Test("Every catalog item including DerivedData stays denied while quarantine is active")
+    func denialRemainsMandatoryForEveryCatalogItem() throws {
         for item in CleanCatalog.allItems {
-            if item.id == "safe.xcode.derived-data" {
-                if case .deleteContents = item.action {
-                    #expect(CapabilityRegistry.denialReason(for: item.action, itemID: item.id) == nil)
-                }
-            } else {
-                #expect(CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil,
-                       "\(item.id) must remain denied")
-            }
+            #expect(CapabilityRegistry.denialReason(for: item.action, itemID: item.id)
+                    == CapabilityRegistry.quarantineReason,
+                    "\(item.id) must remain denied")
         }
         #expect(CapabilityRegistry.denialReason(for: .deletePath, itemID: "safe.xcode.derived-data") != nil)
         #expect(CapabilityRegistry.denialReason(for: .unavailable(reason: "x"), itemID: "safe.xcode.derived-data") != nil)
     }
 
-    @Test("A prior unresolved intent blocks the accepted item too, without touching its files")
-    func priorUncertaintyBlocksRealExecution() async throws {
-        let s = try DerivedDataScratch(); defer { s.cleanup() }
-        let (artifact, _) = try s.populateFixtureProject()
-        let c = s.coordinator()
-        let review = try await c.prepareReview(engine: CleanEngine(sizeScanner: SizeScanner()),
-                                               tier: .safe, selectDefaults: false)
-        let row = try #require(review.plan.reviewItems.first { $0.id == "safe.xcode.derived-data" })
-        let selected = try await c.setSelection(planID: review.binding.planID, selectedIDs: [row.id])
-        let token = try await c.confirm(binding: selected.binding)
-
-        // Simulate a crash: some earlier effect left an unresolved intent in
-        // the same mandatory ledger this coordinator borrows.
-        let writer = try MutationAdmissionStore(directory: s.journal)
-        #expect(writer.acquire() == .ready)
-        try writer.persistIntentWhileLocked(interruptedDerivedDataIntent())
-        writer.release()
-
-        let report = await c.execute(token, currentPolicyRevision: review.binding.policyRevision)
-        #expect(report.disposition == .recoveryBlocked)
-        #expect(report.results.isEmpty)
-        #expect(FileManager.default.fileExists(atPath: artifact.path), "no deletion may occur while uncertain")
-
-        // The same relaunch-shaped check the rest of the app relies on.
-        let relaunched = s.coordinator()
-        #expect(await relaunched.mutationAdmission() == .uncertainAndPossiblyRunning)
-        #expect(RecoveryDecision.forUnfinishedEffect(quiescenceProven: false) == .blockMutations)
-        try s.sentinelIntact()
-    }
 }

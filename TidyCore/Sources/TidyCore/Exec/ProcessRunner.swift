@@ -40,9 +40,23 @@ public enum ProcessRunner: Sendable {
     fileprivate struct DeclaredInvocation: Sendable {
         let executableURL: URL
         let arguments: [String]
+        let environment: [String: String]
         let kind: AuthorizedJobKind
+        let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
         /// Every current T08.3 declaration is a direct-child-only shape.
         let maximumDescendants: Int
+
+        init(executableURL: URL, arguments: [String],
+             environment: [String: String] = ProcessRunner.minimalEnvironment,
+             kind: AuthorizedJobKind, maximumDescendants: Int,
+             validateImmediatelyBeforeSpawn: @escaping @Sendable () throws -> Void = {}) {
+            self.executableURL = executableURL
+            self.arguments = arguments
+            self.environment = environment
+            self.kind = kind
+            self.maximumDescendants = maximumDescendants
+            self.validateImmediatelyBeforeSpawn = validateImmediatelyBeforeSpawn
+        }
     }
 
     /// Opaque launch authority. Its initializer is file-private so no other
@@ -54,13 +68,15 @@ public enum ProcessRunner: Sendable {
         let environment: [String: String]
         let kind: AuthorizedJobKind
         let deadline: Duration
+        let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
 
         fileprivate init(_ declaration: DeclaredInvocation, timeout: TimeInterval) {
             executableURL = declaration.executableURL
             arguments = declaration.arguments
-            environment = ProcessRunner.minimalEnvironment
+            environment = declaration.environment
             kind = declaration.kind
             deadline = .seconds(timeout)
+            validateImmediatelyBeforeSpawn = declaration.validateImmediatelyBeforeSpawn
         }
     }
 
@@ -124,6 +140,17 @@ public enum ProcessRunner: Sendable {
             arguments: ["simctl", "list", "devices", "-j"]))
     }
 
+    static func runApprovedSimctlDevices(approval: AppleReadApproval) async throws -> Output {
+        guard approval.isCurrent else { throw ProcessRunnerError.undeclaredInvocation }
+        let url = URL(fileURLWithPath: approval.executable.canonicalPath)
+        let declaration = try declared(.simctlDevices, executableURL: url,
+            arguments: ["simctl", "list", "devices", "-j"],
+            validateImmediatelyBeforeSpawn: {
+                guard approval.isCurrent else { throw ProcessRunnerError.undeclaredInvocation }
+            })
+        return try await run(declaration)
+    }
+
     static func runSimctlRuntimes(xcrunURL: URL) async throws -> Output {
         try await run(try declared(.simctlRuntimes, executableURL: xcrunURL,
             arguments: ["simctl", "list", "runtimes", "-j"]))
@@ -142,6 +169,16 @@ public enum ProcessRunner: Sendable {
     static func runProcessSurvey(psURL: URL) async throws -> Output {
         try await run(try declared(.processSurvey, executableURL: psURL,
             arguments: ["-Ao", "rss,comm", "-m"]))
+    }
+
+    static func runDockerImages(approval: DockerReadApproval) async throws -> Output {
+        try await runApprovedDocker(approval: approval,
+            arguments: ["image", "ls", "--no-trunc", "--format", "{{json .}}"])
+    }
+
+    static func runDockerContainers(approval: DockerReadApproval) async throws -> Output {
+        try await runApprovedDocker(approval: approval,
+            arguments: ["container", "ls", "--all", "--no-trunc", "--format", "{{json .}}"])
     }
 
     static func jobSnapshot() async -> ProcessGateSnapshot { await ProcessJobGate.shared.snapshot() }
@@ -163,13 +200,41 @@ public enum ProcessRunner: Sendable {
     }
 
     private static func declared(_ caller: BuiltInCallerID, executableURL: URL,
-                                 arguments: [String]) throws -> DeclaredInvocation {
+                                 arguments: [String],
+                                 validateImmediatelyBeforeSpawn:
+                                    @escaping @Sendable () throws -> Void = {}) throws
+        -> DeclaredInvocation {
         guard matches(caller, executableURL: executableURL, arguments: arguments) else {
             throw ProcessRunnerError.undeclaredInvocation
         }
         return DeclaredInvocation(executableURL: executableURL,
                                   arguments: arguments, kind: .readOnly,
-                                  maximumDescendants: 0)
+                                  maximumDescendants: 0,
+                                  validateImmediatelyBeforeSpawn: validateImmediatelyBeforeSpawn)
+    }
+
+    private static func runApprovedDocker(approval: DockerReadApproval,
+                                          arguments: [String]) async throws -> Output {
+        guard approval.isCurrent else {
+            throw ProcessRunnerError.undeclaredInvocation
+        }
+        let executableURL = URL(fileURLWithPath: approval.executable.canonicalPath)
+        let dockerArguments = ["--host", approval.endpoint] + arguments
+        let declaration = DeclaredInvocation(executableURL: executableURL,
+            arguments: dockerArguments,
+            environment: [
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "HOME": "/var/empty",
+                "DOCKER_CONFIG": "/dev/null"
+            ], kind: .readOnly, maximumDescendants: 0,
+            validateImmediatelyBeforeSpawn: {
+                guard approval.isCurrent else { throw ProcessRunnerError.undeclaredInvocation }
+            })
+        let output = try await run(declaration)
+        guard approval.isCurrent else {
+            throw ProcessRunnerError.undeclaredInvocation
+        }
+        return output
     }
 
     private static func classify(executableURL: URL,

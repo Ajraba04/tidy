@@ -1197,6 +1197,52 @@ private func mode(_ url: URL) throws -> Int {
 
 @Suite("Settings migration")
 struct SettingsMigrationTests {
+    private let authorityWitness = Data("local-authority-witness-v1".utf8)
+
+    private struct IndependentWitnesses {
+        let files: [URL: Data]
+        let admission: MutationAdmissionStore
+
+        func expectPreserved() throws {
+            for (url, bytes) in files {
+                #expect(try Data(contentsOf: url) == bytes)
+                #expect(try mode(url) == 0o600)
+            }
+            #expect(admission.acquire() == .uncertainAndPossiblyRunning)
+            admission.release()
+        }
+    }
+
+    private func seedIndependentWitnesses(in scratch: SettingsScratch) throws
+        -> IndependentWitnesses {
+        // T22's local authority ledger does not exist yet, so this opaque file proves
+        // only that settings operations leave a separate authority owner untouched.
+        let authority = scratch.root.appendingPathComponent("local-authority.witness")
+        try authorityWitness.write(to: authority)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: authority.path)
+
+        // Use the real mandatory mutation-admission ledger for the recovery witness.
+        let admission = try MutationAdmissionStore(
+            directory: scratch.root.appendingPathComponent("execution", isDirectory: true))
+        #expect(admission.acquire() == .ready)
+        let intent = PendingEffectIntent(runID: UUID(), operationID: UUID(),
+            adapterID: "unsupported-fixture-adapter",
+            bootID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            executablePath: "/unsupported/not-executed", executableDevice: 1,
+            executableInode: 1, childPID: nil, childStartSeconds: nil,
+            childStartMicroseconds: nil, phase: .prepared)
+        try admission.persistIntentWhileLocked(intent)
+        #expect(admission.readAdmissionWhileLocked() == .uncertainAndPossiblyRunning)
+        admission.release()
+        let recovery = scratch.root.appendingPathComponent(
+            "execution/unfinished-effects.json")
+        return IndependentWitnesses(files: [
+            authority: authorityWitness,
+            recovery: try Data(contentsOf: recovery)
+        ], admission: admission)
+    }
+
     @Test func missingOnlyCreatesInMemoryDefaults() async throws {
         let s = try SettingsScratch(); defer { s.remove() }
         let result = await SettingsStore(url: s.file).load()
@@ -1228,6 +1274,100 @@ struct SettingsMigrationTests {
         #expect(try Data(contentsOf: s.file) == original)
         #expect(!FileManager.default.fileExists(atPath: s.backup.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: s.root.path) == ["config.json"])
+    }
+
+    @Test(arguments: ["v2-base", "v2-preferences", "v2-inert", "v2-active"])
+    func everySupportedSchema2RootShapeIsFixtureBackedAndReadOnlyOnLoad(name: String) async throws {
+        let s = try SettingsScratch(); defer { s.remove() }
+        let bytes = try fixture(name)
+        try s.seed(bytes)
+        let witnesses = try seedIndependentWitnesses(in: s)
+
+        let result = await SettingsStore(url: s.file).load()
+        #expect(result.disposition == .loaded && result.recoveryReason == nil)
+        let envelope = try #require(result.envelope)
+        #expect(envelope.schemaVersion == 2 && envelope.revision == 7)
+        switch name {
+        case "v2-base":
+            #expect(envelope.preferences == nil)
+            #expect(envelope.activeProfileID == nil && envelope.inertImports.isEmpty)
+        case "v2-preferences":
+            #expect(envelope.preferences?.global.fields[
+                SettingID(rawValue: "ui.units")] == .choice("decimal"))
+            #expect(envelope.activeProfileID == nil && envelope.inertImports.isEmpty)
+        case "v2-inert":
+            #expect(envelope.inertImports.map(\.id) == ["future.fixture"])
+            #expect(envelope.activeProfileID == nil)
+        default:
+            let profileID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+            #expect(envelope.activeProfileID == profileID)
+            #expect(envelope.preferences?.profiles.map(\.id) == [profileID])
+            #expect(envelope.inertImports.map(\.id) == ["future.fixture"])
+        }
+        #expect(try Data(contentsOf: s.file) == bytes)
+        #expect(!FileManager.default.fileExists(atPath: s.backup.path))
+        try witnesses.expectPreserved()
+    }
+
+    @Test(arguments: ["corrupt", "v3-future-envelope", "v999"])
+    func corruptAndFutureDowngradeRecoveryPreserveSettingsAuthorityAndRecoveryBytes(
+        name: String
+    ) async throws {
+        let s = try SettingsScratch(); defer { s.remove() }
+        let bytes = try fixture(name)
+        try s.seed(bytes)
+        let witnesses = try seedIndependentWitnesses(in: s)
+        let store = SettingsStore(url: s.file)
+
+        let result = await store.load()
+        #expect(result.disposition == .recoveryReadOnly && result.envelope == nil)
+        switch name {
+        case "v3-future-envelope": #expect(result.recoveryReason == .unsupportedSchema(3))
+        case "v999": #expect(result.recoveryReason == .unsupportedSchema(999))
+        default: #expect(result.recoveryReason == .malformed)
+        }
+        await expectStoreError(.readOnlyRecovery) {
+            _ = try await store.update(expectedRevision: 7, change: .preferences(.init()))
+        }
+        await expectStoreError(.readOnlyRecovery) { _ = try await store.previewRollback() }
+        #expect(try Data(contentsOf: s.file) == bytes)
+        #expect(!FileManager.default.fileExists(atPath: s.backup.path))
+        try witnesses.expectPreserved()
+    }
+
+    @Test func importAndSelectiveResetPreserveIndependentAuthorityAndRecoveryWitnesses() async throws {
+        let s = try SettingsScratch(); defer { s.remove() }
+        try s.seed(try fixture("v2-active"))
+        let witnesses = try seedIndependentWitnesses(in: s)
+        let store = SettingsStore(url: s.file)
+        let initial = try #require(await store.load().envelope)
+        let active = try #require(initial.activeProfileID)
+        let originalInert = initial.inertImports
+        let imported = Data(#"{"schemaVersion":1,"global":{"fields":{"cleanup.inactiveDays":{"integer":61},"maintenance.mode":{"choice":"authorizedCaches"}}},"profiles":[],"inertImports":[]}"#.utf8)
+
+        let analysis = try await store.analyzeImport(bytes: imported)
+        #expect(analysis.rows.first(where: { $0.id == "maintenance.mode" })?.outcome ==
+                .rejectedAuthority)
+        let preview = try await store.issueImportPreview(
+            analysisID: try #require(analysis.analysisID), choices: [:])
+        let importedEnvelope = try await store.commitImport(
+            expectedRevision: initial.revision, previewID: preview.id)
+        let importedID = SettingID(rawValue: "cleanup.inactiveDays")
+        #expect(importedEnvelope.preferences?.global.fields[importedID] == .integer(61))
+        #expect(importedEnvelope.preferences?.global.fields[
+            SettingID(rawValue: "maintenance.mode")] == nil)
+        #expect(importedEnvelope.activeProfileID == active)
+        #expect(importedEnvelope.inertImports == originalInert)
+        try witnesses.expectPreserved()
+
+        let reset = PreferencesDocumentDelta(baseRevision: importedEnvelope.revision,
+            global: [.init(id: importedID, baseValue: .integer(61), editedValue: nil)])
+        let resetEnvelope = try await store.update(expectedRevision: importedEnvelope.revision,
+                                                   change: .preferencesDocument(reset))
+        #expect(resetEnvelope.preferences?.global.fields[importedID] == nil)
+        #expect(resetEnvelope.activeProfileID == active)
+        #expect(resetEnvelope.inertImports == originalInert)
+        try witnesses.expectPreserved()
     }
 
 
