@@ -1,0 +1,10 @@
+{
+  "command": [
+    "/private/tmp/tidy-audit-9e1a500-monitor"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:31:40.540181+00:00",
+  "ended_utc": "2026-09-17T15:42:44.062981+00:00",
+  "seconds": 663.522,
+  "exit_code": 0
+}

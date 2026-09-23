@@ -1,0 +1,12 @@
+AUDIT hidden-off duration=31.055978542000002 seconds cpuSeconds=0.001255 rssBytes=8060928 timerCounts=[0, 0] timerRunning=false
+AUDIT monitoring seconds=60 cpuSeconds=0.030982000000000003 rssBytes=12877824 peakRSSBytes=12959744
+AUDIT monitoring seconds=120 cpuSeconds=0.03378 rssBytes=12533760 peakRSSBytes=12959744
+AUDIT monitoring seconds=180 cpuSeconds=0.035879 rssBytes=11698176 peakRSSBytes=12959744
+AUDIT monitoring seconds=240 cpuSeconds=0.037587999999999996 rssBytes=11583488 peakRSSBytes=12959744
+AUDIT monitoring seconds=300 cpuSeconds=0.041047 rssBytes=11681792 peakRSSBytes=12959744
+AUDIT monitoring seconds=360 cpuSeconds=0.042859 rssBytes=11616256 peakRSSBytes=12959744
+AUDIT monitoring seconds=420 cpuSeconds=0.044835 rssBytes=11632640 peakRSSBytes=12959744
+AUDIT monitoring seconds=480 cpuSeconds=0.048961 rssBytes=11812864 peakRSSBytes=12959744
+AUDIT monitoring seconds=540 cpuSeconds=0.050733 rssBytes=11649024 peakRSSBytes=12959744
+AUDIT monitoring seconds=600 cpuSeconds=0.052794 rssBytes=11698176 peakRSSBytes=12959744
+AUDIT monitoring completed duration=626.8157890419999 seconds cpuSeconds=0.052836 rssBytes=11698176 timerCounts=[1, 0]
