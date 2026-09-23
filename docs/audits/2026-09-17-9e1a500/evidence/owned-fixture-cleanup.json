@@ -1,0 +1,15 @@
+{
+  "timestamp_utc": "2026-09-17T15:48:42.195217+00:00",
+  "actions": [
+    {
+      "pid": 6972,
+      "executable": "/private/tmp/tidy-audit-9e1a500-fixture-ui/Build/Products/Debug/TidyUITestHost.app/Contents/MacOS/TidyUITestHost",
+      "action": "SIGTERM own safe audit GUI fixture"
+    },
+    {
+      "pid": 23022,
+      "executable": "/private/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy",
+      "action": "SIGTERM own safe audit GUI fixture"
+    }
+  ]
+}

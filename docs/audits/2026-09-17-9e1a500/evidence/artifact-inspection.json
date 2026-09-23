@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess,plistlib,pathlib,json; roots=[(\"arm64-debug\",\"/private/tmp/tidy-audit-9e1a500-app/Build/Products/Debug/Tidy.app\"),(\"arm64-release\",\"/private/tmp/tidy-audit-9e1a500-app/Build/Products/Release/Tidy.app\"),(\"x86_64-release\",\"/private/tmp/tidy-audit-9e1a500-intel/Build/Products/Release/Tidy.app\")]; [(print(label,flush=True),subprocess.run([\"lipo\",\"-archs\",root+\"/Contents/MacOS/Tidy\"]),subprocess.run([\"codesign\",\"-dvv\",root]),print(json.dumps(plistlib.loads(pathlib.Path(root+\"/Contents/Info.plist\").read_bytes()),default=str)),print(\"Privacy:\",pathlib.Path(root+\"/Contents/Resources/PrivacyInfo.xcprivacy\").exists())) for label,root in roots]"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:37:44.085399+00:00",
+  "ended_utc": "2026-09-17T15:37:46.852356+00:00",
+  "seconds": 2.765,
+  "exit_code": 0
+}

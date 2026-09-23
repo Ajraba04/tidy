@@ -12,20 +12,21 @@ import TidyCore
 @MainActor
 final class HeadroomViewModel {
     private(set) var snapshot: SystemSnapshot?
-    /// `ui.cards` order from the effective policy, resolved once at
-    /// construction; a settings change is picked up the next time the
-    /// window opens, the same cadence `StatsRefresher` uses for policy.
+    /// `ui.cards` order supplied by the acknowledged policy. An empty list
+    /// is an intentional "show no signal cards" preference.
     let cardOrder: [String]
 
     private let monitor: SystemMonitor
+    private let sceneLeaseController: MonitorSceneLeaseController
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
     // cancel() is thread-safe, so the unsafe opt-out is sound here.
-    nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var observationTask: Task<Void, Never>?
 
     init(monitor: SystemMonitor, cardOrder: [String]) {
         self.monitor = monitor
-        self.cardOrder = cardOrder.isEmpty ? HeadroomViewModel.defaultCardOrder : cardOrder
+        self.sceneLeaseController = MonitorSceneLeaseController(monitor: monitor)
+        self.cardOrder = cardOrder
         // `monitor` (a value copy of the actor reference, not `self`) is the
         // only thing this task needs to obtain its OWN subscription; `self`
         // is re-resolved weakly on every iteration below, so this task never
@@ -46,25 +47,19 @@ final class HeadroomViewModel {
 
     deinit {
         observationTask?.cancel()
+        sceneLeaseController.dispose()
     }
 
     static let defaultCardOrder = ["disk", "memoryPressure", "swap", "thermal", "power"]
 
-    func onAppear(policy: EffectivePolicy?) {
-        let monitor = monitor
-        let configuration = SystemMonitor.Configuration.resolve(policy)
-        Task {
-            await monitor.applyConfiguration(configuration)
-            await monitor.setWindowVisible(true)
-            await monitor.requestSnapshot()
-        }
+    func onAppear() {
+        sceneLeaseController.setVisible(true, requestSnapshot: true)
     }
 
     /// Window closed: this is the point at which background sampling stops
     /// entirely unless `monitor.backgroundEnabled` is explicitly on.
     func onDisappear() {
-        let monitor = monitor
-        Task { await monitor.setWindowVisible(false) }
+        sceneLeaseController.setVisible(false)
     }
 
     /// One explicit re-read, for a manual refresh control -- never on a
@@ -72,6 +67,10 @@ final class HeadroomViewModel {
     func refreshNow() {
         let monitor = monitor
         Task { await monitor.requestSnapshot() }
+    }
+
+    func monitorSceneLeaseCountForTesting() async -> Int {
+        await monitor.activeSceneLeaseCountForTesting()
     }
 
     var primaryVolume: VolumeObservation? { snapshot?.volumes.first }
@@ -92,14 +91,20 @@ final class HeadroomViewModel {
 /// does not yet, as of T10), this honestly resolves to `nil` rather than
 /// guessing -- matching the "target not set / unavailable" wording in
 /// `HeadroomView`.
-func resolvedHeadroomTargetBytes(_ policy: EffectivePolicy?) -> Int64? {
+@MainActor func resolvedHeadroomTargetBytes(_ policy: EffectivePolicy?) -> Int64? {
     guard let policy, case .bytes(let value)? =
         policy.fields[SettingID(rawValue: "headroom.targetGiB")]?.value else { return nil }
     return value
 }
 
-func resolvedUICardOrder(_ policy: EffectivePolicy?) -> [String] {
+@MainActor func resolvedUICardOrder(_ policy: EffectivePolicy?) -> [String] {
     guard let policy, case .stored(.strings(let values))? =
         policy.fields[SettingID(rawValue: "ui.cards")]?.value else { return HeadroomViewModel.defaultCardOrder }
     return values
+}
+
+@MainActor func resolvedUIUnitStyle(_ policy: EffectivePolicy?) -> ByteUnitStyle {
+    guard let policy, case .stored(.choice("decimal"))? =
+        policy.fields[SettingID(rawValue: "ui.units")]?.value else { return .binary }
+    return .decimal
 }

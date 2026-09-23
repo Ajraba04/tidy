@@ -1,0 +1,15 @@
+{
+  "command": [
+    "git",
+    "worktree",
+    "add",
+    "--detach",
+    "/private/tmp/tidy-audit-9e1a500-fixtures",
+    "9e1a500"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:10:28.398389+00:00",
+  "ended_utc": "2026-09-17T15:10:28.540763+00:00",
+  "seconds": 0.142,
+  "exit_code": 0
+}

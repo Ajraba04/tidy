@@ -238,6 +238,41 @@ final class ConfirmationLifecycleTests: XCTestCase {
         } catch let error as ConfirmationError { XCTAssertEqual(error, .unknownPlan) }
     }
 
+    func testDerivedDataQuarantineStaysVisibleAndPresetCannotOpenConfirmation() async throws {
+        let scratch = try AppModelScratch(); defer { scratch.remove() }
+        let derivedData = scratch.home
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)
+        try FileManager.default.createDirectory(at: derivedData, withIntermediateDirectories: true)
+        let payload = derivedData.appendingPathComponent("keep.o")
+        let original = Data("retained while quarantined".utf8)
+        try original.write(to: payload)
+        let coordinator = ExecutionCoordinator(
+            environment: CleanEnvironment(homeDirectory: scratch.home.path,
+                detectedTools: [.xcode], protectedRoots: []),
+            journalDirectory: scratch.journal)
+        let review = try await coordinator.prepareReview(
+            engine: CleanEngine(sizeScanner: SizeScanner()), tier: .safe, selectDefaults: false)
+        let row = try XCTUnwrap(review.plan.reviewItems.first {
+            $0.id == "safe.xcode.derived-data"
+        })
+        XCTAssertFalse(row.review.isSelectable)
+        XCTAssertEqual(row.review.reason, CapabilityRegistry.quarantineReason)
+
+        var requested: [Set<String>] = []
+        let model = PlanSelectionModel(review: review) { requested.append($0) }
+        model.invalidate(policyEnabled: true)
+        model.replace(review: review)
+        model.applyPresetIDs(["safe.xcode.derived-data"])
+        model.beginConfirmation()
+
+        XCTAssertEqual(model.value.selectedCount, 0)
+        XCTAssertTrue(requested.isEmpty)
+        XCTAssertFalse(model.canConfirm)
+        XCTAssertNil(model.frozenPresentation)
+        XCTAssertNil(model.takeConfirmation())
+        XCTAssertEqual(try Data(contentsOf: payload), original)
+    }
+
     func testObservableGenerationChangesForIdenticalEditsAndRealBarrierInvalidates() async throws {
         let scratch = try AppModelScratch(); defer { scratch.remove() }
         let services = await scratch.services(), bridge = services.policyBridge

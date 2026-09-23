@@ -27,20 +27,31 @@ final class AppConfigStore {
     var settingsRevision: UInt64 { displayed.revision }
     var profiles: [SavedProfile] { preferences.profiles }
     var hasPendingSettingsWrites: Bool { !pendingOrder.isEmpty }
-    var effectivePolicy: EffectivePolicy? {
-        var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
-        if let activeProfileID {
-            guard preferences.profiles.filter({ $0.id == activeProfileID }).count == 1,
-                  let profile = preferences.profiles.first(where: { $0.id == activeProfileID })
-            else { return nil }
-            layers[.profile] = profile.values
+    var effectivePolicy: EffectivePolicy? { resolvePolicy(displayed) }
+    var acknowledgedEffectivePolicy: EffectivePolicy? { resolvePolicy(acknowledged) }
+    var acknowledgedSettingsRevision: UInt64 { acknowledged.revision }
+
+    func acknowledgedPolicyEnvironment(homeDirectory: String) -> CleanEnvironment? {
+        guard acknowledgedEffectivePolicy != nil else { return nil }
+        return acknowledged.config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: [])
+    }
+
+    private(set) var localAuthoritySnapshot: LocalAuthoritySnapshot?
+
+    /// Local approvals are installation-bound and never serialized into portable settings.
+    func installLocalAuthority(_ snapshot: LocalAuthoritySnapshot?) {
+        if let snapshot {
+            guard snapshot.isCurrent else { return }
+            if let current = localAuthoritySnapshot, current.isCurrent {
+                guard current.installation == snapshot.installation,
+                      snapshot.revision >= current.revision else { return }
+            }
         }
-        let inputs = PolicyInputs(layers: layers, selectedVolumeID: nil,
-            approvedVolumeIDs: [], capacityBytes: nil,
-            logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
-            lowPower: false, seriousThermal: false, critical: false,
-            mandatoryExclusions: [])
-        return try? PolicyResolver.resolve(inputs)
+        localAuthoritySnapshot = snapshot
+        let policy = acknowledgedEffectivePolicy
+        for observer in acknowledgedPolicyObservers.values {
+            observer(acknowledged.revision, policy)
+        }
     }
 
     private let bridge: ExecutionPolicyBridge
@@ -49,6 +60,11 @@ final class AppConfigStore {
     private var pendingOrder: [SettingsIntentID] = []
     private var pending: [SettingsIntentID: PendingTransform] = [:]
     private var observerToken: UUID?
+    private var acknowledgedPolicyObservers:
+        [UUID: @MainActor (UInt64, EffectivePolicy?) -> Void] = [:]
+    private var selectedVolumeID: UUID?
+    private var selectedVolumeCapacityBytes: Int64?
+    private var selectedVolumeObservationEpoch: UInt64?
 
     private enum PendingTransform {
         case legacy(LegacyPreferenceDelta)
@@ -121,6 +137,19 @@ final class AppConfigStore {
         try SettingsWorkflow.exportPortable(current: displayed)
     }
 
+    func makeDiagnosticExportInput() -> DiagnosticExportInput {
+        let redactionID = SettingID(rawValue: "export.redactDiagnostics")
+        let redactionEnabled: Bool
+        if case .stored(.bool(let value))? =
+                acknowledgedEffectivePolicy?.fields[redactionID]?.value {
+            redactionEnabled = value
+        } else {
+            redactionEnabled = true
+        }
+        return DiagnosticExportInput(settings: acknowledged,
+            cosmeticRedactionEnabled: redactionEnabled)
+    }
+
     func analyzeImportSummary(bytes: Data) async throws -> SettingsImportUISummary {
         try SettingsImportUISummary(try await analyzeImport(bytes: bytes))
     }
@@ -153,18 +182,94 @@ final class AppConfigStore {
         await bridge.cancelImport(previewID: previewID)
     }
 
+    @discardableResult
+    func observeAcknowledgedPolicy(
+        _ observer: @escaping @MainActor (UInt64, EffectivePolicy?) -> Void
+    ) -> UUID {
+        let token = UUID()
+        acknowledgedPolicyObservers[token] = observer
+        observer(acknowledged.revision, acknowledgedEffectivePolicy)
+        return token
+    }
+
+    func removeAcknowledgedPolicyObserver(_ token: UUID) {
+        acknowledgedPolicyObservers.removeValue(forKey: token)
+    }
+
+    var acknowledgedPolicyObserverCountForTesting: Int {
+        acknowledgedPolicyObservers.count
+    }
+
+    /// Accept only a measured UUID plus a positive capacity. A mount path is
+    /// display data and never becomes volume authority through this seam.
+    func updateSelectedVolume(identity: String?, capacityBytes: Int64?,
+                              observationEpoch: UInt64) {
+        guard selectedVolumeObservationEpoch.map({ observationEpoch > $0 }) ?? true else {
+            return
+        }
+        selectedVolumeObservationEpoch = observationEpoch
+        guard let identity, let id = UUID(uuidString: identity),
+              let capacityBytes, capacityBytes > 0 else {
+            selectedVolumeID = nil
+            selectedVolumeCapacityBytes = nil
+            return
+        }
+        selectedVolumeID = id
+        selectedVolumeCapacityBytes = capacityBytes
+    }
+
     private func receive(_ outcome: SettingsIntentOutcome) {
         let id: SettingsIntentID
         switch outcome {
         case .saved(let value, _), .conflict(let value), .invalid(let value),
              .failed(let value, _): id = value
         }
-        if case .saved(_, let exact) = outcome { acknowledged = exact }
+        var didSave = false
+        if case .saved(_, let exact) = outcome {
+            acknowledged = exact
+            didSave = true
+        }
         if pending[id] != nil {
             pending[id] = nil
             pendingOrder.removeAll { $0 == id }
         }
         replayVisibleState()
+        if didSave {
+            let revision = acknowledged.revision
+            let policy = acknowledgedEffectivePolicy
+            for observer in acknowledgedPolicyObservers.values { observer(revision, policy) }
+        }
+    }
+
+    func acknowledgedPolicyForVolume(identity: String?, capacityBytes: Int64?) -> EffectivePolicy? {
+        guard let identity, let volume = UUID(uuidString: identity),
+              let capacityBytes, capacityBytes > 0 else { return nil }
+        return resolvePolicy(acknowledged, volumeID: volume, capacityBytes: capacityBytes)
+    }
+
+    private func resolvePolicy(_ envelope: SettingsEnvelope) -> EffectivePolicy? {
+        resolvePolicy(envelope, volumeID: selectedVolumeID,
+            capacityBytes: selectedVolumeCapacityBytes)
+    }
+
+    private func resolvePolicy(_ envelope: SettingsEnvelope, volumeID: UUID?,
+                               capacityBytes: Int64?) -> EffectivePolicy? {
+        let projected = PolicyPreferences.project(legacy: envelope.config,
+            saved: envelope.preferences)
+        var layers: [PolicyLayer: PolicyValues] = [.global: projected.global]
+        if let activeProfileID = envelope.activeProfileID {
+            guard projected.profiles.filter({ $0.id == activeProfileID }).count == 1,
+                  let profile = projected.profiles.first(where: { $0.id == activeProfileID })
+            else { return nil }
+            layers[.profile] = profile.values
+        }
+        let approved: Set<UUID> = volumeID.map { Set([$0]) } ?? []
+        let inputs = PolicyInputs(layers: layers, selectedVolumeID: volumeID,
+            approvedVolumeIDs: approved, capacityBytes: capacityBytes,
+            logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
+            lowPower: false, seriousThermal: false, critical: false,
+            mandatoryExclusions: [], localAuthority: localAuthoritySnapshot)
+        return try? PolicyResolver.resolve(inputs)
     }
 
     private func replayVisibleState() {

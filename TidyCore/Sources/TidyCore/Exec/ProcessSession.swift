@@ -171,6 +171,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
         let environment: [String: String]
         let kind: ProcessRunner.AuthorizedJobKind
         let deadline: Duration
+        let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
 
         init(_ authorization: ProcessRunner.AuthorizedLaunch) {
             executable = authorization.executableURL
@@ -178,6 +179,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
             environment = authorization.environment
             kind = authorization.kind
             deadline = authorization.deadline
+            validateImmediatelyBeforeSpawn = authorization.validateImmediatelyBeforeSpawn
         }
 
         init(test request: ProcessTestRequest) {
@@ -186,6 +188,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
             environment = request.environment
             kind = request.kind == .readOnly ? .readOnly : .mutation
             deadline = request.deadline
+            validateImmediatelyBeforeSpawn = {}
         }
     }
 
@@ -259,6 +262,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
                                identityCapture: ProcessIdentityCapture) async throws -> ProcessSession {
         do {
             try Task.checkCancellation()
+            try request.validateImmediatelyBeforeSpawn()
             let session = try spawn(request, gate: gate, reservation: reservation,
                                     identityCapture: identityCapture)
             // Once spawned there is no throwing path: ownership must reach the

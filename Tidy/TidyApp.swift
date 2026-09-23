@@ -3,20 +3,86 @@ import TidyCore
 
 @main
 struct TidyApp: App {
+    private static let runtimeVerificationBundleIdentifier =
+        "io.github.ajraba04.Tidy.ProductionRuntimeVerification"
+#if TIDY_RUNTIME_TEST_HOST
+    @NSApplicationDelegateAdaptor(RuntimeTestAppDelegate.self)
+    private var runtimeTestAppDelegate
+#else
+    @NSApplicationDelegateAdaptor(AppTerminationDelegate.self)
+    private var appTerminationDelegate
+#endif
+    @State private var features: AppFeatureModels?
     @State private var bootstrap: AppBootstrapState
     private let productionPaths: AppStoragePaths?
+#if TIDY_RUNTIME_TEST_HOST
+    private let runtimeScenario: RuntimeTestScenario
+#endif
 
     init() {
         _bootstrap = State(initialValue: AppBootstrapState())
-        productionPaths = Self.resolveProductionPaths()
+#if TIDY_RUNTIME_TEST_HOST
+        NSWindow.allowsAutomaticWindowTabbing = false
+        let arguments = ProcessInfo.processInfo.arguments
+        let scenario = RuntimeTestComposition.scenario(processArguments: arguments)
+        runtimeScenario = scenario
+        if Bundle.main.bundleIdentifier == Self.runtimeVerificationBundleIdentifier {
+            productionPaths = RuntimeTestComposition.makePaths(scenario: scenario,
+                cleanupOnTermination: arguments.contains(
+                    "--tidy-runtime-cleanup-on-termination"))
+        } else {
+            productionPaths = nil
+        }
+#else
+        productionPaths = Bundle.main.bundleIdentifier
+            == Self.runtimeVerificationBundleIdentifier ? nil : Self.resolveProductionPaths()
+#endif
     }
 
     var body: some Scene {
+#if TIDY_RUNTIME_TEST_HOST
+        WindowGroup("Tidy Production Runtime Verification",
+                    id: RuntimeTestComposition.controlWindowID) {
+            withServices(accessibilityLabel: "Runtime verification controls") { services in
+                RuntimeTestControlView(services: services, scenario: runtimeScenario)
+            }
+        }
+        .defaultSize(width: 620, height: 540)
+        .commands {
+            CommandMenu("Runtime Verification") {
+                Button("Show Verification Controls") {
+                    RuntimeAuditControls.show()
+                }
+                Button("Hide Verification Controls") {
+                    RuntimeAuditControls.hide()
+                }
+            }
+        }
+#endif
+
         MenuBarExtra("Tidy", systemImage: "trash.circle") {
-            withServices { services in
+            withServices(accessibilityLabel: "Tidy menu") { services in
                 VStack(alignment: .leading, spacing: 0) {
                     MenuBarContentView(services: services)
                         .environment(services.configStore)
+                    if services.hasActiveConfirmedExecution {
+                        Divider()
+                        if let progress = services.executionProgress {
+                            Text("Cleanup: \(progress.completedEffects) of \(progress.scheduledEffects)")
+                                .font(.caption).padding(.horizontal, 16)
+                        }
+                        Button("Cancel Cleanup") { services.cancelConfirmedExecution() }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
+                    if services.liveRecoveryAdmission != .ready {
+                        Button("Reconcile Cleanup Recovery") {
+                            Task { await services.reconcileExecutionRecovery() }
+                        }.padding(.horizontal, 16)
+                    }
+                    if features?.developer.isScanning == true {
+                        Button("Cancel Developer Inventory") { features?.developer.cancel() }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
                     if services.activeScanSessionID != nil {
                         Divider()
                         Button("Cancel Scan") {
@@ -32,14 +98,14 @@ struct TidyApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Scan Report", id: WindowID.scan) {
-            withServices { services in
+            withServices(accessibilityLabel: "Scan report") { services in
                 ScanView(services: services)
             }
         }
         .windowResizability(.contentSize)
 
         Window("Headroom", id: WindowID.headroom) {
-            withServices { services in
+            withServices(accessibilityLabel: "Headroom") { services in
                 HeadroomView(services: services)
                     .environment(services.configStore)
             }
@@ -47,14 +113,30 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         WindowGroup(id: WindowID.clean, for: Tier.self) { $tier in
-            withServices { services in
+            withServices(accessibilityLabel: "Cleanup review") { services in
                 CleanView(tier: tier ?? .safe, services: services)
             }
         }
         .windowResizability(.contentSize)
 
+        Window("Developer Workspace", id: WindowID.developer) {
+            withServices(accessibilityLabel: "Developer workspace") { services in
+                if let features {
+                    DeveloperWorkspaceView(model: features.developer,
+                        localAuthority: services.configStore.localAuthoritySnapshot,
+                        policy: services.configStore.acknowledgedEffectivePolicy)
+                }
+            }
+        }
+
+        Window("Assistance and Local Consent", id: WindowID.assistance) {
+            withServices(accessibilityLabel: "Assistance and local consent") { _ in
+                if let features { AssistanceView(model: features.assistance) }
+            }
+        }
+
         Window("Custom Clean", id: WindowID.custom) {
-            withServices { services in
+            withServices(accessibilityLabel: "Custom cleanup") { services in
                 CustomView(services: services)
                     .environment(services.configStore)
             }
@@ -62,12 +144,17 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         Window("Settings", id: WindowID.settings) {
-            withServices { services in
+            withServices(accessibilityLabel: "Settings") { services in
                 VStack {
                     if let message = services.persistenceError {
                         Label(message, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                             .padding()
+                    }
+                    if let message = services.historyPersistenceError {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal)
                     }
                     SettingsView()
                         .environment(services.configStore)
@@ -77,7 +164,7 @@ struct TidyApp: App {
         .windowResizability(.contentSize)
 
         Window("Welcome to Tidy", id: WindowID.onboarding) {
-            withServices { services in
+            withServices(accessibilityLabel: "Welcome to Tidy") { services in
                 VStack {
                     if let message = services.persistenceError {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -94,6 +181,7 @@ struct TidyApp: App {
 
     @ViewBuilder
     private func withServices<Content: View>(
+        accessibilityLabel: String,
         @ViewBuilder content: (AppExecutionServices) -> Content
     ) -> some View {
         Group {
@@ -113,7 +201,12 @@ struct TidyApp: App {
                 storageUnavailable
             }
         }
+        .background(SceneContentAccessibilityLabel(label: accessibilityLabel)
+            .frame(width: 0, height: 0))
         .task { await startBootstrap() }
+#if TIDY_RUNTIME_TEST_HOST
+        .modifier(RuntimeTestAppearance())
+#endif
     }
 
     @MainActor
@@ -124,13 +217,45 @@ struct TidyApp: App {
             return
         }
         await bootstrap.start(paths: productionPaths).value
+        if let services = bootstrap.services {
+            if features == nil { features = AppFeatureModels(services: services) }
+#if !TIDY_RUNTIME_TEST_HOST
+            appTerminationDelegate.bind(services: services)
+#endif
+        }
     }
 
     private var recoveryUnavailable: some View {
-        ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
-            description: Text(bootstrap.services?.persistenceError
-                ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
-            .frame(minWidth: 320, minHeight: 200)
+        VStack {
+            ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
+                description: Text(bootstrap.services?.persistenceError
+                    ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
+            if let services = bootstrap.services, services.liveRecoveryAdmission != .ready {
+                Button("Retry Cleanup Verification") {
+                    Task {
+                        _ = await services.reconcileExecutionRecovery()
+                        bootstrap.refreshRecoveryDisposition()
+                    }
+                }
+                if let report = services.lastRecoveryReport {
+                    Text("\(report.reconciledEffects) of \(report.inspectedEffects) effects reconciled. \(report.disposition.rawValue)")
+                        .font(.caption)
+                }
+            }
+#if TIDY_RUNTIME_TEST_HOST
+            if let services = bootstrap.services {
+                Text("load:\(String(describing: services.settingsLoad.disposition)) "
+                     + "recovery:\(String(describing: services.settingsLoad.recoveryReason)) "
+                     + "journal:\(String(describing: services.initialJournalAdmission)) "
+                     + "settings:\(services.paths.settings.path)")
+                    .font(.caption.monospaced())
+                    .accessibilityIdentifier("runtime.bootstrap.diagnostic")
+                RuntimeTestRecoveryAttestationView(services: services,
+                    scenario: runtimeScenario)
+            }
+#endif
+        }
+        .frame(minWidth: 320, minHeight: 200)
     }
 
     private var storageUnavailable: some View {
@@ -156,6 +281,38 @@ struct TidyApp: App {
     }
 }
 
+/// SwiftUI's macOS hosting container is a separate accessibility group from its
+/// declarative children. Label that public AppKit container without combining or
+/// hiding any of the scene's independently accessible controls.
+private struct SceneContentAccessibilityLabel: NSViewRepresentable {
+    let label: String
+
+    func makeNSView(context: Context) -> LabelView {
+        let view = LabelView(frame: .zero)
+        view.setAccessibilityElement(false)
+        view.label = label
+        return view
+    }
+
+    func updateNSView(_ view: LabelView, context: Context) {
+        view.label = label
+        view.applyLabel()
+    }
+
+    final class LabelView: NSView {
+        var label = ""
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyLabel()
+        }
+
+        func applyLabel() {
+            window?.contentView?.setAccessibilityLabel(label)
+        }
+    }
+}
+
 enum WindowID {
     static let scan = "scan"
     static let headroom = "headroom"
@@ -163,4 +320,6 @@ enum WindowID {
     static let custom = "custom"
     static let settings = "settings"
     static let onboarding = "onboarding"
+    static let developer = "developer"
+    static let assistance = "assistance"
 }

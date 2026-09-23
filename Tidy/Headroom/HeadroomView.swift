@@ -13,7 +13,7 @@ struct HeadroomView: View {
     init(services: AppExecutionServices) {
         _model = State(initialValue: HeadroomViewModel(
             monitor: services.systemMonitor,
-            cardOrder: resolvedUICardOrder(services.configStore.effectivePolicy)))
+            cardOrder: resolvedUICardOrder(services.configStore.acknowledgedEffectivePolicy)))
     }
 
     var body: some View {
@@ -21,7 +21,7 @@ struct HeadroomView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
-                ForEach(model.cardOrder, id: \.self) { card in
+                ForEach(resolvedUICardOrder(configStore.acknowledgedEffectivePolicy), id: \.self) { card in
                     cardView(for: card)
                 }
 
@@ -36,7 +36,7 @@ struct HeadroomView: View {
             .padding(20)
         }
         .frame(minWidth: 380, minHeight: 440)
-        .onAppear { model.onAppear(policy: configStore.effectivePolicy) }
+        .onAppear { model.onAppear() }
         .onDisappear { model.onDisappear() }
     }
 
@@ -48,10 +48,17 @@ struct HeadroomView: View {
                 Spacer()
                 Button("Refresh") { model.refreshNow() }
                     .accessibilityIdentifier("headroom.refresh")
+                    .disabled(model.snapshot?.unavailableReason != nil)
             }
             Text("Independent, timestamped readings -- not a combined health score.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let reason = model.snapshot?.unavailableReason {
+                Label(reason, systemImage: "pause.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("headroom.unavailable")
+            }
         }
     }
 
@@ -76,9 +83,9 @@ struct HeadroomView: View {
                             title: PathDisplay.tilde(volume.displayPath),
                             usedBytes: disk.usedBytes,
                             totalBytes: disk.totalBytes,
-                            detail: "\(ByteFormat.human(disk.availableForImportantUsageBytes)) free"
+                            detail: "\(ByteFormat.human(disk.availableForImportantUsageBytes, units: unitStyle)) free"
                         )
-                        Text("Strictly available: \(ByteFormat.human(disk.availableBytes))")
+                        Text("Strictly available: \(ByteFormat.human(disk.availableBytes, units: unitStyle))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     } else {
@@ -95,7 +102,7 @@ struct HeadroomView: View {
         ReportSection(title: "Memory pressure") {
             if let memory = model.snapshot?.memory, let used = memory.usedBytes {
                 StatsGaugeRow(title: "Memory", usedBytes: used, totalBytes: memory.totalBytes,
-                    detail: "\(ByteFormat.human(used)) used")
+                    detail: "\(ByteFormat.human(used, units: unitStyle)) used")
             } else {
                 unavailableRow(title: "Memory", reason: model.snapshot?.memoryUnavailableReason)
             }
@@ -118,12 +125,12 @@ struct HeadroomView: View {
         ReportSection(title: "Swap") {
             if let swap = model.snapshot?.swap {
                 StatsGaugeRow(title: "Swap", usedBytes: swap.usedBytes, totalBytes: max(swap.totalBytes, 1),
-                    detail: "\(ByteFormat.human(swap.usedBytes)) used")
+                    detail: "\(ByteFormat.human(swap.usedBytes, units: unitStyle)) used")
             } else {
                 unavailableRow(title: "Swap", reason: model.snapshot?.swapUnavailableReason)
             }
             if let rate = model.snapshot?.pageOutRatePerSecond {
-                Text("Paging out ~\(ByteFormat.human(Int64(rate)))/s -- a pressure indicator, not a measurement of disk writes and not proof swap will be cleared.")
+                Text("Paging out ~\(ByteFormat.human(Int64(rate), units: unitStyle))/s -- a pressure indicator, not a measurement of disk writes and not proof swap will be cleared.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else {
@@ -163,7 +170,7 @@ struct HeadroomView: View {
     }
 
     private var readinessSection: some View {
-        let targetBytes = resolvedHeadroomTargetBytes(configStore.effectivePolicy)
+        let targetBytes = resolvedHeadroomTargetBytes(configStore.acknowledgedEffectivePolicy)
         let readiness = model.readiness(targetBytes: targetBytes)
         return ReportSection(title: "Build headroom") {
             switch readiness {
@@ -174,7 +181,7 @@ struct HeadroomView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             case .belowTarget(let shortfall):
-                Text("\(ByteFormat.human(shortfall)) short of target.")
+                Text("\(ByteFormat.human(shortfall, units: unitStyle)) short of target.")
                     .font(.callout)
             case .unavailable:
                 Text(targetBytes == nil ? "No headroom target set." : "Available space could not be measured.")
@@ -182,6 +189,10 @@ struct HeadroomView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var unitStyle: ByteUnitStyle {
+        resolvedUIUnitStyle(configStore.acknowledgedEffectivePolicy)
     }
 
     private func unavailableRow(title: String, reason: String?) -> some View {

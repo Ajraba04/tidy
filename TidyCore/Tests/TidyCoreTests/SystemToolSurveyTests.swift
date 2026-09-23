@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TidyCore
 
@@ -49,37 +50,32 @@ struct SnapshotListerTests {
     }
 }
 
-@Suite("SimctlClient")
+@Suite("SimctlClient isolated response parsing")
 struct SimctlClientTests {
-    @Test("lists devices without crashing")
-    func listsDevicesWithoutCrashing() async {
-        let devices = await SimctlClient.listDevices()
-        for device in devices {
-            #expect(!device.udid.isEmpty)
-            #expect(!device.runtimeIdentifier.isEmpty)
-        }
+    private let devicesJSON = #"{"devices":{"runtime.fixture":[{"udid":"11111111-1111-1111-1111-111111111111","name":"Fixture","state":"Shutdown","isAvailable":true}]}}"#
+    private let runtimesJSON = #"{"runtimes":[{"identifier":"runtime.fixture","name":"Used"},{"identifier":"runtime.idle","name":"Idle"}]}"#
+
+    @Test("device response keeps the exact runtime and device identity without a service launch")
+    func listsDevicesWithoutCrashing() {
+        let devices = SimctlClient.decodeDevices(Data(devicesJSON.utf8))
+        #expect(devices.count == 1)
+        #expect(devices.first?.udid == "11111111-1111-1111-1111-111111111111")
+        #expect(devices.first?.runtimeIdentifier == "runtime.fixture")
+        #expect(SimctlClient.decodeDevices(Data("invalid".utf8)).isEmpty)
     }
 
-    @Test("lists runtimes without crashing")
-    func listsRuntimesWithoutCrashing() async {
-        let runtimes = await SimctlClient.listRuntimes()
-        for runtime in runtimes {
-            #expect(!runtime.identifier.isEmpty)
-        }
+    @Test("runtime response rejects invalid and oversized output")
+    func listsRuntimesWithoutCrashing() {
+        #expect(SimctlClient.decodeRuntimes(Data(runtimesJSON.utf8)).count == 2)
+        #expect(SimctlClient.decodeRuntimes(Data("{}".utf8)).isEmpty)
+        #expect(SimctlClient.decodeRuntimes(Data(repeating: 32, count: 1_048_577)).isEmpty)
     }
 
-    @Test("idle runtimes are a subset of all runtimes and exclude anything with a device")
-    func idleRuntimesAreConsistent() async {
-        async let allRuntimes = SimctlClient.listRuntimes()
-        async let allDevices = SimctlClient.listDevices()
-        let idle = await SimctlClient.idleRuntimes()
-
-        let runtimes = await allRuntimes
-        let devices = await allDevices
-        let usedIdentifiers = Set(devices.map(\.runtimeIdentifier))
-
-        let idleIdentifiers = Set(idle.map(\.identifier))
-        #expect(idleIdentifiers.isSubset(of: Set(runtimes.map(\.identifier))))
-        #expect(idleIdentifiers.isDisjoint(with: usedIdentifiers))
+    @Test("idle runtimes exclude any runtime referenced by a device")
+    func idleRuntimesAreConsistent() {
+        let devices = SimctlClient.decodeDevices(Data(devicesJSON.utf8))
+        let runtimes = SimctlClient.decodeRuntimes(Data(runtimesJSON.utf8))
+        let idle = SimctlClient.idleRuntimes(devices: devices, runtimes: runtimes)
+        #expect(idle.map(\.identifier) == ["runtime.idle"])
     }
 }

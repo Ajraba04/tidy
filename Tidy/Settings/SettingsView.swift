@@ -4,6 +4,12 @@ import SwiftUI
 import TidyCore
 import UniformTypeIdentifiers
 
+@MainActor func resolvedUIAdvancedSettings(_ policy: EffectivePolicy?) -> Bool {
+    guard let policy, case .stored(.bool(let value))? =
+        policy.fields[SettingID(rawValue: "ui.advancedSettings")]?.value else { return false }
+    return value
+}
+
 enum SettingsRowAvailability: Equatable {
     case editable, notApplicable(String), unavailable(String), deferred(String)
 }
@@ -30,7 +36,7 @@ enum SettingsSurfaceEmptyState: Equatable {
 
 enum SettingsVisualContract {
     static let titleRole: SettingsSemanticTextRole = .primary
-    static let metadataRole: SettingsSemanticTextRole = .secondary
+    static let metadataRole: SettingsSemanticTextRole = .primary
     static let unavailableRole: SettingsSemanticTextRole = .warning
     static func layoutMode(for size: DynamicTypeSize) -> SettingsLayoutMode {
         size.isAccessibilitySize ? .stacked : .columns
@@ -144,15 +150,7 @@ struct SettingsSurfaceModel {
         return settings.enumerated().map { index, setting in
             let definition = setting.definition
             let kind = control(for: definition)
-            let availability: SettingsRowAvailability
-            if definition.resolution == .authority {
-                availability = .deferred("Requires a separately accepted local-authority workflow.")
-            } else if !definition.layers.contains(.global) {
-                availability = .unavailable("This setting is not editable at the global layer.")
-            } else if kind == .readOnly {
-                availability = .unavailable(
-                    "This value needs a bounded editor that is deferred from T07.3a.")
-            } else { availability = .editable }
+            let availability = availability(for: definition, control: kind)
             let copy = resolvedCopy(for: setting, bundle: bundle)
             let effective = effectivePolicy.fields[definition.id]
             let consequence = copy.consequence
@@ -208,7 +206,8 @@ struct SettingsSurfaceModel {
         guard let definition = SettingsPresentationRegistry.renderedUniverse(volumeIDs: [])
             .first(where: { $0.id == id }),
               definition.resolution != .authority,
-              definition.layers.contains(.global), control(for: definition) != .readOnly
+              definition.layers.contains(.global), control(for: definition) != .readOnly,
+              SettingsPresentationRegistry.consumerSupport(for: definition).isConnected
         else { return nil }
         var candidate = store.preferences.global
         candidate.fields[id] = value
@@ -222,14 +221,7 @@ struct SettingsSurfaceModel {
                          effectivePolicy: EffectivePolicy?) -> SettingsSurfaceRow {
         let definition = setting.definition
         let kind = control(for: definition)
-        let availability: SettingsRowAvailability
-        if definition.resolution == .authority {
-            availability = .deferred("Requires a separately accepted local-authority workflow.")
-        } else if !definition.layers.contains(.global) {
-            availability = .unavailable("This setting is not editable at the global layer.")
-        } else if kind == .readOnly {
-            availability = .unavailable("This value needs a bounded editor that is deferred from T07.3a.")
-        } else { availability = .editable }
+        let availability = Self.availability(for: definition, control: kind)
         let copy = Self.resolvedCopy(for: setting, bundle: bundle)
         let consequence = copy.consequence
         let applicability = copy.applicability
@@ -279,6 +271,28 @@ struct SettingsSurfaceModel {
                 .dropLast(("." + suffix).count))
         case .volumeOverride:
             return String(setting.definition.id.rawValue.dropFirst("headroom.volumeOverrides.".count))
+        }
+    }
+
+    private static func availability(for definition: SettingDefinition,
+                                     control: SettingsControlKind) -> SettingsRowAvailability {
+        switch SettingsPresentationRegistry.consumerSupport(for: definition) {
+        case .unavailable(let reason):
+            return definition.resolution == .authority ? .deferred(reason) : .unavailable(reason)
+        case .connected:
+            if definition.resolution == .authority {
+                return .deferred("Manage this approval in Assistance and Local Consent.")
+            }
+            if !definition.layers.contains(.global) {
+                return .unavailable("This setting is not editable at the global layer.")
+            }
+            if ["scope.currentProject", "scope.pinnedProjects"].contains(definition.id.rawValue) {
+                return .deferred("Manage project protection in Developer Workspace.")
+            }
+            if control == .readOnly {
+                return .unavailable("This setting needs a bounded editor that is not implemented.")
+            }
+            return .editable
         }
     }
 }
@@ -345,6 +359,7 @@ private func describe(_ reason: FieldReason) -> String {
     case .invalidForVolume: "invalid for volume"
     case .unmatchedVolume: "unmatched volume"
     case .authorityUnavailable: "authority unavailable"
+    case .localConsent: "local consent"
     case .protected: "protected"
     case .quarantine: "quarantine"
     case .notConfigured: "not configured"
@@ -1538,12 +1553,15 @@ struct SettingsWorkflowSurface: View {
 
 struct SettingsView: View {
     @Environment(AppConfigStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedSection = SettingsPresentationSection.features
     @State private var query = ""
     @State private var showsAdvanced = false
     var body: some View {
         let model = SettingsSurfaceModel(store: store)
-        let rows = model.rows(query: query, showsAdvanced: showsAdvanced,
+        let persistedAdvanced = resolvedUIAdvancedSettings(store.acknowledgedEffectivePolicy)
+        let revealsAdvanced = showsAdvanced || persistedAdvanced
+        let rows = model.rows(query: query, showsAdvanced: revealsAdvanced,
                               section: selectedSection)
         VStack(alignment: .leading, spacing: 12) {
             Picker("Settings section", selection: $selectedSection) {
@@ -1552,14 +1570,102 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.section." + section.rawValue)
                 }
             }.pickerStyle(.segmented)
-            TextField("Search settings", text: $query).accessibilityIdentifier("settings.search")
-            Toggle("Show Advanced", isOn: $showsAdvanced)
+            Button("Manage Local Consent…") { openWindow(id: "assistance") }
+                .accessibilityIdentifier("settings.localConsent")
+            Button("Manage Project Protection…") { openWindow(id: "developer") }
+                .accessibilityIdentifier("settings.projectProtection")
+            TextField("Search settings", text: $query)
+                .accessibilityLabel("Search settings")
+                .accessibilityIdentifier("settings.search")
+            Toggle("Show Advanced", isOn: Binding(get: { revealsAdvanced }, set: { value in
+                showsAdvanced = value
+                _ = model.submit(id: SettingID(rawValue: "ui.advancedSettings"),
+                    value: .bool(value))
+            }))
                 .accessibilityIdentifier("settings.showAdvanced")
-            RegistrySettingsSurface(rows: rows) { id, value in
-                _ = model.submit(id: id, value: value)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if selectedSection == .experience {
+                        DiagnosticExportControl(store: store)
+                    }
+                    RegistrySettingsContent(rows: rows) { id, value in
+                        _ = model.submit(id: id, value: value)
+                    }
+                    SettingsWorkflowSurface(store: store)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Settings content")
             }
-            SettingsWorkflowSurface(store: store)
+            .accessibilityIdentifier("settings.content")
         }.padding().frame(minWidth: 480, minHeight: 520).navigationTitle("Settings")
+    }
+}
+
+@MainActor
+private struct DiagnosticExportControl: View {
+    let store: AppConfigStore
+    @State private var isExporting = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Export Diagnostics…", action: chooseDestination)
+                .disabled(isExporting)
+                .accessibilityIdentifier("settings.diagnostics.export")
+            Text("Saved settings metadata only. Logs, paths, setting values and profile names are excluded.")
+                .font(.caption)
+                .foregroundStyle(.primary)
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("settings.diagnostics.status")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Diagnostic export")
+    }
+
+    private func chooseDestination() {
+        guard !isExporting else { return }
+        let input = store.makeDiagnosticExportInput()
+        let panel = NSSavePanel()
+        panel.title = "Export Diagnostics"
+        panel.message = "Choose a new file for saved settings metadata. Existing files are never replaced."
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "tidy-diagnostics-\(UUID().uuidString.prefix(8)).json"
+        isExporting = true
+        message = nil
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else {
+                isExporting = false
+                return
+            }
+            let scoped = destination.startAccessingSecurityScopedResource()
+            Task { @MainActor in
+                defer {
+                    if scoped { destination.stopAccessingSecurityScopedResource() }
+                    isExporting = false
+                }
+                do {
+                    _ = try await Task.detached(priority: .utility) {
+                        try DiagnosticExportWriter.write(input, to: destination)
+                    }.value
+                    message = "Diagnostic metadata exported."
+                } catch let error as DiagnosticExportWriteError {
+                    switch error {
+                    case .publicationUncertain:
+                        message = "The export was published, but its final state could not be confirmed. Check the selected location before trying again."
+                    case .failure(.publication, let code) where code == POSIXErrorCode.EEXIST.rawValue:
+                        message = "A file with that name already exists. Choose a new filename."
+                    case .failure:
+                        message = "Diagnostics could not be exported. Choose a private writable folder and a new filename."
+                    }
+                } catch {
+                    message = "Diagnostics could not be exported."
+                }
+            }
+        }
     }
 }
 
@@ -1569,24 +1675,38 @@ struct RegistrySettingsSurface: View {
     let submit: (SettingID, SettingValue?) -> Void
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                switch SettingsSurfaceEmptyState.resolve(
-                    rows: rows, registryState: registryState) {
-                case .registryFailure:
-                    Label("Settings are unavailable because registry validation failed.",
-                          systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                        .accessibilityIdentifier("settings.registry.failure")
-                case .noMatches:
-                    ContentUnavailableView("No settings match",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try another search or section."))
-                        .accessibilityIdentifier("settings.search.noMatches")
-                case .content:
-                    ForEach(rows) { RegistrySettingRow(row: $0, submit: submit) }
-                }
+            RegistrySettingsContent(rows: rows, registryState: registryState, submit: submit)
+        }
+    }
+}
+
+/// The production window owns scrolling so workflow controls cannot compress
+/// the registry into a viewport shorter than a single settings row.
+private struct RegistrySettingsContent: View {
+    let rows: [SettingsSurfaceRow]
+    var registryState: SettingsRegistryState = SettingsSurfaceModel.registryState
+    let submit: (SettingID, SettingValue?) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            switch SettingsSurfaceEmptyState.resolve(
+                rows: rows, registryState: registryState) {
+            case .registryFailure:
+                Label("Settings are unavailable because registry validation failed.",
+                      systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("settings.registry.failure")
+            case .noMatches:
+                ContentUnavailableView("No settings match",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another search or section."))
+                    .accessibilityIdentifier("settings.search.noMatches")
+            case .content:
+                ForEach(rows) { RegistrySettingRow(row: $0, submit: submit) }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Settings registry")
     }
 }
 
@@ -1598,7 +1718,10 @@ private struct RegistrySettingRow: View {
         self.row = row; self.submit = submit
     }
     var body: some View {
-        layout.accessibilityIdentifier(row.accessibilityIdentifier)
+        layout
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(row.accessibilityIdentifier)
+            .accessibilityLabel(row.accessibilityLabel)
     }
     @ViewBuilder private var layout: some View {
         if SettingsVisualContract.layoutMode(for: typeSize) == .stacked {
@@ -1656,6 +1779,9 @@ private struct RegistrySettingRow: View {
                     SettingsVisualContract.unavailableRole)
         }
         .padding(.vertical, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityIdentifier("settings.metadata." + row.id.rawValue)
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityValue(SettingsAccessibility.value(for: row))
         .accessibilityHint(SettingsAccessibility.help(for: row))

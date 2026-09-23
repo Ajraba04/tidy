@@ -360,9 +360,9 @@ private func childRecord(_ base: PendingEffectIntent, pid: Int32?,
                          seconds: Int64?, micros: Int32?,
                          executablePath: String? = nil) -> PendingEffectIntent {
     PendingEffectIntent(runID: base.runID, operationID: base.operationID,
-        adapterID: base.adapterID, bootID: base.bootID,
-        executablePath: executablePath ?? base.executablePath,
-        executableDevice: base.executableDevice, executableInode: base.executableInode,
+        adapterID: base.adapterID, bootID: base.bootID!,
+        executablePath: executablePath ?? base.executablePath!,
+        executableDevice: base.executableDevice!, executableInode: base.executableInode!,
         childPID: pid, childStartSeconds: seconds, childStartMicroseconds: micros,
         phase: base.phase)
 }
@@ -1473,8 +1473,9 @@ extension RunRecoveryTests {
             #expect(store.readAdmissionWhileLocked() == .storageUnavailable)
             #expect(try ownedSafetyBytes(root) == safety)
             #expect(try storage.read(name: journalName(active)) == diagnostic)
-            // The real unlink already happened; no rollback/recreated report after sync ambiguity.
-            #expect(throws: JournalError.notFound) { _ = try storage.read(name: journalName(finished)) }
+            // Retirement-marker durability failed before any delete, so the
+            // validated finished journal remains available for a later retry.
+            #expect(try !storage.read(name: journalName(finished)).isEmpty)
             #expect(throws: JournalError.unavailable) { try journal.append(event(UUID(), 1, .planned)) }
             store.release()
             let reopened = try MutationAdmissionStore(directory: root)

@@ -75,12 +75,16 @@ public struct SystemSnapshot: Sendable, Equatable {
     public let memoryPressureLevel: MemoryPressureLevel?
     public let thermalState: ProcessInfo.ThermalState?
     public let isLowPowerModeEnabled: Bool?
+    /// Set when policy forbids the observation itself. In this state the
+    /// monitor intentionally invokes no operating-system probes.
+    public let unavailableReason: String?
 
     public init(observedAt: Date, bootIdentity: BootIdentity?, volumes: [VolumeObservation],
                 memory: MemoryStats?, memoryUnavailableReason: String?,
                 swap: SwapStats?, swapUnavailableReason: String?,
                 pageOutRatePerSecond: Double?, memoryPressureLevel: MemoryPressureLevel?,
-                thermalState: ProcessInfo.ThermalState?, isLowPowerModeEnabled: Bool?) {
+                thermalState: ProcessInfo.ThermalState?, isLowPowerModeEnabled: Bool?,
+                unavailableReason: String? = nil) {
         self.observedAt = observedAt
         self.bootIdentity = bootIdentity
         self.volumes = volumes
@@ -92,6 +96,7 @@ public struct SystemSnapshot: Sendable, Equatable {
         self.memoryPressureLevel = memoryPressureLevel
         self.thermalState = thermalState
         self.isLowPowerModeEnabled = isLowPowerModeEnabled
+        self.unavailableReason = unavailableReason
     }
 }
 

@@ -34,11 +34,17 @@ public struct ScanEventBatch: Sendable {
     public let events: [ScanEvent]
     public let cursor: UInt64
     public let historyReliable: Bool
+    /// Separate from retained-history reliability: false means no live delivery channel exists
+    /// (for example FSEventStreamCreate/Start failed). A fresh walk cannot make such a watch safe
+    /// for later reuse because subsequent mutations would remain invisible.
+    public let deliveryAvailable: Bool
 
-    public init(events: [ScanEvent], cursor: UInt64, historyReliable: Bool) {
+    public init(events: [ScanEvent], cursor: UInt64, historyReliable: Bool,
+                deliveryAvailable: Bool = true) {
         self.events = events
         self.cursor = cursor
         self.historyReliable = historyReliable
+        self.deliveryAvailable = deliveryAvailable
     }
 }
 
@@ -61,9 +67,14 @@ public protocol ScanEventSource: Sendable {
 /// event the OS has already accepted becomes visible through `next()` at or
 /// before the cursor it returns.
 public protocol ScanEventStream: Sendable {
+    func initialBatch() async -> ScanEventBatch?
     func next() async -> ScanEventBatch
     func flush() async -> UInt64
     func stop() async
+}
+
+public extension ScanEventStream {
+    func initialBatch() async -> ScanEventBatch? { nil }
 }
 
 public enum ScanInvalidationError: Error, Equatable, Sendable {
@@ -71,6 +82,11 @@ public enum ScanInvalidationError: Error, Equatable, Sendable {
     /// watermark within a bounded number of yields. Fails closed: callers
     /// must treat this the same as a generation mismatch, never as fresh.
     case barrierTimedOut
+}
+
+struct ScanInvalidationSuspensionCheckpoint: Equatable, Sendable {
+    let cursor: UInt64
+    let generations: [String: UInt64]
 }
 
 /// Owns per-root generations and the single running event watch. A scan
@@ -81,7 +97,13 @@ public actor ScanInvalidation {
     private let source: any ScanEventSource
     private var approvedRoots: [String] = []
     private var generations: [String: UInt64] = [:]
+    /// Complete baselines established under the currently running watch. This is separate from
+    /// the process-local generation counter: an unreliable restart can legitimately increment a
+    /// new actor from zero to the same value persisted by an older process, and equality alone
+    /// must never turn that collision into cache trust.
+    private var trustedBaselineGenerations: [String: UInt64] = [:]
     private var historyReliable = true
+    private var deliveryAvailable = true
     private var appliedCursor: UInt64 = 0
     private var stream: (any ScanEventStream)?
     private var pumpTask: Task<Void, Never>?
@@ -115,14 +137,17 @@ public actor ScanInvalidation {
         for root in approvedRoots where generations[root] == nil {
             generations[root] = 0
         }
+        trustedBaselineGenerations.removeAll()
         // A fresh watch has not yet proven anything unreliable; the sticky flag only exists to
         // survive across events *within* one watch's lifetime, never across a restart.
         historyReliable = true
+        deliveryAvailable = true
         appliedCursor = resumeCursor ?? 0
         let newStream = await source.makeStream(roots: roots, resumeCursor: resumeCursor,
             persistedDeviceUUID: persistedDeviceUUID)
         stream = newStream
-        watchActive = true
+        if let initial = await newStream.initialBatch() { apply(initial) }
+        watchActive = deliveryAvailable
         pumpTask = Task { [weak self] in await self?.pump(newStream) }
     }
 
@@ -155,18 +180,40 @@ public actor ScanInvalidation {
 
     public func currentCursor() -> UInt64 { appliedCursor }
 
+    /// A persisted generation is usable only while this watch has reliable history, or after a
+    /// complete walk under this exact watch established a new trusted baseline. The latter lets a
+    /// conservative startup recover useful caching without ever trusting a colliding counter.
+    public func isCacheGenerationTrusted(for root: String, generation: UInt64) -> Bool {
+        guard watchActive else { return false }
+        let canonical = PathGuard.canonicalize(root)
+        guard generations[canonical, default: 0] == generation else { return false }
+        return historyReliable || trustedBaselineGenerations[canonical] == generation
+    }
+
+    /// Marks a freshly completed traversal as the baseline for this watch. A late event cannot
+    /// race this into trust: the generation must still match when this actor receives the mark.
+    public func establishCompleteBaseline(for root: String, generation: UInt64) {
+        guard watchActive else { return }
+        let canonical = PathGuard.canonicalize(root)
+        guard generations[canonical, default: 0] == generation else { return }
+        trustedBaselineGenerations[canonical] = generation
+    }
+
     /// Explicit widening for signals the event stream itself cannot carry:
     /// a moved/replaced root, a changed policy/protected-root set, an
     /// unmounted or swapped volume. All of these invalidate every approved
     /// root, matching `InvalidationDecision.decide(historyReliable: false)`.
     public func invalidateAllApprovedRoots() {
         for root in approvedRoots {
+            trustedBaselineGenerations.removeValue(forKey: root)
             generations[root, default: 0] += 1
         }
     }
 
     public func invalidateRoot(_ root: String) {
-        generations[PathGuard.canonicalize(root), default: 0] += 1
+        let canonical = PathGuard.canonicalize(root)
+        trustedBaselineGenerations.removeValue(forKey: canonical)
+        generations[canonical, default: 0] += 1
     }
 
     /// Drains the event-delivery barrier: forces the stream to flush,
@@ -184,14 +231,49 @@ public actor ScanInvalidation {
         }
     }
 
+    /// Closes event-application admission and captures the continuation checkpoint in one actor
+    /// turn. The caller flushes first; after that flush, an event is either already applied and
+    /// fails `expectedGenerations`, or remains after `appliedCursor` and is replayed on resume.
+    /// There is no suspension point between final validation, invalidation, capture, and pump
+    /// cancellation, so an applied event cannot be normalized into the new checkpoint.
+    func prepareManualContinuationSuspension(
+        expectedGenerations: [String: UInt64]?,
+        interleavingBatchForTesting: ScanEventBatch? = nil
+    ) -> ScanInvalidationSuspensionCheckpoint? {
+        if let interleavingBatchForTesting { apply(interleavingBatchForTesting) }
+        guard watchActive, deliveryAvailable else { return nil }
+        if let expectedGenerations {
+            guard historyReliable else { return nil }
+            for (root, generation) in expectedGenerations {
+                guard generations[PathGuard.canonicalize(root), default: 0] == generation else {
+                    return nil
+                }
+            }
+        }
+        invalidateAllApprovedRoots()
+        let captured = Dictionary(uniqueKeysWithValues: approvedRoots.map {
+            ($0, generations[$0, default: 0])
+        })
+        let checkpoint = ScanInvalidationSuspensionCheckpoint(cursor: appliedCursor,
+            generations: captured)
+        watchActive = false
+        pumpTask?.cancel()
+        return checkpoint
+    }
+
     private func pump(_ stream: any ScanEventStream) async {
         while !Task.isCancelled {
             let batch = await stream.next()
+            guard !Task.isCancelled else { break }
             apply(batch)
         }
     }
 
     private func apply(_ batch: ScanEventBatch) {
+        if !batch.deliveryAvailable {
+            deliveryAvailable = false
+            watchActive = false
+        }
         if !batch.historyReliable {
             historyReliable = false
         }
@@ -260,25 +342,71 @@ public final class FSEventsScanEventSource: ScanEventSource, @unchecked Sendable
 /// Bridges the C callback (no captures allowed) to Swift async consumers.
 /// Every mutation is behind a lock because FSEvents calls back on its own
 /// dispatch queue while `next()`/`flush()` are called from actor tasks.
-private final class FSEventsDeliveryBox: @unchecked Sendable {
+final class FSEventsDeliveryBox: @unchecked Sendable {
+    static let maximumPendingBatches = 64
+    static let maximumEventsPerBatch = 4_096
+    static let maximumUTF8BytesPerPath = 4_096
+    static let maximumUTF8BytesPerBatch = 1 * 1_024 * 1_024
+    static let maximumPendingUTF8Bytes = 8 * 1_024 * 1_024
     private let lock = NSLock()
     private var pending: [ScanEventBatch] = []
+    private var pendingUTF8Bytes = 0
+    private var overflowMarkerPending = false
     private var waiter: CheckedContinuation<ScanEventBatch, Never>?
     private var lastCursor: UInt64 = 0
     private var stopped = false
 
     func deliver(_ batch: ScanEventBatch) {
+        let bounded = Self.bound(batch)
         lock.lock()
         guard !stopped else { lock.unlock(); return }
-        lastCursor = max(lastCursor, batch.cursor)
+        lastCursor = max(lastCursor, bounded.batch.cursor)
         if let waiter {
             self.waiter = nil
             lock.unlock()
-            waiter.resume(returning: batch)
+            waiter.resume(returning: bounded.batch)
         } else {
-            pending.append(batch)
+            let (nextBytes, bytesOverflow) = pendingUTF8Bytes.addingReportingOverflow(
+                bounded.utf8Bytes)
+            if overflowMarkerPending || bounded.didOverflow
+                || pending.count >= Self.maximumPendingBatches || bytesOverflow
+                || nextBytes > Self.maximumPendingUTF8Bytes {
+                collapseToOverflowMarker()
+            } else {
+                pending.append(bounded.batch)
+                pendingUTF8Bytes = nextBytes
+            }
             lock.unlock()
         }
+    }
+
+    private static func bound(_ batch: ScanEventBatch)
+      -> (batch: ScanEventBatch, utf8Bytes: Int, didOverflow: Bool) {
+        guard batch.events.count <= maximumEventsPerBatch else {
+            return (ScanEventBatch(events: [], cursor: batch.cursor, historyReliable: false,
+                deliveryAvailable: batch.deliveryAvailable), 0, true)
+        }
+        var bytes = 0
+        for event in batch.events {
+            let pathBytes = event.path.utf8.count
+            guard pathBytes <= maximumUTF8BytesPerPath else {
+                return (ScanEventBatch(events: [], cursor: batch.cursor,
+                    historyReliable: false, deliveryAvailable: batch.deliveryAvailable), 0, true)
+            }
+            let (next, overflow) = bytes.addingReportingOverflow(pathBytes)
+            guard !overflow, next <= maximumUTF8BytesPerBatch else {
+                return (ScanEventBatch(events: [], cursor: batch.cursor,
+                    historyReliable: false, deliveryAvailable: batch.deliveryAvailable), 0, true)
+            }
+            bytes = next
+        }
+        return (batch, bytes, false)
+    }
+
+    private func collapseToOverflowMarker() {
+        pending = [ScanEventBatch(events: [], cursor: lastCursor, historyReliable: false)]
+        pendingUTF8Bytes = 0
+        overflowMarkerPending = true
     }
 
     /// One locked section decides everything: either a batch is already pending and the
@@ -297,6 +425,12 @@ private final class FSEventsDeliveryBox: @unchecked Sendable {
                     historyReliable: true))
             } else if !pending.isEmpty {
                 let batch = pending.removeFirst()
+                if overflowMarkerPending {
+                    overflowMarkerPending = false
+                } else {
+                    pendingUTF8Bytes = max(0, pendingUTF8Bytes
+                        - batch.events.reduce(0) { $0 + $1.path.utf8.count })
+                }
                 lock.unlock()
                 continuation.resume(returning: batch)
             } else {
@@ -310,6 +444,16 @@ private final class FSEventsDeliveryBox: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return lastCursor
+    }
+
+    func pendingBatchCountForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return pending.count
+    }
+
+    func pendingUTF8BytesForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return pendingUTF8Bytes
     }
 
     /// Unblocks a pump parked in `next()` and makes every subsequent `next()` call resolve
@@ -328,18 +472,77 @@ private final class FSEventsDeliveryBox: @unchecked Sendable {
     }
 }
 
+struct BoundedFSEventCallbackPaths {
+    let events: [ScanEvent]
+    let utf8Bytes: Int
+    let didOverflow: Bool
+    let convertedPathCount: Int
+}
+
+/// Reads at most the accepted callback prefix and checks the NSString byte length before creating
+/// any Swift String. This avoids the old `NSArray as? [String]` bridge, which converted every
+/// callback path before the event-count cap was applied.
+func boundedFSEventCallbackPaths(_ paths: NSArray, eventCount: Int)
+  -> BoundedFSEventCallbackPaths {
+    guard eventCount >= 0 else {
+        return .init(events: [], utf8Bytes: 0, didOverflow: true, convertedPathCount: 0)
+    }
+    let limit = min(eventCount, FSEventsDeliveryBox.maximumEventsPerBatch)
+    var events: [ScanEvent] = []
+    events.reserveCapacity(limit)
+    var bytes = 0
+    var converted = 0
+    var overflow = eventCount > limit || paths.count < limit
+    guard !overflow else {
+        return .init(events: [], utf8Bytes: 0, didOverflow: true, convertedPathCount: 0)
+    }
+    for index in 0..<limit {
+        guard let path = paths.object(at: index) as? NSString else {
+            overflow = true
+            break
+        }
+        let pathBytes = path.lengthOfBytes(using: String.Encoding.utf8.rawValue)
+        guard pathBytes <= FSEventsDeliveryBox.maximumUTF8BytesPerPath else {
+            overflow = true
+            break
+        }
+        let (next, byteOverflow) = bytes.addingReportingOverflow(pathBytes)
+        guard !byteOverflow, next <= FSEventsDeliveryBox.maximumUTF8BytesPerBatch else {
+            overflow = true
+            break
+        }
+        events.append(ScanEvent(path: path as String))
+        converted += 1
+        bytes = next
+    }
+    if overflow {
+        return .init(events: [], utf8Bytes: 0, didOverflow: true,
+            convertedPathCount: converted)
+    }
+    return .init(events: events, utf8Bytes: bytes, didOverflow: false,
+        convertedPathCount: converted)
+}
+
+enum FSEventsStartupHistory {
+    static func isReliable(resumeCursor: UInt64?, persistedDeviceUUID: String?,
+                           liveDeviceUUID: String?, streamStarted: Bool) -> Bool {
+        guard resumeCursor != nil, streamStarted,
+              let persistedDeviceUUID, let liveDeviceUUID else { return false }
+        return persistedDeviceUUID == liveDeviceUUID
+    }
+}
+
 private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendable {
     private let box = FSEventsDeliveryBox()
     private let queue = DispatchQueue(label: "com.tidy.scanindex.fsevents")
+    private let flushQueue = DispatchQueue(label: "com.tidy.scanindex.fsevents.flush")
+    private let streamLock = NSLock()
     private var streamRef: FSEventStreamRef?
+    private var initial: ScanEventBatch?
 
     init(roots: [String], resumeCursor: UInt64?, persistedDeviceUUID: String?) {
-        var reliable = resumeCursor != nil
-        if let root = roots.first, let persistedDeviceUUID,
-           let live = FSEventsScanEventSource.currentDeviceUUID(forPathOnVolume: root),
-           live != persistedDeviceUUID {
-            reliable = false
-        }
+        let liveDeviceUUID = roots.first.flatMap(
+            FSEventsScanEventSource.currentDeviceUUID(forPathOnVolume:))
 
         var context = FSEventStreamContext(version: 0,
             info: Unmanaged.passUnretained(box).toOpaque(), retain: nil, release: nil,
@@ -354,29 +557,40 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
         let created = FSEventStreamCreate(nil, fsEventsScanCallback, &context,
             roots as CFArray, sinceWhen, 0.2, flags)
         streamRef = created
+        var streamStarted = false
         if let created {
             FSEventStreamSetDispatchQueue(created, queue)
-            if !FSEventStreamStart(created) { reliable = false }
-        } else {
-            reliable = false
+            streamStarted = FSEventStreamStart(created)
         }
+        let reliable = FSEventsStartupHistory.isReliable(resumeCursor: resumeCursor,
+            persistedDeviceUUID: persistedDeviceUUID, liveDeviceUUID: liveDeviceUUID,
+            streamStarted: streamStarted)
         // The pump's very first read reports the resolved reliability so a
         // caller that never sees a real event before its barrier still
         // learns the truth.
-        box.deliver(ScanEventBatch(events: [], cursor: resumeCursor ?? 0, historyReliable: reliable))
+        initial = ScanEventBatch(events: [],
+            cursor: resumeCursor ?? UInt64(FSEventsGetCurrentEventId()),
+            historyReliable: reliable, deliveryAvailable: streamStarted)
+    }
+
+    func initialBatch() async -> ScanEventBatch? {
+        defer { initial = nil }
+        return initial
     }
 
     func next() async -> ScanEventBatch { await box.next() }
 
     func flush() async -> UInt64 {
-        guard let streamRef else { return box.snapshotCursor() }
         // `FSEventStreamFlushSync` blocks its calling thread until the OS has delivered every
         // buffered event; running it directly on whatever cooperative-pool thread `flush()`
-        // resumed on could starve that pool. Hopping onto the stream's own delivery queue keeps
-        // the block confined to a dedicated thread instead.
+        // resumed on could starve that pool. It also must not run on the stream's callback queue:
+        // when events are pending, FlushSync waits for callbacks that need that queue and would
+        // deadlock. A separate serial queue confines the block while delivery remains runnable.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            queue.async {
-                FSEventStreamFlushSync(streamRef)
+            flushQueue.async { [self] in
+                streamLock.lock()
+                if let streamRef { FSEventStreamFlushSync(streamRef) }
+                streamLock.unlock()
                 continuation.resume()
             }
         }
@@ -386,11 +600,14 @@ private final class FSEventsScanEventStream: ScanEventStream, @unchecked Sendabl
     func stop() async {
         // Unblock the pump first: `stopDelivery()` is safe to call even if nothing is parked.
         box.stopDelivery()
-        guard let streamRef else { return }
+        let stoppedStream = streamLock.withLock { () -> FSEventStreamRef? in
+            defer { streamRef = nil }
+            return streamRef
+        }
+        guard let streamRef = stoppedStream else { return }
         FSEventStreamStop(streamRef)
         FSEventStreamInvalidate(streamRef)
         FSEventStreamRelease(streamRef)
-        self.streamRef = nil
     }
 }
 
@@ -406,20 +623,30 @@ private func fsEventsScanCallback(
 ) {
     guard let clientCallBackInfo else { return }
     let box = Unmanaged<FSEventsDeliveryBox>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
-    let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+    let paths = unsafeBitCast(eventPaths, to: NSArray.self)
     let unreliableMask = FSEventStreamEventFlags(
         kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagUserDropped
         | kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagMount
         | kFSEventStreamEventFlagUnmount | kFSEventStreamEventFlagMustScanSubDirs
         | kFSEventStreamEventFlagEventIdsWrapped)
+    let eventLimit = min(numEvents, 4_096)
+    let converted = boundedFSEventCallbackPaths(paths, eventCount: numEvents)
     var events: [ScanEvent] = []
-    var reliable = true
-    var maxID: UInt64 = 0
-    for index in 0..<numEvents {
+    events.reserveCapacity(converted.events.count)
+    var reliable = !converted.didOverflow
+    let maxID = numEvents > 0 ? UInt64(eventIds[numEvents - 1]) : 0
+    for index in 0..<eventLimit {
         let flag = eventFlags[index]
         if flag & unreliableMask != 0 { reliable = false }
-        if index < paths.count { events.append(ScanEvent(path: paths[index])) }
-        maxID = max(maxID, UInt64(eventIds[index]))
+        // Catch-up completion names the watched root but is not a filesystem mutation.
+        // Invalidating it makes every restarted real stream reject an unchanged cache record.
+        if !fsEventRepresentsMutation(flag) { continue }
+        if converted.events.indices.contains(index) { events.append(converted.events[index]) }
     }
+    if converted.didOverflow { events.removeAll(keepingCapacity: false) }
     box.deliver(ScanEventBatch(events: events, cursor: maxID, historyReliable: reliable))
+}
+
+internal func fsEventRepresentsMutation(_ flags: FSEventStreamEventFlags) -> Bool {
+    flags & FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) == 0
 }

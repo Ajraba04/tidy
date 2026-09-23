@@ -1,0 +1,30 @@
+$ git status --short
+?? docs/audits/
+?? migration-from-luxe-2026-09-12/
+$ git branch --show-current
+main
+$ git rev-parse HEAD
+9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a
+$ git diff --stat
+$ sw_vers
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+$ uname -m
+arm64
+$ sysctl -n machdep.cpu.brand_string
+Apple M1 Max
+$ sysctl -n hw.memsize
+34359738368
+$ df -h .
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s1   460Gi   393Gi    41Gi    91%    6.9M  435M    2%   /System/Volumes/Data
+$ swift --version
+swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)
+Target: arm64-apple-macosx27.0.0
+$ xcodebuild -version
+Xcode 27.0
+Build version 27A266a
+$ xcode-select -p
+/Applications/Xcode.app/Contents/Developer
+{'swift': '/usr/bin/swift', 'xcodebuild': '/usr/bin/xcodebuild', 'xcodegen': '/opt/homebrew/bin/xcodegen', 'swiftlint': None, 'sample': '/usr/bin/sample', 'vmmap': '/usr/bin/vmmap', 'footprint': '/usr/bin/footprint', 'lsof': '/usr/sbin/lsof', 'tcpdump': '/usr/sbin/tcpdump'}

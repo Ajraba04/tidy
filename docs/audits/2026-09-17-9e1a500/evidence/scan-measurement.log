@@ -1,0 +1,55 @@
+Building for debugging...
+[Pre-planning 1 / 125]
+[Planning deferred tasks]
+[5 / 23]
+[7 / 16] TidyCoreTests-product
+[9 / 18] TidyCoreTests-product
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+[15 / 17] TidyCoreTests-product
+Build complete! (5.28 sec)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Audit production scan measurements" started.
+◇ Test "50k and 100k fixture scans, unchanged rerun, then 20 cancel cycles" started.
+AUDIT_SCAN fixtureFiles=50000 pass=1 elapsedSeconds=0.10309720833174651 firstUsefulSeconds=0.0671304166680784 processedEntries=7 complete=false reasons=["queueOverflow"]
+AUDIT_SCAN fixtureFiles=50000 pass=2 elapsedSeconds=0.07795279166748514 firstUsefulSeconds=0.062334000002010725 processedEntries=7 complete=false reasons=["queueOverflow"]
+AUDIT_CANCEL fixtureFiles=50000 cycles=20 maximumAcknowledgementSeconds=0.0002786250006465707 registryActive=0 schedulerActive=0 schedulerQueued=0 fdBefore=Optional(14) fdAfter=Optional(14)
+AUDIT_SCAN fixtureFiles=100000 pass=1 elapsedSeconds=0.01639387500108569 firstUsefulSeconds=0.0035279166695545428 processedEntries=6 complete=false reasons=["queueOverflow"]
+AUDIT_SCAN fixtureFiles=100000 pass=2 elapsedSeconds=0.015262708329828456 firstUsefulSeconds=0.0029720416641794145 processedEntries=6 complete=false reasons=["queueOverflow"]
+AUDIT_CANCEL fixtureFiles=100000 cycles=20 maximumAcknowledgementSeconds=0.00020512499759206548 registryActive=0 schedulerActive=0 schedulerQueued=0 fdBefore=Optional(14) fdAfter=Optional(14)
+✔ Test "50k and 100k fixture scans, unchanged rerun, then 20 cancel cycles" passed after 17.760 seconds.
+✔ Suite "Audit production scan measurements" passed after 17.760 seconds.
+✔ Test run with 1 test in 1 suite passed after 17.760 seconds.
+       24.38 real         7.71 user        16.60 sys
+           436633600  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              173673  page reclaims
+                7462  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 818  voluntary context switches
+               35337  involuntary context switches
+         17048967693  instructions retired
+          6066522124  cycles elapsed
+           253133976  peak memory footprint

@@ -1,0 +1,103 @@
+# Dependency-ordered remediation plan
+
+Audit baseline: `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a`, 2026-09-17. **Plan only. No remediation is authorized or applied by this audit.** Current advertised app verdict NO-GO; full program INCOMPLETE. See `findings.md`, `coverage-ledger.md`, and `acceptance-gates.md` for the binding scope. Each ledger row inherits the work package and closure below; none is deferred by “later” or ownership alone.
+
+## Required ordering
+
+Acyclic order: R01 → R02 (owns the minimum production T11/T15.I ownership/inventory prerequisite and bounded manifest contract) → R03 → R04. R06/R08/R12 may proceed after R01; R07 follows R06. R05 production enablement follows R02–R04 AND R06/R08. R09 adds remaining T11 project breadth and T12–T13 after R02–R08; R10 adds remaining per-adapter T15–T20 work after the relevant R09 ownership/ranking contracts. R11 follows its supported adapters and authority foundation. R13 validates each capability; R14 can prepare packages early but release acceptance follows every gate applicable to the explicitly approved capability manifest. Read the original approved plan and adapter appendix before each unit; their contracts remain binding.
+
+### R01 — Restore the safety boundary before adding reachability
+
+Owner: core safety engineer. Findings SAF-01–05, APP-01. First deny the `safe.xcode.derived-data`/`deleteContents` pair in the compiled capability registry. Keep inventory and explicit unavailable reasons. Do not fix the empty detected-tools handoff until R02–R04 close. Do not delete or reset existing journals to regain admission.
+
+Acceptance: every catalog mutation and forged action/ID combination is denied by public coordinator and raw engine; no executor calls or scratch witness changes; old presets cannot enable it. Adapt audit regression probes to expect explicit denial at selection/confirmation while quarantine is active. Existing positive-delete tests must be revised to express inventory/quarantine until a separately accepted adapter is enabled. This closes immediate exposure, not the promised cleanup workflow.
+
+### R02 — Seal exact reviewed resources and ownership
+
+Owner: filesystem/Apple adapter engineer. Depends R01. Findings SAF-01–03. This package exclusively owns the minimum production T11/T15.I ownership/inventory subset needed by DerivedData; later R09/R10 extend it rather than being prerequisites. Complete T03.B and that minimum subset before an accepted mutation: exact volume/root/ancestor/leaf identity, reviewed descendant batches, protection/exclusion digest, complete fresh owner mapping, versioned producer evidence and positive quiescence/lease. Check runtime proof within five seconds and renew immediately before effect. Unknown/shared/expired evidence denies. Manual acknowledgement may be used only under its approved adapter contract and never creates unattended eligibility.
+
+Acceptance: audit new-child/growth/replaced-root/protected-descendant probes pass as safe withholding; add Unicode/hardlink/symlink/mount/root-recreation, changed owner and stale proof cases. Positive fixture proves unchanged allowed leaf removal while protected and outside witnesses remain byte-identical. Capture resource identity and scope at review, never use an execution-time fresh tree as authorization. Race fixture demonstrates the primitive exclusion/lease contract; supported real Xcode producer proof is additionally mandatory. A synthetic lease alone cannot establish producer quiescence. Unsupported production proof leaves the adapter denied and promised mutation incomplete. Include accepted-effect confirmation followed by second-window policy edit/reset/import: stale seals invoke zero effects; presentation-only edits preserve valid authority. R08 co-owns that integration.
+
+### R03 — Complete durable effect lifecycle and recovery
+
+Owner: recovery/storage engineer. Depends R01, exact manifest format R02. Finding SAF-04. Persist operation identity, exact reviewed manifest and pending intent before effects; implement adapter-specific positive terminal reconciliation, retained partial outcomes, bounded mandatory storage and finished-record retirement. Never fake terminal records to bypass admission. Optional history cannot clear unresolved recovery. Filesystem quiescence and subprocess/daemon quiescence have distinct proofs.
+
+Acceptance: crash the disposable helper before/after every durable/effect boundary and relaunch; unresolved work blocks new mutations until positive reconciliation, with no automatic replay. Use fault-injected writes and capacity-limited disposable storage for disk-full/corruption. Nine-plus sequential confirmed scratch runs remain usable within retained bounds. Surviving owned child, identity reuse and unsupported reconciliation remain blocked. Real host exhaustion is prohibited. R03/R13 jointly own close-all-windows/reopen/app-quit during an accepted effect: one app owner retains progress/cancel, safely drains or durably records uncertainty; PID/lock disappearance never grants recovery.
+
+### R04 — Bound scheduling, resource capture and cancellation at the effect
+
+Owner: execution/performance engineer. Depends R02/R03. Finding SAF-05, cleanup settings consumers PS08. Stream bounded manifests instead of retaining all batches; impose total node/byte/depth/FD limits, per-run selected allocated-byte/item limits, monotonic scheduling deadline, policy recheck and cancellation before each safe leaf boundary. No force interruption of a mutating syscall/tool; preserve overrun/uncertainty.
+
+Acceptance: bounded 50k/100k/deep/churning fixtures, cancel-before-first-effect and mid-batch, deadline/feature-disable races, unchanged outside witnesses and truthful partial report. Measure physical footprint separately from RSS; prove ≤150 MiB scan peak and contractual cancel/worker bounds on reference hardware. Clearly display cap limitations beside controls. R04 owns the production contention scenario: two read-only jobs occupy both permits before an accepted mutator requests entry; prove total≤2, FIFO progress, no nested-permit deadlock/bypass and exact child reaping. While no command mutator is accepted, denial is the current boundary; positive dispatch proof remains an adapter enablement gate.
+
+### R05 — Restore advertised on-demand application usefulness
+
+Owner: app/integration engineer. Depends R02–R04 for any mutation enablement and R06/R08 for scan/monitor enablement. No fresh-install scan restoration ships before scope/live-pressure/global-cancel gates close. Findings APP-01, DOC-01, PS03, PS07. Establish controlled tool identity/version discovery and deliberate handoff to one app environment. Admit validated revision-zero defaults for explicit scan without granting background work. Bind measured selected local volume UUID/capacity to Headroom policy and automatic/fixed targets, without approving external volumes by path.
+
+Acceptance: first launch with no settings write can scan; corrupt/future settings still fail closed. Every advertised tier/custom workflow reports accurate availability and reasons. A tool-presence bit alone does not authorize deletion. Restore each promised mutation only after its own adapter acceptance; until then docs explain actual current scope without calling full program complete. Test target arithmetic, missing capacity, per-volume remount and exact readiness language.
+
+### R06 — Connect scope, pressure and scan lifetime to production
+
+Owner: scan/scheduler engineer. Findings PS01, PS02, PS04. Honor approved catalog/project/full-home scope and user exclusions. Full-home scope requires separate explicit one-run consent bound to acknowledged roots/policy; expiry prevents transfer into the next run or another window. Feed app-owned current pressure/thermal/LPM/sleep observations to scheduler with monotonic epochs while explicit work is active; preserve zero hidden-idle discovery. Separate running-partial from terminal-partial, prevent duplicate unintended starts, retain global cancel ownership, and implement generation-bound manual Continue.
+
+Acceptance: audit selected-project/no-roots probe has no unrelated traversal; default quick scan never silently expands home. Assert actual unrelated metadata visits are zero, not merely absent result rows; second-window policy edits invalidate the relevant scan scope and cannot broaden authority. Production-wired critical/thermal/LPM injection blocks new batches and resumes after contract cooldown; stale observations never reopen admission. Two-window rescan/double click/close/reopen retains truthful result and global cancellation. Slice Continue converges to fresh complete results without scope expansion. Actual UI cancel ≤100 ms and bounded workers ≤500 ms are separate measured gates.
+
+### R07 — Wire and harden the incremental index
+
+Owner: indexing engineer. Depends R06; finding PG02. Connect app-owned index to scope, policy and lifecycle; enforce configured size/expiry and bounded coalesced event buffers. On overflow/history loss, invalidate; require event catch-up before cached reuse. Bind root and volume identity, fail safely for corrupt cache and remount, and stop streams at hidden idle.
+
+Acceptance: real scratch FSEvents tests plus deterministic loss/coalescing/races; 100k-entry unchanged scan equals fresh content and reduces actual metadata visits ≥80%. `processedEntries` is not metadata visits. Source presence or injected index tests do not prove app wiring.
+
+### R08 — Complete live settings, monitor ownership and measurement truth
+
+Owner: app-state/policy engineer. Findings PS05–PS09. Replace shared visibility Boolean with idempotent scene leases; observe acknowledged policy revisions immediately. Enforce feature disable and background consent at all probes. Preserve intentionally empty card sets. Connect every editable registry field to a verified consumer or visibly report exact unavailability. Validate missing disk fields rather than converting nil to zero. Apply optional history off/age/byte controls independently of mandatory recovery.
+
+Acceptance: real two-view-model visibility and policy-change tests, zero probes while feature disabled, hidden-idle no timers/commands/scan I/O, binary/decimal units and effective-source labels, each registry row behavior contract, production missing-resource-key test. Reset/import/profile changes cannot weaken protections or delete unresolved records. No false success/zero in denied/unavailable reports. Own all released schema shapes, downgrade/future recovery and import/reset migration fixtures with authority/recovery witnesses; failed or unsupported migration preserves bytes. Generate docs/settings-reference.md from tested registry/default/range/source metadata. Diagnostic/temporary/backup artifact tests include forbidden sentinels for credentials, cookies, environment, argv, remotes and personal path identity even when configurable cosmetic redaction is off.
+
+### R09 — Projects, ranking and Build Prep
+
+Owner: developer-workflow engineer. Original T11–T13; program gap PG01. Complete worktree/nested/common-dir/shared-owner inventory, activity uncertainty, pin/manual association, stable identity and lease expiry. Ranking applies eligibility/cost before size, uses fresh nonoverlapping marginal allocated bytes and stable-ID tie breaks. Build Prep remeasures selected volume after each completed item and stops at selected target/cap without adding candidates.
+
+Acceptance: full T11–T13 checklist rows, hostile/oversized manifests, no repository code or remote calls, unknown activity denial, clone/sparse/hardlink/overlap handling, target met/insufficient/unavailable UI, production positive/negative integration and two-window review.
+
+### R10 — Each ecosystem inventory and mutation/denial unit
+
+Owner: per-ecosystem adapter engineer. Original T15–T20; depends ownership/ranking and safety foundation. Use every individual catalog and approved adapter row in coverage ledger. Inventory (.I) and mutation/denial (.M) are separately accepted units. Record supported versions, exact identities/argv/environment/local endpoints, owner freshness, preflight, effect scope and completion/recovery probe. Preserve no-network/no-wrapper/no-daemon-auto-start boundaries. Models/databases/volumes and other forbidden resources remain enforced inventory-only.
+
+Acceptance: one positive/negative fixture matrix per adapter/version; unsupported or oversized outputs, hostile Git config, executable replacement, remote Docker contexts all fail closed with zero prohibited effect/network calls. Cookie adapter requires disposable WAL/locked DB, validated backup, post-write verification and explicit restore-failure handling; Safari cookies remain untouched. Transcripts preserve memory; destructive history/Trash/container-layer consequences are visible. No broad prune/erase-all/lock removal/generic bypass.
+
+### R11 — Pressure Rescue and optional assistance
+
+Owner: workflow/OS-integration engineer. Original T14/T21/T22, PG01. Rescue is manual and initially unselected, binds actual process/app/device instance and permits only graceful supported actions. Budget notifications use disabled templates, hysteresis, missing-data behavior, cooldown, quiet hours/DST/timezone and permission revocation. Maintenance has a separate local standing-authority ledger; initial allowlist empty. Notification/monitor consent never grants effect authority.
+
+Acceptance: PID/instance reuse, app refusal/unsaved work, device change, notification denial/revocation, login-item revocation, rule expiry and cross-window policy cancellation. Only exact accepted immutable/quiescent caches may enter a later reviewed allowlist. Hostile import/relaunch leaves authority untouched and invokes zero forbidden executors. Complete T07.3d optional clearing, T22.3 local reassociation and T22.4 accepted-adapter hostile-document regression without touching recovery state.
+
+### R12 — Reproducible test/build enforcement
+
+Owner: build/test engineer. Findings TEST-01/02. Reconcile project.yml with generated project in a disposable directory; preserve all five current model-test files and resources. Add explicit app-model tests and safe synthetic native UI target to PR/release CI; no real-home/service mutation. Correct compile-negative module lookup to actual build products. Keep process-global counters/suites serialized or properly isolated.
+
+Acceptance: generated-project comparison has zero unintended membership/resource drift; core623 all execute safely in provisioned service isolation, model119 plus new regressions run, no zero-test success accepted; Release builds and arm64/x86_64 slices checked; result bundles and exact tool versions archived. New focused passes never erase aggregate failures. Tool cache writes are documented separately from user-data effect isolation. Personal-data CI must fail seeded forbidden source patterns; dependency/action provenance uses exact reviewed versions/digests with update policy. Compare generated settings reference against tested registry and preserve all-released-shape migration fixtures in CI.
+
+### R13 — Native, privacy, reliability and reference performance acceptance
+
+Owner: QA/performance/security engineer plus human accessibility evaluator. Depends each capability's implementation. Evidence gaps GAP-01–05. Provide safe production UI dependency injection for synthetic home/settings/journal without changing production authorization. Run all states, compact/two-window keyboard journeys, long text, appearance, contrast, Reduce Motion and human VoiceOver; reproduce AX endpoint/blank-list issue rather than ordinary-scroll-only closure. Instrument app and child traffic across representative workflows; no network claim from source search or lsof snapshot alone. Map every timestamp/disk/boot API to current Apple privacy reason and actual distribution.
+
+Exact equipment/setup: 8 GiB Apple Silicon and 8 GiB Intel, macOS14 oldest-supported and current stable OS; disposable capacity-limited volume and isolated test host for disk-full/physical stress, controlled clocks for first-line sleep/thermal/pressure tests. Current 32 GiB M1 Max measurements are diagnostic only.
+
+Acceptance: hidden-off zero timers/commands/scan I/O; hidden-authorized ten-minute CPU <0.5% one core and settled RSS ≤60 MiB; interactive ≤100 MiB; scan peak physical footprint ≤150 MiB; 50k useful≤1s and total≤10s with complete scope; cancel UI≤100ms/worker≤500ms; unchanged100k actual metadata visits reduction≥80%; twenty scan/cancel cycles no workers/FD leaks and ≤10 MiB settled growth; five paired baseline/background builds median overhead≤3%. Record warm-up, fixture composition, mode, sample method, tool overhead, variance and raw artifacts. PERF-01 measured50k/100k fixtures must achieve complete/resumable coverage; queueOverflow after6–7entries cannot count as timing acceptance. Human VoiceOver and hardware evidence cannot be replaced by model/source tests. Every missing gate remains Blocked/Not tested with this closure.
+
+### R14 — Documentation and the chosen distribution path
+
+Owner: release/documentation engineer. Depends applicable R01–R13 gates. Findings DOC-01/02, DIST-01 and privacy gap. Keep signing/notarization optional. Correct categorical swap/restart promises and explain actual supported capability/version matrix, units/uncertainty, limits and exact unsigned Gatekeeper procedure using current Apple documentation. Validate final ad-hoc or optionally notarized artifact, architecture coverage, version/build values, entitlements/hardened-runtime behavior, privacy/localization resources, checksums and provenance, ZIP/DMG contents, fresh install/upgrade/uninstall and retained recovery data on supported OS.
+
+Acceptance: reproducibly build and inspect immutable packaged bytes, verify checksum before install, demonstrate chosen install path on disposable account/host with no global protection weakening, preserve unresolved recovery across manual upgrade, publish truthful release/support instructions and redacted diagnostic procedure. Cask remains a future template until a real checksum/tap exists. Remote push/tag/publication, signing changes and permissions require separate user authority; prepare concrete artifacts before requesting it. T24 outputs include docs/settings-reference.md and docs/verification/headroom-acceptance.md, with exact versioned capability/locale/distribution manifest, per-requirement evidence and unresolved gates. English-only is permitted when explicitly stated; no additional locale is invented. No release performed in this audit.
+
+## Plan-review record
+
+Exactly one GPT-6 Astra Medium review completed in plan-review.md. The coordinator made this one consolidated revision; no second review was commissioned. PR-01: R02 now owns the early production ownership subset and dependencies are acyclic. PR-02: R05 scan restoration depends on R06/R08, with expiring full-home authority and actual metadata-visit assertions. PR-03: separate exits and release scope rule below. PR-04: contention/stale-seal/effect-lifecycle cases explicitly assigned R02/R03/R04/R08/R13. PR-05: generated references, released-shape/downgrade fixtures, immutable diagnostic redaction, personal-data CI/provenance and T24 artifact names added. This review/revision does not authorize implementation.
+
+## Separate exits and ledger mapping
+
+Containment/current-product correction and full-program completion are different exits. R01 can close containment while mutation delivery remains open. R02–R04 close only with real supported ownership/effect/recovery proof; synthetic positive fixtures cannot alone close a production adapter. R05/R08 can correct misleading present UI by accurate unavailability, but every approved promised consumer remains owned by R08/R09/R10/R11 until its positive/negative production acceptance passes. R06/R07 require actual complete/resumable scoped scans and app index integration. R09–R11 require all original assigned T-task units; permanent contractually inventory-only resources are accepted on that narrower explicit contract. R12 build/test passes cannot close R13 hardware/human or R14 install evidence.
+
+The coverage ledger maps each S, task checklist/subdivision, registry/catalog/adapter and combined scenario to owning R packages and the implementation/acceptance exit. Before any future GO verdict, record an explicit approved capability/distribution manifest; changed advertised scope requires user authority and cannot change this baseline NO-GO. Full-program COMPLETE remains prohibited until all approved rows close, irrespective of an accurately labeled unavailable current UI.

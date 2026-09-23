@@ -12,6 +12,11 @@ public actor SettingsStore {
     private var issuedRollbackPreview: RollbackBinding?
     private var issuedImportAnalysis: ImportAnalysisBinding?
     private var issuedImportPreview: ImportPreviewBinding?
+    /// Provenance generation for the one app-bootstrap settings snapshot.
+    /// Every later load or state-changing request advances it; exhaustion denies.
+    internal var schedulerBootstrapGeneration: UInt64 = 0
+    internal var schedulerBootstrapGenerationExhausted = false
+    internal var schedulerBootstrapReservation: UUID?
 
     private struct RollbackBinding {
         let token: UUID
@@ -39,8 +44,12 @@ public actor SettingsStore {
     public init(url: URL) { self.url = url; self.io = DarwinJournalIO() }
     internal init(url: URL, io: any JournalPOSIXIO) { self.url = url; self.io = io }
     internal func lastPublicationFailure() -> SettingsPublicationFailure? { publicationFailure }
+    internal func schedulerBootstrapImageForIssue() -> SettingsDiskImage? { loadedImage }
 
     public func load() -> SettingsLoadResult {
+        guard invalidateSchedulerBootstrapBeforeAccess() else {
+            return recovery(.unavailable)
+        }
         issuedImportAnalysis = nil; issuedImportPreview = nil
         if let recoveryReason { return recovery(recoveryReason) }
         do {
@@ -66,6 +75,9 @@ public actor SettingsStore {
     }
 
     public func update(expectedRevision: UInt64, change: SettingsChange) throws -> SettingsEnvelope {
+        guard invalidateSchedulerBootstrapBeforeAccess() else {
+            throw SettingsStoreError.unavailable
+        }
         let current = try writable(expectedRevision: expectedRevision)
         var config = current.config
         var preferences = current.preferences
@@ -152,6 +164,9 @@ public actor SettingsStore {
     }
 
     public func rollback(expectedRevision: UInt64, preview: SettingsRollbackPreview) throws -> SettingsEnvelope {
+        guard invalidateSchedulerBootstrapBeforeAccess() else {
+            throw SettingsStoreError.unavailable
+        }
         let current = try writable(expectedRevision: expectedRevision)
         guard let issued = issuedRollbackPreview, issued.token == preview.identity,
               issued.revision == current.revision, issued.config == preview.config,
@@ -331,6 +346,9 @@ public actor SettingsStore {
 
     public func commitImport(expectedRevision: UInt64,
                              previewID: SettingsImportPreviewID) throws -> SettingsEnvelope {
+        guard invalidateSchedulerBootstrapBeforeAccess() else {
+            throw SettingsStoreError.unavailable
+        }
         let binding = issuedImportPreview
         issuedImportPreview = nil; issuedImportAnalysis = nil
         guard let binding, binding.preview.id == previewID else {
@@ -380,5 +398,49 @@ public actor SettingsStore {
     }
 
     internal func isRecoveryRequired() -> Bool { recoveryReason != nil }
+
+    /// Invalidates unconsumed bootstrap evidence. While initial scheduler
+    /// installation owns its short reservation, competing access fails without
+    /// stealing the reservation or wrapping the generation.
+    internal func invalidateSchedulerBootstrapBeforeAccess() -> Bool {
+        guard schedulerBootstrapReservation == nil,
+              !schedulerBootstrapGenerationExhausted else { return false }
+        let (next, overflow) = schedulerBootstrapGeneration.addingReportingOverflow(1)
+        guard !overflow else {
+            schedulerBootstrapGenerationExhausted = true
+            return false
+        }
+        schedulerBootstrapGeneration = next
+        return true
+    }
+
+    internal func forceSchedulerBootstrapGenerationForTesting(_ value: UInt64) {
+        schedulerBootstrapGeneration = value
+        schedulerBootstrapGenerationExhausted = false
+        schedulerBootstrapReservation = nil
+    }
+
+    /// Reopens the settings path immediately before scheduler admission. The
+    /// exact captured disk image must still exist. The sole exception mirrors
+    /// `refreshEmptyParentIdentityIfNeeded`: journal bootstrap may create the
+    /// previously absent parent while every settings artifact remains absent.
+    internal func revalidateSchedulerBootstrapImage(_ expected: SettingsDiskImage) -> Bool {
+        guard loadedImage == expected else { return false }
+        let disk: SettingsDiskImage
+        do {
+            disk = try SettingsFiles.load(url)
+            guard try disk.loaded().disposition == .newDefaults else { return false }
+        } catch {
+            return false
+        }
+        if disk == expected { return true }
+        guard expected.directory == nil,
+              expected.config == nil, expected.backup == nil,
+              expected.lock == nil, expected.metadata == nil,
+              disk.config == nil, disk.backup == nil,
+              disk.lock == nil, disk.metadata == nil else { return false }
+        loadedImage = disk
+        return true
+    }
 
 }

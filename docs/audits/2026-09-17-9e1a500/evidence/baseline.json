@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess,shutil; cmds=[[\"git\",\"status\",\"--short\"],[\"git\",\"branch\",\"--show-current\"],[\"git\",\"rev-parse\",\"HEAD\"],[\"git\",\"diff\",\"--stat\"],[\"sw_vers\"],[\"uname\",\"-m\"],[\"sysctl\",\"-n\",\"machdep.cpu.brand_string\"],[\"sysctl\",\"-n\",\"hw.memsize\"],[\"df\",\"-h\",\".\"],[\"swift\",\"--version\"],[\"xcodebuild\",\"-version\"],[\"xcode-select\",\"-p\"]]; [(print(\"$ \"+\" \".join(c),flush=True),subprocess.run(c)) for c in cmds]; print({t:shutil.which(t) for t in [\"swift\",\"xcodebuild\",\"xcodegen\",\"swiftlint\",\"sample\",\"vmmap\",\"footprint\",\"lsof\",\"tcpdump\"]})"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:07:58.942672+00:00",
+  "ended_utc": "2026-09-17T15:08:00.001345+00:00",
+  "seconds": 1.059,
+  "exit_code": 0
+}

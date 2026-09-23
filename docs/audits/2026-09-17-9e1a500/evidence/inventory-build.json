@@ -1,0 +1,19 @@
+{
+  "command": [
+    "swiftc",
+    "-I",
+    "/private/tmp/tidy-audit-9e1a500-core/debug",
+    "-L",
+    "/private/tmp/tidy-audit-9e1a500-core/debug",
+    "-lTidyCore",
+    "-lsqlite3",
+    "docs/audits/2026-09-17-9e1a500/tracks/InventoryAudit.swift",
+    "-o",
+    "/private/tmp/tidy-audit-9e1a500-inventory"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:49:20.021154+00:00",
+  "ended_utc": "2026-09-17T15:49:21.781644+00:00",
+  "seconds": 1.76,
+  "exit_code": 0
+}

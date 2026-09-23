@@ -99,12 +99,14 @@ struct JournalDirectoryScan {
     let journalNames: [String]
     let containsStableLock: Bool
     let containsPendingStage: Bool
+    let containsEffectStage: Bool
     static func read(directoryFD: Int32, limits: JournalScanLimits) throws -> Self {
         let fd = openat(directoryFD, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw JournalError.unavailable }
         guard let directory = fdopendir(fd) else { close(fd); throw JournalError.unavailable }
         defer { closedir(directory) }
         var count = 0, names: [String] = [], lock = false, pending = false
+        var effectStage = false
         while true {
             errno = 0
             guard let item = readdir(directory) else {
@@ -120,12 +122,15 @@ struct JournalDirectoryScan {
             guard count <= limits.maximumDirectoryEntries else { throw JournalError.capacity }
             lock = lock || name == "mutation.lock"
             pending = pending || name.hasPrefix(".pending-")
+            effectStage = effectStage || name.hasPrefix(".effect-stage-")
             if try JournalFiles.runID(name) != nil {
                 guard names.count < limits.maximumJournalEntries else { throw JournalError.capacity }
                 names.append(name)
             }
         }
-        return Self(entryCount: count, journalNames: names, containsStableLock: lock, containsPendingStage: pending)
+        return Self(entryCount: count, journalNames: names,
+            containsStableLock: lock, containsPendingStage: pending,
+            containsEffectStage: effectStage)
     }
 }
 

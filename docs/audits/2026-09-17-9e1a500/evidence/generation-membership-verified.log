@@ -1,0 +1,6 @@
+('Tidy', 'PBXResourcesBuildPhase') removed= [] added= []
+('Tidy', 'PBXSourcesBuildPhase') removed= [] added= []
+('TidyAppModelTests', 'PBXResourcesBuildPhase') removed= ['Localizable.xcstrings'] added= []
+('TidyAppModelTests', 'PBXSourcesBuildPhase') removed= ['HeadroomViewModel.swift', 'HeadroomViewModelTests.swift', 'ScanOrchestrationWiringTests.swift', 'ScanViewModel.swift', 'SettingsView.swift', 'StatsRefresher.swift'] added= []
+('TidyUITestHost', 'PBXResourcesBuildPhase') removed= ['Localizable.xcstrings'] added= []
+('TidyUITestHost', 'PBXSourcesBuildPhase') removed= ['AppConfigStore.swift', 'SettingsView.swift'] added= []

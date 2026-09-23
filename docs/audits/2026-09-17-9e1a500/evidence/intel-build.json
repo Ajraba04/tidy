@@ -1,0 +1,26 @@
+{
+  "command": [
+    "xcodebuild",
+    "-project",
+    "Tidy.xcodeproj",
+    "-scheme",
+    "Tidy",
+    "-configuration",
+    "Release",
+    "-derivedDataPath",
+    "/private/tmp/tidy-audit-9e1a500-intel",
+    "-jobs",
+    "2",
+    "-destination",
+    "generic/platform=macOS",
+    "build",
+    "ARCHS=x86_64",
+    "ONLY_ACTIVE_ARCH=NO",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:27:42.528764+00:00",
+  "ended_utc": "2026-09-17T15:29:13.059010+00:00",
+  "seconds": 90.53,
+  "exit_code": 0
+}

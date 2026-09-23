@@ -1,0 +1,1805 @@
+Building for debugging...
+[Pre-planning 1 / 125]
+[Planning deferred tasks]
+[40 / 67] TidyCore_TidyCoreTests
+[42 / 67]
+[43 / 68] TidyCore
+[46 / 143]
+[51 / 143]
+[54 / 143]
+[59 / 143]
+[64 / 143]
+[65 / 143]
+[68 / 143]
+[72 / 143]
+[75 / 143]
+[77 / 143]
+[80 / 143]
+[83 / 143]
+[87 / 143]
+[89 / 143]
+[90 / 143]
+[95 / 143]
+[97 / 143]
+[100 / 143]
+[102 / 143]
+[103 / 143]
+[105 / 143]
+[107 / 143]
+[109 / 143] TidyCore
+<HOME>/Desktop/AJR/tidy/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+[110 / 143] TidyCore
+<HOME>/Desktop/AJR/tidy/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+[113 / 143] TidyCore
+[118 / 143] TidyCore
+[119 / 143] TidyCoreTests-product
+<HOME>/Desktop/AJR/tidy/TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift:379:40: warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+377 |         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+378 |             queue.async {
+379 |                 FSEventStreamFlushSync(streamRef)
+    |                                        `- warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+380 |                 continuation.resume()
+381 |             }
+
+Swift.OpaquePointer:1:23: note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+1 | @frozen public struct OpaquePointer {
+  |                       `- note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+2 | }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[120 / 143] TidyCoreTests-product
+[122 / 143] TidyCore
+[124 / 143] TidyCore
+[126 / 143] TidyCore
+[133 / 144] TidyCore-product
+[133 / 144] TidyCoreTests-product
+[134 / 157]
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+[138 / 157] TidyCoreTests-product
+[140 / 157] TidyCoreTests-product
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:243:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+241 |                 counter: { PageOutCounter(count: UInt64(callCount.get()) * 100, pageSizeBytes: 4_096) }),
+242 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+243 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+244 | 
+245 |         _ = await monitor.requestSnapshot() // establishes baseline under firstBoot
+
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:266:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+264 |                 }),
+265 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+266 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+267 | 
+268 |         _ = await monitor.requestSnapshot()
+
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HeadroomSignalsTests.swift:289:26: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+287 |             }),
+288 |             pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling(),
+289 |             clock: clock.now)
+    |                          `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+290 | 
+291 |         _ = await monitor.requestSnapshot()
+
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/SimulatorPrunerTests.swift:69:40: warning: 'listDevicesSync()' is deprecated: T08.4 must use async listDevices() [#DeprecatedDeclaration]
+67 |         // eligibility filter, so even a bug in the matching logic could at
+68 |         // worst make this assertion fail, not delete anything.
+69 |         let realDevices = SimctlClient.listDevicesSync()
+   |                                        `- warning: 'listDevicesSync()' is deprecated: T08.4 must use async listDevices() [#DeprecatedDeclaration]
+70 |         let eligible = SimulatorPruner.devicesEligibleForDeletion(
+71 |             allDevices: realDevices,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[147 / 157] TidyCoreTests-product
+<HOME>/Desktop/AJR/tidy/TidyCore/Tests/TidyCoreTests/ScanIndexTests.swift:129:9: warning: no 'async' operations occur within 'await' expression [#UnnecessaryEffectMarker]
+127 |         try Data("not a sqlite database".utf8).write(to: dbURL)
+128 | 
+129 |         await #expect(throws: ScanIndexError.corrupted) {
+    |         `- warning: no 'async' operations occur within 'await' expression [#UnnecessaryEffectMarker]
+130 |             _ = try ScanIndexStore(databaseURL: dbURL)
+131 |         }
+
+[#UnnecessaryEffectMarker]: <https://docs.swift.org/compiler/documentation/diagnostics/unnecessary-effect-marker>
+[149 / 157] TidyCoreTests-product
+[150 / 157] TidyCoreTests-product
+[151 / 157] TidyCoreTests-product
+[151 / 157] AllIncludingTests
+[151 / 157] TidyCoreTests-product
+[153 / 157] TidyCoreTests-product
+Build complete! (48.07 sec)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite BoundedProcessRunnerTests started.
+◇ Test bothStreamsDrainWithBoundedRetention() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-2F16C423-B652-4089-8C7D-D0C39C118094/build
+✔ Test bothStreamsDrainWithBoundedRetention() passed after 0.419 seconds.
+◇ Test descendantOutlivesCLIAndPipeDeadline() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-539B972C-AA42-48B5-9EFD-DAC49586D1A1/build
+✔ Test descendantOutlivesCLIAndPipeDeadline() passed after 1.880 seconds.
+◇ Test mutatingTimeoutLeavesActualChildRunning() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-3497CF68-D321-4222-933D-107E92DD3D40/build
+✔ Test mutatingTimeoutLeavesActualChildRunning() passed after 1.879 seconds.
+◇ Test abandonmentBeforeReleaseDoesNotPerformFixtureEffect() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-B502D86D-CC7C-428C-83EE-4629F26F0CB0/build
+✔ Test abandonmentBeforeReleaseDoesNotPerformFixtureEffect() passed after 0.370 seconds.
+◇ Test abandonmentAfterReleaseDoesNotEraseSurvivingEffect() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-E8F0A78B-3789-4414-AC3A-6AD23873140D/build
+✔ Test abandonmentAfterReleaseDoesNotEraseSurvivingEffect() passed after 1.568 seconds.
+◇ Test realSurvivingChildKeepsReopenedCoordinatorBlocked() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-910D3CCB-9C1E-4E30-A906-7E014A70ABBA/build
+✔ Test realSurvivingChildKeepsReopenedCoordinatorBlocked() passed after 1.632 seconds.
+◇ Test queuedCancellationNeverLaunchesChild() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-EDE2C359-9DA8-47FF-B2AC-282132863D20/build
+✔ Test queuedCancellationNeverLaunchesChild() passed after 1.868 seconds.
+◇ Test releasedSlotIsTransferredBeforeWaiterResumes() started.
+✔ Test releasedSlotIsTransferredBeforeWaiterResumes() passed after 0.002 seconds.
+◇ Test transferRacingCancellationDoesNotLeakOrDuplicateReservation() started.
+✔ Test transferRacingCancellationDoesNotLeakOrDuplicateReservation() passed after 0.078 seconds.
+◇ Test existingPublicRunnerUsesAggregateReplacementGate() started.
+✔ Test existingPublicRunnerUsesAggregateReplacementGate() passed after 0.537 seconds.
+◇ Test reusedPIDShapeCannotMatchActualIdentity() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-0007C1E7-42CD-458E-960C-731048C7E6C4/build
+✔ Test reusedPIDShapeCannotMatchActualIdentity() passed after 1.924 seconds.
+◇ Test identityCaptureFailureStillReapsActualFastChild(_:) started.
+◇ Test case passing 1 argument item → ("exit-zero", 0) to identityCaptureFailureStillReapsActualFastChild(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-BD508205-B4DD-4C23-90CA-8CC7E78C4281/build
+◇ Test case passing 1 argument item → ("exit-seven", 7) to identityCaptureFailureStillReapsActualFastChild(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-28715A3D-64CA-4359-B260-4B4167D13912/build
+✔ Test identityCaptureFailureStillReapsActualFastChild(_:) with 2 test cases passed after 0.804 seconds.
+◇ Test identityCaptureFailureCannotSignalAtDeadline() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-9E00668D-8E5C-4240-9473-5D64059AA3E4/build
+✔ Test identityCaptureFailureCannotSignalAtDeadline() passed after 1.888 seconds.
+◇ Test actualFastExitIsCached(_:) started.
+◇ Test case passing 1 argument item → ("exit-zero", 0) to actualFastExitIsCached(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-84273AB4-F311-42DF-B198-5067C74BF420/build
+◇ Test case passing 1 argument item → ("exit-seven", 7) to actualFastExitIsCached(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-6403EAC3-7E04-4E33-8CDE-1F7A81D3F907/build
+✔ Test actualFastExitIsCached(_:) with 2 test cases passed after 0.786 seconds.
+◇ Test reapedChildCannotSignalAtLaterDeadline() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-12B1A60F-5146-488A-B9B7-CF45AFC6FC3C/build
+✔ Test reapedChildCannotSignalAtLaterDeadline() passed after 0.978 seconds.
+◇ Test realOutputIsBoundedAndTruthful(_:) started.
+◇ Test case passing 1 argument mode → "text" to realOutputIsBoundedAndTruthful(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-111874C3-2C5A-4D6C-8F77-2FCC7B814AEB/build
+◇ Test case passing 1 argument mode → "invalid-stdout" to realOutputIsBoundedAndTruthful(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-BE1C152D-020C-47A7-B8B7-FEE927D31FB9/build
+◇ Test case passing 1 argument mode → "invalid-stderr" to realOutputIsBoundedAndTruthful(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-2F35AB38-AD39-42F7-BEB0-A23497B259F2/build
+◇ Test case passing 1 argument mode → "flood" to realOutputIsBoundedAndTruthful(_:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-BCC04BA3-F7B8-4245-9155-28D893BF9E8C/build
+✔ Test realOutputIsBoundedAndTruthful(_:) with 4 test cases passed after 1.561 seconds.
+◇ Test inheritedPipeDeadlineIsNotCommandTimeout() started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-8B6A8815-C0AB-4687-9788-510B4CA82590/build
+✔ Test inheritedPipeDeadlineIsNotCommandTimeout() passed after 1.870 seconds.
+◇ Test publicRunnerUsesTruthfulMappingForDeclaredDirectChildren() started.
+✔ Test publicRunnerUsesTruthfulMappingForDeclaredDirectChildren() passed after 0.005 seconds.
+◇ Test actualCommandDeadlineIsTimedOut() started.
+✔ Test actualCommandDeadlineIsTimedOut() passed after 0.482 seconds.
+◇ Test foundationAndPOSIXChildrenKeepDistinctExitOwnership(foundationFirst:) started.
+◇ Test case passing 1 argument foundationFirst → true to foundationAndPOSIXChildrenKeepDistinctExitOwnership(foundationFirst:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-BCA959DC-9088-4B69-8117-BA405A36C4E9/build
+Retained Foundation coexistence evidence: <USER_TMP>/T/tidy-t04-process-BCA959DC-9088-4B69-8117-BA405A36C4E9/run
+◇ Test case passing 1 argument foundationFirst → false to foundationAndPOSIXChildrenKeepDistinctExitOwnership(foundationFirst:) started.
+Retained compiler artifacts (descendant tree not proven): <USER_TMP>/T/tidy-t04-process-7B8E1CA7-07C7-4DBB-8BA6-66C6E175C16E/build
+Retained Foundation coexistence evidence: <USER_TMP>/T/tidy-t04-process-7B8E1CA7-07C7-4DBB-8BA6-66C6E175C16E/run
+✔ Test foundationAndPOSIXChildrenKeepDistinctExitOwnership(foundationFirst:) with 2 test cases passed after 3.774 seconds.
+◇ Test incompleteMappingNeverFabricatesTimeout() started.
+✔ Test incompleteMappingNeverFabricatesTimeout() passed after 0.001 seconds.
+✔ Suite BoundedProcessRunnerTests passed after 24.316 seconds.
+◇ Suite BoundedTraversalTests started.
+◇ Test "blocking enumeration is off-main and cancellation stops before descendant enqueue" started.
+✔ Test "blocking enumeration is off-main and cancellation stops before descendant enqueue" passed after 0.053 seconds.
+◇ Test "virtual high-cardinality traversal processes thousands within every retained bound" started.
+✔ Test "virtual high-cardinality traversal processes thousands within every retained bound" passed after 1.014 seconds.
+◇ Test "bounded top-N equals a complete bytes-descending path-ascending sort" started.
+✔ Test "bounded top-N equals a complete bytes-descending path-ascending sort" passed after 0.048 seconds.
+◇ Test "partial Continue has no duplicate or missing records and cursors reject replay and wrong session" started.
+✔ Test "partial Continue has no duplicate or missing records and cursors reject replay and wrong session" passed after 0.053 seconds.
+◇ Test "concurrent Continue calls reserve one cursor exactly once before suspension" started.
+✔ Test "concurrent Continue calls reserve one cursor exactly once before suspension" passed after 0.044 seconds.
+◇ Test "a cursor expiring while queued for a permit terminalizes before resumed work" started.
+✔ Test "a cursor expiring while queued for a permit terminalizes before resumed work" passed after 0.044 seconds.
+◇ Test "a queued cursor revalidates its policy revision after permit admission" started.
+✔ Test "a queued cursor revalidates its policy revision after permit admission" passed after 0.095 seconds.
+◇ Test "an opened directory handle cannot be swapped to enumerate outside the checked root" started.
+✔ Test "an opened directory handle cannot be swapped to enumerate outside the checked root" passed after 0.045 seconds.
+◇ Test "Continue cannot claim complete after an enumerated directory gains a child" started.
+✔ Test "Continue cannot claim complete after an enumerated directory gains a child" passed after 0.046 seconds.
+◇ Test "allocated-size metadata failure is unreadable, never zero-byte complete coverage" started.
+✔ Test "allocated-size metadata failure is unreadable, never zero-byte complete coverage" passed after 0.046 seconds.
+◇ Test "caller-controlled selection names are bounded before cursor state can retain them" started.
+✔ Test "caller-controlled selection names are bounded before cursor state can retain them" passed after 0.049 seconds.
+◇ Test "cursor expiry generation root replacement churn breadth and depth fail truthfully" started.
+✔ Test "cursor expiry generation root replacement churn breadth and depth fail truthfully" passed after 0.045 seconds.
+◇ Test "coverage preserves protected cross-volume unreadable hard-link and arithmetic failures" started.
+✔ Test "coverage preserves protected cross-volume unreadable hard-link and arithmetic failures" passed after 0.053 seconds.
+◇ Test "small real filesystem fixture preserves allocated-byte and deterministic top-N behavior" started.
+✔ Test "small real filesystem fixture preserves allocated-byte and deterministic top-N behavior" passed after 0.046 seconds.
+◇ Test "injected clock expires exact configured scan slices" started.
+◇ Test case passing 1 argument seconds → 30 to "injected clock expires exact configured scan slices" started.
+◇ Test case passing 1 argument seconds → 300 to "injected clock expires exact configured scan slices" started.
+◇ Test case passing 1 argument seconds → 1800 to "injected clock expires exact configured scan slices" started.
+✔ Test "injected clock expires exact configured scan slices" with 3 test cases passed after 0.137 seconds.
+◇ Test "twenty Continue cycles restore cursor descriptors and scheduler leases to baseline" started.
+✔ Test "twenty Continue cycles restore cursor descriptors and scheduler leases to baseline" passed after 0.054 seconds.
+◇ Test "twenty cancellation cycles restore descriptors and scheduler leases to baseline" started.
+✔ Test "twenty cancellation cycles restore descriptors and scheduler leases to baseline" passed after 0.052 seconds.
+✔ Suite BoundedTraversalTests passed after 1.934 seconds.
+◇ Suite "ChromiumCookieCleaner" started.
+◇ Test "profiles finds only directories with a Preferences file, excluding System/Guest Profile" started.
+✔ Test "profiles finds only directories with a Preferences file, excluding System/Guest Profile" passed after 0.002 seconds.
+◇ Test "clean is quarantined and preserves a disposable database and existing backup" started.
+✔ Test "clean is quarantined and preserves a disposable database and existing backup" passed after 0.001 seconds.
+◇ Test "clean denies an empty keep list and preserves a disposable database and backup" started.
+✔ Test "clean denies an empty keep list and preserves a disposable database and backup" passed after 0.001 seconds.
+◇ Test "clean denies with SingletonLock present and preserves a disposable database and backup" started.
+✔ Test "clean denies with SingletonLock present and preserves a disposable database and backup" passed after 0.002 seconds.
+◇ Test "clean denies a missing database and preserves an existing backup" started.
+✔ Test "clean denies a missing database and preserves an existing backup" passed after 0.001 seconds.
+✔ Suite "ChromiumCookieCleaner" passed after 0.010 seconds.
+◇ Suite "CleanCatalog" started.
+◇ Test "every catalog item has a unique id" started.
+✔ Test "every catalog item has a unique id" passed after 0.001 seconds.
+◇ Test "every catalog item has a non-empty title" started.
+✔ Test "every catalog item has a non-empty title" passed after 0.001 seconds.
+◇ Test "locate and declaredRoot never crash for any item on a scratch home" started.
+✔ Test "locate and declaredRoot never crash for any item on a scratch home" passed after 0.001 seconds.
+◇ Test "every located filesystem target falls under that item's declared root" started.
+✔ Test "every located filesystem target falls under that item's declared root" passed after 0.168 seconds.
+◇ Test "safe tier contains no custom actions" started.
+✔ Test "safe tier contains no custom actions" passed after 0.001 seconds.
+◇ Test "every custom action referenced by the catalog has a registered executor" started.
+✔ Test "every custom action referenced by the catalog has a registered executor" passed after 0.001 seconds.
+◇ Test "a default environment approves zero simulators for deletion" started.
+✔ Test "a default environment approves zero simulators for deletion" passed after 0.001 seconds.
+◇ Test "the simulator deletion catalog item produces zero targets under a default environment, even with real devices present" started.
+✔ Test "the simulator deletion catalog item produces zero targets under a default environment, even with real devices present" passed after 0.001 seconds.
+◇ Test "the aggressive git reflog item is Deep-tier and carries a danger note" started.
+✔ Test "the aggressive git reflog item is Deep-tier and carries a danger note" passed after 0.001 seconds.
+✔ Suite "CleanCatalog" passed after 0.171 seconds.
+◇ Suite "CleanEngine" started.
+◇ Test "makePlan only includes items matching the requested tier" started.
+✔ Test "makePlan only includes items matching the requested tier" passed after 0.001 seconds.
+◇ Test "makePlan is cumulative: Normal includes Safe, Deep includes Safe and Normal" started.
+✔ Test "makePlan is cumulative: Normal includes Safe, Deep includes Safe and Normal" passed after 0.001 seconds.
+◇ Test "makePlan launches no measurement and reports zero bytes without deleting anything" started.
+✔ Test "makePlan launches no measurement and reports zero bytes without deleting anything" passed after 0.001 seconds.
+◇ Test "makePlan excludes a target that escapes its declared root" started.
+✔ Test "makePlan excludes a target that escapes its declared root" passed after 0.001 seconds.
+◇ Test "execute denies an unaccepted deletePath and leaves its target intact" started.
+✔ Test "execute denies an unaccepted deletePath and leaves its target intact" passed after 0.001 seconds.
+◇ Test "execute denies an unaccepted deleteContents and leaves its payload intact" started.
+✔ Test "execute denies an unaccepted deleteContents and leaves its payload intact" passed after 0.001 seconds.
+◇ Test "execute never deletes anything for a tier with an empty plan" started.
+✔ Test "execute never deletes anything for a tier with an empty plan" passed after 0.001 seconds.
+◇ Test "execute denies an unaccepted tool action" started.
+✔ Test "execute denies an unaccepted tool action" passed after 0.001 seconds.
+◇ Test "execute denies a custom action before its registered executor" started.
+✔ Test "execute denies a custom action before its registered executor" passed after 0.001 seconds.
+◇ Test "execute reports failure for a custom action with no registered executor" started.
+✔ Test "execute reports failure for a custom action with no registered executor" passed after 0.001 seconds.
+◇ Test "execute refuses to delete the home directory even if a plan somehow targets it" started.
+✔ Test "execute refuses to delete the home directory even if a plan somehow targets it" passed after 0.001 seconds.
+✔ Suite "CleanEngine" passed after 0.005 seconds.
+◇ Suite "SettingsStore cutover" started.
+◇ Test missingLoadIsInMemoryOnlyAndDefaultSchemaIsTwo() started.
+✔ Test missingLoadIsInMemoryOnlyAndDefaultSchemaIsTwo() passed after 0.001 seconds.
+◇ Test explicitSaveRoundTripsEnvelopeAndUnknownPresetAsInertData() started.
+✔ Test explicitSaveRoundTripsEnvelopeAndUnknownPresetAsInertData() passed after 0.069 seconds.
+◇ Test firstExplicitSaveCreatesParents() started.
+✔ Test firstExplicitSaveCreatesParents() passed after 0.021 seconds.
+◇ Test corruptSettingsStayReadOnlyAndBytePreserved() started.
+✔ Test corruptSettingsStayReadOnlyAndBytePreserved() passed after 0.001 seconds.
+✔ Suite "SettingsStore cutover" passed after 0.092 seconds.
+◇ Suite "TidyConfig" started.
+◇ Test "ships with every collection empty and onboarding not yet completed" started.
+✔ Test "ships with every collection empty and onboarding not yet completed" passed after 0.001 seconds.
+◇ Test "makeEnvironment carries every configured field through" started.
+✔ Test "makeEnvironment carries every configured field through" passed after 0.001 seconds.
+✔ Suite "TidyConfig" passed after 0.001 seconds.
+◇ Suite "Confirmed execution" started.
+◇ Test "FIFO metadata fails promptly, preserves storage and releases the installation lock" started.
+◇ Test case passing 1 argument name → "bootstrap.json" to "FIFO metadata fails promptly, preserves storage and releases the installation lock" started.
+◇ Test case passing 1 argument name → "unfinished-effects.json" to "FIFO metadata fails promptly, preserves storage and releases the installation lock" started.
+✔ Test "FIFO metadata fails promptly, preserves storage and releases the installation lock" with 2 test cases passed after 0.037 seconds.
+◇ Test "Journal parent symlink is rejected before bootstrap writes" started.
+✔ Test "Journal parent symlink is rejected before bootstrap writes" passed after 0.001 seconds.
+◇ Test "New confirmation revokes the older token and discard removes authority" started.
+✔ Test "New confirmation revokes the older token and discard removes authority" passed after 0.019 seconds.
+◇ Test "Legacy reports decode missing admission fields without inventing measurements" started.
+✔ Test "Legacy reports decode missing admission fields without inventing measurements" passed after 0.001 seconds.
+◇ Test "Unsafe bootstrap inputs cannot create ready admission" started.
+◇ Test case passing 1 argument kind → "unrelated" to "Unsafe bootstrap inputs cannot create ready admission" started.
+◇ Test case passing 1 argument kind → "lock-only" to "Unsafe bootstrap inputs cannot create ready admission" started.
+◇ Test case passing 1 argument kind → "symlink" to "Unsafe bootstrap inputs cannot create ready admission" started.
+◇ Test case passing 1 argument kind → "permissions" to "Unsafe bootstrap inputs cannot create ready admission" started.
+✔ Test "Unsafe bootstrap inputs cannot create ready admission" with 4 test cases passed after 0.005 seconds.
+◇ Test "Store rejects relocation of its directory rather than leasing an orphaned lock" started.
+✔ Test "Store rejects relocation of its directory rather than leasing an orphaned lock" passed after 0.016 seconds.
+◇ Test "Invalid initialization markers preserve exact bytes" started.
+◇ Test case passing 1 argument bytes → 0 bytes to "Invalid initialization markers preserve exact bytes" started.
+◇ Test case passing 1 argument bytes → 84 bytes to "Invalid initialization markers preserve exact bytes" started.
+✔ Test "Invalid initialization markers preserve exact bytes" with 2 test cases passed after 0.032 seconds.
+◇ Test "Unknown review cannot mint a token" started.
+✔ Test "Unknown review cannot mint a token" passed after 0.016 seconds.
+◇ Test "Binding must equal the registered selection, not merely its plan ID" started.
+✔ Test "Binding must equal the registered selection, not merely its plan ID" passed after 0.016 seconds.
+◇ Test "Actual quarantined catalog item cannot become selected" started.
+✔ Test "Actual quarantined catalog item cannot become selected" passed after 0.019 seconds.
+◇ Test "Real no-op token is single-use, and cross-coordinator use cannot consume its owner" started.
+✔ Test "Real no-op token is single-use, and cross-coordinator use cannot consume its owner" passed after 0.020 seconds.
+◇ Test "Concurrent copies of one genuine no-op token cannot both complete" started.
+✔ Test "Concurrent copies of one genuine no-op token cannot both complete" passed after 0.017 seconds.
+◇ Test "Selection revision revokes earlier real token and old confirmation binding" started.
+✔ Test "Selection revision revokes earlier real token and old confirmation binding" passed after 0.019 seconds.
+◇ Test "Actual coordinator policy update invalidates reviews even when old hint is supplied" started.
+✔ Test "Actual coordinator policy update invalidates reviews even when old hint is supplied" passed after 0.051 seconds.
+◇ Test "Separate engines share coordinator registration and token ownership" started.
+✔ Test "Separate engines share coordinator registration and token ownership" passed after 0.019 seconds.
+◇ Test "Changed and symlink-replaced resource fails real identity probe" started.
+✔ Test "Changed and symlink-replaced resource fails real identity probe" passed after 0.002 seconds.
+◇ Test "Stable advisory lock contends across independent store descriptors" started.
+✔ Test "Stable advisory lock contends across independent store descriptors" passed after 0.014 seconds.
+◇ Test "Coordinator honors occupied installation lock without consuming the token" started.
+✔ Test "Coordinator honors occupied installation lock without consuming the token" passed after 0.019 seconds.
+◇ Test "Unfinished intent survives free lock, new coordinator and policy reset" started.
+◇ Test case passing 1 argument phase → .prepared to "Unfinished intent survives free lock, new coordinator and policy reset" started.
+◇ Test case passing 1 argument phase → .submitted to "Unfinished intent survives free lock, new coordinator and policy reset" started.
+◇ Test case passing 1 argument phase → .uncertainAndPossiblyRunning to "Unfinished intent survives free lock, new coordinator and policy reset" started.
+✔ Test "Unfinished intent survives free lock, new coordinator and policy reset" with 3 test cases passed after 0.126 seconds.
+◇ Test "Uncertainty created after confirmation blocks even a real no-op token" started.
+✔ Test "Uncertainty created after confirmation blocks even a real no-op token" passed after 0.023 seconds.
+◇ Test "First bootstrap persists initialized identity and a valid empty envelope" started.
+✔ Test "First bootstrap persists initialized identity and a valid empty envelope" passed after 0.018 seconds.
+◇ Test "Deleting an initialized unfinished ledger never bootstraps an empty replacement" started.
+✔ Test "Deleting an initialized unfinished ledger never bootstraps an empty replacement" passed after 0.057 seconds.
+◇ Test "Zero-byte ledger and unknown schema remain blocked and byte-preserved" started.
+◇ Test case passing 1 argument bytes → 0 bytes to "Zero-byte ledger and unknown schema remain blocked and byte-preserved" started.
+◇ Test case passing 1 argument bytes → 29 bytes to "Zero-byte ledger and unknown schema remain blocked and byte-preserved" started.
+✔ Test "Zero-byte ledger and unknown schema remain blocked and byte-preserved" with 2 test cases passed after 0.036 seconds.
+◇ Test "Real settings persistence error leaves production app bridge disabled with error" started.
+✔ Test "Real settings persistence error leaves production app bridge disabled with error" passed after 0.048 seconds.
+◇ Test "Policy projection copies explicit metadata and restrictions without discovery" started.
+✔ Test "Policy projection copies explicit metadata and restrictions without discovery" passed after 0.001 seconds.
+◇ Test "Two synchronous settings submissions invalidate before queued persistence runs" started.
+✔ Test "Two synchronous settings submissions invalidate before queued persistence runs" passed after 0.110 seconds.
+◇ Test "Older persisted update cannot reopen admission while a newer ticket is pending" started.
+✔ Test "Older persisted update cannot reopen admission while a newer ticket is pending" passed after 0.070 seconds.
+◇ Test "Corrupt mandatory ledger is not silently reset" started.
+✔ Test "Corrupt mandatory ledger is not silently reset" passed after 0.017 seconds.
+✔ Suite "Confirmed execution" passed after 0.843 seconds.
+◇ Suite "CookieDomainSuggester" started.
+◇ Test "registrableDomain takes the last two labels" started.
+◇ Test case passing 2 arguments hostKey → "accounts.google.com", expected → "google.com" to "registrableDomain takes the last two labels" started.
+◇ Test case passing 2 arguments hostKey → "www.apple.com", expected → "apple.com" to "registrableDomain takes the last two labels" started.
+◇ Test case passing 2 arguments hostKey → ".apple.com", expected → "apple.com" to "registrableDomain takes the last two labels" started.
+◇ Test case passing 2 arguments hostKey → "apple.com", expected → "apple.com" to "registrableDomain takes the last two labels" started.
+◇ Test case passing 2 arguments hostKey → "localhost", expected → "localhost" to "registrableDomain takes the last two labels" started.
+✔ Test "registrableDomain takes the last two labels" with 5 test cases passed after 0.001 seconds.
+◇ Test "registrableDomain returns nil for an empty host" started.
+✔ Test "registrableDomain returns nil for an empty host" passed after 0.001 seconds.
+◇ Test "suggests distinct registrable domains from a real Chrome profile's cookie database" started.
+✔ Test "suggests distinct registrable domains from a real Chrome profile's cookie database" passed after 0.003 seconds.
+◇ Test "returns nothing when there is no Chrome installation at all" started.
+✔ Test "returns nothing when there is no Chrome installation at all" passed after 0.001 seconds.
+✔ Suite "CookieDomainSuggester" passed after 0.003 seconds.
+◇ Suite "T08.4 core orchestration" started.
+◇ Test "legacy scan and planning calls retain rows but cannot launch discovery or measurement" started.
+✔ Test "legacy scan and planning calls retain rows but cannot launch discovery or measurement" passed after 0.001 seconds.
+◇ Test "explicit planning context uses the acknowledged policy and shared walk permit" started.
+✔ Test "explicit planning context uses the acknowledged policy and shared walk permit" passed after 0.050 seconds.
+◇ Test "registered scan publishes useful bounded progress before process probes and one terminal" started.
+✔ Test "registered scan publishes useful bounded progress before process probes and one terminal" passed after 0.070 seconds.
+◇ Test "catalog build discovery fails closed when its bounded result inventory is exhausted" started.
+✔ Test "catalog build discovery fails closed when its bounded result inventory is exhausted" passed after 0.049 seconds.
+◇ Test "two registered scans and one planning request share one aggregate walk budget" started.
+✔ Test "two registered scans and one planning request share one aggregate walk budget" passed after 0.099 seconds.
+◇ Test "cancellation at each scan orchestration stage publishes only one cancellation terminal" started.
+✔ Test "cancellation at each scan orchestration stage publishes only one cancellation terminal" passed after 0.066 seconds.
+➜ Test "registered scan process probes stay within the acknowledged shared process cap" skipped.
+◇ Test "process parser or tool failure is partial unavailable evidence, never empty success" started.
+✔ Test "process parser or tool failure is partial unavailable evidence, never empty success" passed after 0.062 seconds.
+◇ Test "bounded build-output discovery finds a real project's output directory" started.
+✔ Test "bounded build-output discovery finds a real project's output directory" passed after 0.043 seconds.
+◇ Test "bounded stale node_modules discovery finds an aged real directory" started.
+✔ Test "bounded stale node_modules discovery finds an aged real directory" passed after 0.049 seconds.
+◇ Test "Flutter SDK cache discovery fails closed once its session invalidates mid-command" started.
+✔ Test "Flutter SDK cache discovery fails closed once its session invalidates mid-command" passed after 0.044 seconds.
+◇ Test "local snapshot discovery fails closed once its session invalidates mid-command" started.
+✔ Test "local snapshot discovery fails closed once its session invalidates mid-command" passed after 0.045 seconds.
+◇ Test "approved simulator discovery fails closed once its session invalidates mid-command" started.
+✔ Test "approved simulator discovery fails closed once its session invalidates mid-command" passed after 0.044 seconds.
+◇ Test "owned production routes have no direct fan-out, traversal, or synchronous process escape" started.
+✔ Test "owned production routes have no direct fan-out, traversal, or synchronous process escape" passed after 0.013 seconds.
+✔ Suite "T08.4 core orchestration" passed after 0.641 seconds.
+◇ Suite "Declared root enforcement" started.
+◇ Test "a plan carries the declared root its targets were validated against" started.
+✔ Test "a plan carries the declared root its targets were validated against" passed after 0.001 seconds.
+◇ Test "execute refuses a target that sits outside the item's declared root" started.
+✔ Test "execute refuses a target that sits outside the item's declared root" passed after 0.001 seconds.
+◇ Test "execute denies an unaccepted target even when it respects its declared root" started.
+✔ Test "execute denies an unaccepted target even when it respects its declared root" passed after 0.001 seconds.
+◇ Test "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/Users" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/System" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/Library" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/Applications" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/usr" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/bin" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/sbin" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/etc" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/var" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/private" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/Volumes" to "refuses every system container path outright" started.
+◇ Test case passing 1 argument path → "/System/Volumes" to "refuses every system container path outright" started.
+✔ Test "refuses every system container path outright" with 12 test cases passed after 0.001 seconds.
+◇ Test "refuses anything inside a SIP-owned subtree" started.
+✔ Test "refuses anything inside a SIP-owned subtree" passed after 0.001 seconds.
+◇ Test "still allows reachable paths inside system containers" started.
+✔ Test "still allows reachable paths inside system containers" passed after 0.001 seconds.
+◇ Test "every catalog item declares a root under the home directory" started.
+✔ Test "every catalog item declares a root under the home directory" passed after 0.001 seconds.
+✔ Suite "Declared root enforcement" passed after 0.005 seconds.
+◇ Suite "Derived data execution" started.
+◇ Test "Confirmed execution really deletes DerivedData contents, keeps the directory, and reports real free-space deltas" started.
+✔ Test "Confirmed execution really deletes DerivedData contents, keeps the directory, and reports real free-space deltas" passed after 0.034 seconds.
+◇ Test "A second real run after a successful one still works: the capability is not one-shot" started.
+✔ Test "A second real run after a successful one still works: the capability is not one-shot" passed after 0.053 seconds.
+◇ Test "Every catalog item except the one accepted pair stays denied" started.
+✔ Test "Every catalog item except the one accepted pair stays denied" passed after 0.001 seconds.
+◇ Test "A prior unresolved intent blocks the accepted item too, without touching its files" started.
+✔ Test "A prior unresolved intent blocks the accepted item too, without touching its files" passed after 0.022 seconds.
+✔ Suite "Derived data execution" passed after 0.111 seconds.
+◇ Suite "GitHousekeeper" started.
+◇ Test "direct Git helpers are quarantined without commands or scratch mutation" started.
+✔ Test "direct Git helpers are quarantined without commands or scratch mutation" passed after 0.001 seconds.
+✔ Suite "GitHousekeeper" passed after 0.001 seconds.
+◇ Suite "GitRepoScanner" started.
+◇ Test "finds a repository by its .git directory" started.
+✔ Test "finds a repository by its .git directory" passed after 0.001 seconds.
+◇ Test "does not walk into .git's own contents" started.
+✔ Test "does not walk into .git's own contents" passed after 0.001 seconds.
+◇ Test "excludes a repository under a protected root" started.
+✔ Test "excludes a repository under a protected root" passed after 0.001 seconds.
+◇ Test "respects maxDepth" started.
+✔ Test "respects maxDepth" passed after 0.001 seconds.
+◇ Test "finds multiple repositories across multiple roots" started.
+✔ Test "finds multiple repositories across multiple roots" passed after 0.001 seconds.
+✔ Suite "GitRepoScanner" passed after 0.005 seconds.
+◇ Suite "GitRootDiscovery" started.
+◇ Test "finds a candidate root containing at least one repository" started.
+✔ Test "finds a candidate root containing at least one repository" passed after 0.001 seconds.
+◇ Test "does not report a candidate root with no repositories" started.
+✔ Test "does not report a candidate root with no repositories" passed after 0.001 seconds.
+◇ Test "counts multiple repositories under the same root" started.
+✔ Test "counts multiple repositories under the same root" passed after 0.001 seconds.
+◇ Test "returns nothing when no candidate roots exist at all" started.
+✔ Test "returns nothing when no candidate roots exist at all" passed after 0.001 seconds.
+✔ Suite "GitRootDiscovery" passed after 0.003 seconds.
+◇ Suite GuardedDeletionTests started.
+◇ Test correctlyHashedNonDirectoryHeaderAncestorsAreRejected() started.
+✔ Test correctlyHashedNonDirectoryHeaderAncestorsAreRejected() passed after 0.003 seconds.
+◇ Test correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "type", parentPath → "a" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "type", parentPath → "a/b" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "device", parentPath → "a" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "device", parentPath → "a/b" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "inode", parentPath → "a" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "inode", parentPath → "a/b" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "metadata", parentPath → "a" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+◇ Test case passing 2 arguments field → "metadata", parentPath → "a/b" to correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) started.
+✔ Test correctlyHashedInvalidNestedParentsAreRejected(field:parentPath:) with 8 test cases passed after 0.025 seconds.
+◇ Test correctlyHashedMissingReviewedParentIsRejected(parentPath:) started.
+◇ Test case passing 1 argument parentPath → "a" to correctlyHashedMissingReviewedParentIsRejected(parentPath:) started.
+◇ Test case passing 1 argument parentPath → "a/b" to correctlyHashedMissingReviewedParentIsRejected(parentPath:) started.
+✔ Test correctlyHashedMissingReviewedParentIsRejected(parentPath:) with 2 test cases passed after 0.007 seconds.
+◇ Test nestedCrossBatchManifestAllowsRootAncestorVolumeTransitions() started.
+✔ Test nestedCrossBatchManifestAllowsRootAncestorVolumeTransitions() passed after 0.003 seconds.
+◇ Test unavailableBytesRemainUnavailable() started.
+✔ Test unavailableBytesRemainUnavailable() passed after 0.001 seconds.
+◇ Test componentRelationsProtectAncestorsNotPrefixSiblings() started.
+✔ Test componentRelationsProtectAncestorsNotPrefixSiblings() passed after 0.001 seconds.
+◇ Test excludedDescendantNeverEntersManifestOrRemoval() started.
+✔ Test excludedDescendantNeverEntersManifestOrRemoval() passed after 0.001 seconds.
+◇ Test addedExclusionStopsPreviouslyReviewedLeaf() started.
+✔ Test addedExclusionStopsPreviouslyReviewedLeaf() passed after 0.001 seconds.
+◇ Test reviewedSiblingsThenEmptyDirectoryAreRemoved() started.
+✔ Test reviewedSiblingsThenEmptyDirectoryAreRemoved() passed after 0.002 seconds.
+◇ Test reviewedParentWithExcludedDescendantIsRetained() started.
+✔ Test reviewedParentWithExcludedDescendantIsRetained() passed after 0.002 seconds.
+◇ Test symlinkSwapIsRejectedBeforeEffect() started.
+✔ Test symlinkSwapIsRejectedBeforeEffect() passed after 0.001 seconds.
+◇ Test replacedDirectoryIdentityDoesNotAuthorizeNewChild() started.
+✔ Test replacedDirectoryIdentityDoesNotAuthorizeNewChild() passed after 0.002 seconds.
+◇ Test missingTargetIsNotSuccessfulRemoval() started.
+✔ Test missingTargetIsNotSuccessfulRemoval() passed after 0.001 seconds.
+◇ Test growthIsSkippedAndNewChildIsNotAuthorized() started.
+✔ Test growthIsSkippedAndNewChildIsNotAuthorized() passed after 0.001 seconds.
+◇ Test hardlinkRemovalNeverClaimsSharedStorageReclaimed() started.
+✔ Test hardlinkRemovalNeverClaimsSharedStorageReclaimed() passed after 0.002 seconds.
+◇ Test boundedBatchesAndDigestDoNotExpandReview() started.
+✔ Test boundedBatchesAndDigestDoNotExpandReview() passed after 0.003 seconds.
+◇ Test rawSymlinkRootAndTraversalComponentsAreRejected() started.
+✔ Test rawSymlinkRootAndTraversalComponentsAreRejected() passed after 0.001 seconds.
+◇ Test digestRecomputesEntriesHeaderAndExclusions() started.
+✔ Test digestRecomputesEntriesHeaderAndExclusions() passed after 0.001 seconds.
+◇ Test schedulingStopsAtEachLeafWithoutRefundOrOverflow() started.
+✔ Test schedulingStopsAtEachLeafWithoutRefundOrOverflow() passed after 0.001 seconds.
+◇ Test accountingDoesNotTurnFailureExitOrMissingMeasurementIntoSuccess() started.
+✔ Test accountingDoesNotTurnFailureExitOrMissingMeasurementIntoSuccess() passed after 0.001 seconds.
+◇ Test historicalRecordRemainsReadableWithoutInventedObservations() started.
+✔ Test historicalRecordRemainsReadableWithoutInventedObservations() passed after 0.001 seconds.
+◇ Test partialTargetRoundTripsWithoutLosingUnavailableBytes() started.
+✔ Test partialTargetRoundTripsWithoutLosingUnavailableBytes() passed after 0.001 seconds.
+◇ Test directoryOutcomeUsesMetadataAtRemovalNotBeforeChildrenWereRemoved() started.
+✔ Test directoryOutcomeUsesMetadataAtRemovalNotBeforeChildrenWereRemoved() passed after 0.001 seconds.
+◇ Test movedRootCannotUseRetainedDescriptorToRemoveMovedLeaf() started.
+✔ Test movedRootCannotUseRetainedDescriptorToRemoveMovedLeaf() passed after 0.001 seconds.
+◇ Test invalidInputsAndMalformedBatchSizesFailClosed() started.
+✔ Test invalidInputsAndMalformedBatchSizesFailClosed() passed after 0.001 seconds.
+◇ Test reportConstructionDoesNotAttributeLegacyToolEstimates() started.
+✔ Test reportConstructionDoesNotAttributeLegacyToolEstimates() passed after 0.001 seconds.
+◇ Test genericReportIsNeutralAndActualToolCodeIsNotInferredFromLegacySuccess() started.
+✔ Test genericReportIsNeutralAndActualToolCodeIsNotInferredFromLegacySuccess() passed after 0.001 seconds.
+◇ Test missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero() started.
+✔ Test missingLegacyMemoryDoesNotSilentlyBecomeMeasuredZero() passed after 0.001 seconds.
+◇ Test componentOrderedTraversalAndSiblingPrefixesAgreeWithDigest() started.
+✔ Test componentOrderedTraversalAndSiblingPrefixesAgreeWithDigest() passed after 0.001 seconds.
+✔ Suite GuardedDeletionTests passed after 0.071 seconds.
+◇ Suite "Headroom signals" started.
+◇ Test "a reset counter is not read as negative pressure" started.
+✔ Test "a reset counter is not read as negative pressure" passed after 0.001 seconds.
+◇ Test "zero elapsed time never produces a rate" started.
+✔ Test "zero elapsed time never produces a rate" passed after 0.001 seconds.
+◇ Test "non-finite elapsed time never produces a rate" started.
+✔ Test "non-finite elapsed time never produces a rate" passed after 0.001 seconds.
+◇ Test "an unchanged counter is a real, valid zero rate" started.
+✔ Test "an unchanged counter is a real, valid zero rate" passed after 0.001 seconds.
+◇ Test "a positive delta over positive elapsed time produces the expected rate" started.
+✔ Test "a positive delta over positive elapsed time produces the expected rate" passed after 0.001 seconds.
+◇ Test "missing target or availability is never presented as met or short" started.
+✔ Test "missing target or availability is never presented as met or short" passed after 0.001 seconds.
+◇ Test "available at or above target reads as target met, not buildable" started.
+✔ Test "available at or above target reads as target met, not buildable" passed after 0.001 seconds.
+◇ Test "a shortfall reports the exact byte gap" started.
+✔ Test "a shortfall reports the exact byte gap" passed after 0.001 seconds.
+◇ Test "a nil policy resolves to fully disabled, never a guessed default that starts sampling" started.
+✔ Test "a nil policy resolves to fully disabled, never a guessed default that starts sampling" passed after 0.001 seconds.
+◇ Test "a denied disk read is reported as unavailable with a reason, never a fabricated zero" started.
+✔ Test "a denied disk read is reported as unavailable with a reason, never a fabricated zero" passed after 0.001 seconds.
+◇ Test "a denied memory read is reported as unavailable, never shown as zero used" started.
+✔ Test "a denied memory read is reported as unavailable, never shown as zero used" passed after 0.001 seconds.
+◇ Test "an unsupported thermal signal is reported nil, never defaulted to nominal" started.
+✔ Test "an unsupported thermal signal is reported nil, never defaulted to nominal" passed after 0.001 seconds.
+◇ Test "an unsupported power signal is reported nil, never defaulted to false" started.
+✔ Test "an unsupported power signal is reported nil, never defaulted to false" passed after 0.001 seconds.
+◇ Test "a changed boot identity between samples yields no rate, even though the raw counts rose" started.
+✔ Test "a changed boot identity between samples yields no rate, even though the raw counts rose" passed after 0.001 seconds.
+◇ Test "consistent boot identity across two samples produces a real page-out rate using the real page size" started.
+✔ Test "consistent boot identity across two samples produces a real page-out rate using the real page size" passed after 0.001 seconds.
+◇ Test "a counter that appears to go backwards under the same boot never becomes a rate" started.
+✔ Test "a counter that appears to go backwards under the same boot never becomes a rate" passed after 0.001 seconds.
+◇ Test "hidden and disabled produces no repeating timer at all" started.
+✔ Test "hidden and disabled produces no repeating timer at all" passed after 0.001 seconds.
+◇ Test "background disabled and window hidden after being visible tears the timer down, not just slows it" started.
+✔ Test "background disabled and window hidden after being visible tears the timer down, not just slows it" passed after 0.001 seconds.
+◇ Test "feature disabled overrides an explicit background-enabled setting" started.
+✔ Test "feature disabled overrides an explicit background-enabled setting" passed after 0.001 seconds.
+◇ Test "suppressHiddenSampling forces the hidden loop off even with background enabled" started.
+✔ Test "suppressHiddenSampling forces the hidden loop off even with background enabled" passed after 0.001 seconds.
+◇ Test "history stays empty when disabled, even after explicit snapshots" started.
+✔ Test "history stays empty when disabled, even after explicit snapshots" passed after 0.001 seconds.
+◇ Test "history records when enabled and stays bounded by its configured window" started.
+✔ Test "history records when enabled and stays bounded by its configured window" passed after 0.001 seconds.
+◇ Test "history ages entries out past its configured window" started.
+✔ Test "history ages entries out past its configured window" passed after 0.001 seconds.
+◇ Test "an explicit requestSnapshot works even while fully disabled" started.
+✔ Test "an explicit requestSnapshot works even while fully disabled" passed after 0.001 seconds.
+✔ Suite "Headroom signals" passed after 0.001 seconds.
+◇ Suite "HomeSurvey" started.
+◇ Test "total matches what SizeScanner.diskUsage reports for the same tree" started.
+✔ Test "total matches what SizeScanner.diskUsage reports for the same tree" passed after 0.002 seconds.
+◇ Test "per-child totals match a diskUsage call made directly against each child" started.
+✔ Test "per-child totals match a diskUsage call made directly against each child" passed after 0.002 seconds.
+◇ Test "large files match what LargestItemsScanner.filesAtLeast reports" started.
+✔ Test "large files match what LargestItemsScanner.filesAtLeast reports" passed after 0.002 seconds.
+◇ Test "counts a hardlinked file once, the way du does" started.
+✔ Test "counts a hardlinked file once, the way du does" passed after 0.001 seconds.
+◇ Test "honors protected roots and does not descend into them" started.
+✔ Test "honors protected roots and does not descend into them" passed after 0.002 seconds.
+◇ Test "a file root measures as itself" started.
+✔ Test "a file root measures as itself" passed after 0.001 seconds.
+◇ Test "returns nothing for a path that does not exist" started.
+✔ Test "returns nothing for a path that does not exist" passed after 0.001 seconds.
+◇ Test "bounded walk uses the supplied bridge facade and preserves survey totals" started.
+✔ Test "bounded walk uses the supplied bridge facade and preserves survey totals" passed after 0.048 seconds.
+✔ Suite "HomeSurvey" passed after 0.061 seconds.
+◇ Suite "T07.4 hostile production regression" started.
+◇ Test hostileImport() started.
+✔ Test hostileImport() passed after 0.168 seconds.
+◇ Test hostileExecution() started.
+✔ Test hostileExecution() passed after 0.133 seconds.
+✔ Suite "T07.4 hostile production regression" passed after 0.301 seconds.
+◇ Suite "LargestItemsScanner" started.
+◇ Test "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → "Documents", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → "Desktop", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".gradle", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".npm", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".ssh", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".cache", expected → true to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".Trash", expected → false to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".DS_Store", expected → false to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".Spotlight-V100", expected → false to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → ".", expected → false to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+◇ Test case passing 2 arguments name → "", expected → false to "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" started.
+✔ Test "matches visible entries and lowercase dot-entries, excludes capitalized dot-entries" with 11 test cases passed after 0.001 seconds.
+◇ Test "homeTopLevelEntries filters out capitalized dot-entries" started.
+✔ Test "homeTopLevelEntries filters out capitalized dot-entries" passed after 0.001 seconds.
+◇ Test "libraryEntries lists every immediate child, dot or not" started.
+✔ Test "libraryEntries lists every immediate child, dot or not" passed after 0.001 seconds.
+◇ Test "filesAtLeast finds only files at or above the threshold, largest first" started.
+✔ Test "filesAtLeast finds only files at or above the threshold, largest first" passed after 0.003 seconds.
+◇ Test "filesAtLeast excludes protected roots" started.
+✔ Test "filesAtLeast excludes protected roots" passed after 0.001 seconds.
+◇ Test "filesAtLeast respects the limit" started.
+✔ Test "filesAtLeast respects the limit" passed after 0.004 seconds.
+◇ Test "bounded large-file scan requires the supplied bridge facade and matches ordering" started.
+✔ Test "bounded large-file scan requires the supplied bridge facade and matches ordering" passed after 0.048 seconds.
+✔ Suite "LargestItemsScanner" passed after 0.059 seconds.
+◇ Suite "LaunchAgentsSurvey" started.
+◇ Test "lists plist files sorted by name" started.
+✔ Test "lists plist files sorted by name" passed after 0.001 seconds.
+◇ Test "returns an empty list when there is no LaunchAgents directory" started.
+✔ Test "returns an empty list when there is no LaunchAgents directory" passed after 0.001 seconds.
+✔ Suite "LaunchAgentsSurvey" passed after 0.001 seconds.
+◇ Suite "Legacy quarantine" started.
+◇ Test "Every actual catalog action and forged action is denied through raw execute" started.
+✔ Test "Every actual catalog action and forged action is denied through raw execute" passed after 0.001 seconds.
+◇ Test "All custom IDs are denied even after real default registration" started.
+✔ Test "All custom IDs are denied even after real default registration" passed after 0.001 seconds.
+◇ Test "Direct command helpers deny without invoking even a successful recorder" started.
+✔ Test "Direct command helpers deny without invoking even a successful recorder" passed after 0.001 seconds.
+◇ Test "Direct browser entry denies before touching DB or backup" started.
+✔ Test "Direct browser entry denies before touching DB or backup" passed after 0.001 seconds.
+✔ Suite "Legacy quarantine" passed after 0.004 seconds.
+◇ Suite "Memory and swap" started.
+◇ Test "every memory item is deep tier, so none is ever on by default" started.
+✔ Test "every memory item is deep tier, so none is ever on by default" passed after 0.001 seconds.
+◇ Test "memory targets are opaque identifiers, never filesystem paths" started.
+✔ Test "memory targets are opaque identifiers, never filesystem paths" passed after 0.001 seconds.
+◇ Test "the restart action is unreachable until it is explicitly enabled" started.
+✔ Test "the restart action is unreachable until it is explicitly enabled" passed after 0.001 seconds.
+◇ Test "quitting applications is limited to the approved list, and empty means none" started.
+✔ Test "quitting applications is limited to the approved list, and empty means none" passed after 0.001 seconds.
+◇ Test "a memory outcome never contributes to the disk freed figure" started.
+✔ Test "a memory outcome never contributes to the disk freed figure" passed after 0.001 seconds.
+◇ Test "a freed estimate that the disk did not confirm is flagged for reconciling" started.
+✔ Test "a freed estimate that the disk did not confirm is flagged for reconciling" passed after 0.001 seconds.
+◇ Test "classifies VM files into separately labelled components" started.
+✔ Test "classifies VM files into separately labelled components" passed after 0.001 seconds.
+◇ Test "groups and sums VM files from a synthetic directory" started.
+✔ Test "groups and sums VM files from a synthetic directory" passed after 0.001 seconds.
+◇ Test "reports nothing rather than failing when the VM directories are unreadable" started.
+✔ Test "reports nothing rather than failing when the VM directories are unreadable" passed after 0.001 seconds.
+◇ Test "surveys the real VM directories without crashing" started.
+✔ Test "surveys the real VM directories without crashing" passed after 0.001 seconds.
+✔ Suite "Memory and swap" passed after 0.002 seconds.
+◇ Suite "PathGuard" started.
+◇ Test "refuses an empty path" started.
+✔ Test "refuses an empty path" passed after 0.001 seconds.
+◇ Test "refuses a relative path" started.
+✔ Test "refuses a relative path" passed after 0.001 seconds.
+◇ Test "refuses the root of the filesystem" started.
+✔ Test "refuses the root of the filesystem" passed after 0.001 seconds.
+◇ Test "refuses the home directory exactly" started.
+✔ Test "refuses the home directory exactly" passed after 0.001 seconds.
+◇ Test "refuses the home directory with a trailing slash" started.
+✔ Test "refuses the home directory with a trailing slash" passed after 0.001 seconds.
+◇ Test "allows an ordinary path under home when nothing restricts it" started.
+✔ Test "allows an ordinary path under home when nothing restricts it" passed after 0.001 seconds.
+◇ Test "refuses a protected root exactly" started.
+✔ Test "refuses a protected root exactly" passed after 0.001 seconds.
+◇ Test "refuses a path nested inside a protected root" started.
+✔ Test "refuses a path nested inside a protected root" passed after 0.001 seconds.
+◇ Test "does not treat a same-prefix sibling as protected" started.
+✔ Test "does not treat a same-prefix sibling as protected" passed after 0.001 seconds.
+◇ Test "enforces every protected root in a multi-root list" started.
+✔ Test "enforces every protected root in a multi-root list" passed after 0.001 seconds.
+◇ Test "allows a path under its declared root" started.
+✔ Test "allows a path under its declared root" passed after 0.001 seconds.
+◇ Test "allows a path equal to its declared root" started.
+✔ Test "allows a path equal to its declared root" passed after 0.001 seconds.
+◇ Test "refuses a path outside its declared root" started.
+✔ Test "refuses a path outside its declared root" passed after 0.001 seconds.
+◇ Test "refuses a declared-root escape via a same-prefix sibling" started.
+✔ Test "refuses a declared-root escape via a same-prefix sibling" passed after 0.001 seconds.
+◇ Test "a protected root still wins even when the path is under its declared root" started.
+✔ Test "a protected root still wins even when the path is under its declared root" passed after 0.001 seconds.
+◇ Test "isSafe mirrors validate without throwing" started.
+✔ Test "isSafe mirrors validate without throwing" passed after 0.001 seconds.
+◇ Test "canonicalize strips a trailing slash" started.
+✔ Test "canonicalize strips a trailing slash" passed after 0.001 seconds.
+◇ Test "canonicalize expands a leading tilde" started.
+✔ Test "canonicalize expands a leading tilde" passed after 0.001 seconds.
+◇ Test "canonicalize resolves a real symlink so it cannot be used to escape a declared root" started.
+✔ Test "canonicalize resolves a real symlink so it cannot be used to escape a declared root" passed after 0.001 seconds.
+◇ Test "isEqualOrDescendant requires an exact match or a slash boundary" started.
+✔ Test "isEqualOrDescendant requires an exact match or a slash boundary" passed after 0.001 seconds.
+✔ Suite "PathGuard" passed after 0.003 seconds.
+◇ Suite "Plan visibility" started.
+◇ Test "Actual targetless tool, zero-byte memory, missing path and tombstone remain visible" started.
+✔ Test "Actual targetless tool, zero-byte memory, missing path and tombstone remain visible" passed after 0.001 seconds.
+◇ Test "Missing required tool is an unavailable row, not silently hidden" started.
+✔ Test "Missing required tool is an unavailable row, not silently hidden" passed after 0.001 seconds.
+◇ Test "Erase-all tombstone retains its permanent reason without Xcode" started.
+✔ Test "Erase-all tombstone retains its permanent reason without Xcode" passed after 0.001 seconds.
+◇ Test "Protected targets show blocked with reason rather than vanish" started.
+✔ Test "Protected targets show blocked with reason rather than vanish" passed after 0.001 seconds.
+◇ Test "Explicit nonavailable discovery reasons are never blank" started.
+✔ Test "Explicit nonavailable discovery reasons are never blank" passed after 0.001 seconds.
+◇ Test "Caller-supplied available descriptors and duplicate IDs cannot grant selection" started.
+✔ Test "Caller-supplied available descriptors and duplicate IDs cannot grant selection" passed after 0.001 seconds.
+✔ Suite "Plan visibility" passed after 0.001 seconds.
+◇ Suite PolicyDefaultsTests started.
+◇ Test everyRegistryRowAndDefaultIsIndependent() started.
+✔ Test everyRegistryRowAndDefaultIsIndependent() passed after 0.015 seconds.
+◇ Test exactFactoryProfiles() started.
+✔ Test exactFactoryProfiles() passed after 0.001 seconds.
+◇ Test legacyProjectionPreservesNondefaultsWithoutAuthority() started.
+✔ Test legacyProjectionPreservesNondefaultsWithoutAuthority() passed after 0.020 seconds.
+◇ Test presetSwitchesRetainOneStoredCustomPair() started.
+✔ Test presetSwitchesRetainOneStoredCustomPair() passed after 0.037 seconds.
+✔ Suite PolicyDefaultsTests passed after 0.074 seconds.
+◇ Suite PolicyPersistenceTests started.
+◇ Test twoVolumesSurviveEveryLegacyEditAndRelaunch() started.
+✔ Test twoVolumesSurviveEveryLegacyEditAndRelaunch() passed after 0.346 seconds.
+◇ Test absentAndTaggedInheritanceRemainDistinct() started.
+✔ Test absentAndTaggedInheritanceRemainDistinct() passed after 0.001 seconds.
+◇ Test globalReverseProjectionIsAtomicAndProjectValuesStayInert() started.
+✔ Test globalReverseProjectionIsAtomicAndProjectValuesStayInert() passed after 0.081 seconds.
+◇ Test replacingGlobalPreferencesResetsRemovedLegacyProjectionsAndRollsBackAtomically() started.
+✔ Test replacingGlobalPreferencesResetsRemovedLegacyProjectionsAndRollsBackAtomically() passed after 0.165 seconds.
+◇ Test replacementPreservesLegacyOnlyNondefaultWhenNeitherTypedDocumentOwnsIt() started.
+✔ Test replacementPreservesLegacyOnlyNondefaultWhenNeitherTypedDocumentOwnsIt() passed after 0.027 seconds.
+◇ Test firstLegacyEditProjectsEveryExistingNondefaultBeforeItsDelta() started.
+✔ Test firstLegacyEditProjectsEveryExistingNondefaultBeforeItsDelta() passed after 0.053 seconds.
+◇ Test malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → unknownKey to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → unknownTag to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → unknownVersion to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → duplicateKey to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → excessiveDepth to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → oversized to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → invalidUTF8 to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → overlongProfileName to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → overlongProjectID to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+◇ Test case passing 1 argument fixture → noncanonicalProfileUUID to malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) started.
+✔ Test malformedPreferenceExtensionsAreReadOnlyAndPreserveBytes(fixture:) with 10 test cases passed after 0.017 seconds.
+◇ Test aggregatePreferenceFieldCountRejectsBeforePublication() started.
+✔ Test aggregatePreferenceFieldCountRejectsBeforePublication() passed after 0.224 seconds.
+◇ Test compactPreferenceGraphBelowAggregateFieldLimitPersists() started.
+✔ Test compactPreferenceGraphBelowAggregateFieldLimitPersists() passed after 1.455 seconds.
+◇ Test legacyDeltaUsesItsCapturedBaseAndPreservesUnrelatedTypedEdits() started.
+✔ Test legacyDeltaUsesItsCapturedBaseAndPreservesUnrelatedTypedEdits() passed after 0.037 seconds.
+◇ Test typedDeltaTreatsAbsentAsDifferentFromDefaultAndRejectsTouchedConflict() started.
+✔ Test typedDeltaTreatsAbsentAsDifferentFromDefaultAndRejectsTouchedConflict() passed after 0.024 seconds.
+✔ Suite PolicyPersistenceTests passed after 2.434 seconds.
+◇ Suite PolicyResolutionTests started.
+◇ Test maintenanceGlobalOptInIsFeatureEligibilityOnly() started.
+✔ Test maintenanceGlobalOptInIsFeatureEligibilityOnly() passed after 0.026 seconds.
+◇ Test unavailableHeadroomKeepsOnlyApplicableExplicitProvenance() started.
+✔ Test unavailableHeadroomKeepsOnlyApplicableExplicitProvenance() passed after 0.038 seconds.
+◇ Test inheritedItemUsesResolvedBaseProvenance() started.
+✔ Test inheritedItemUsesResolvedBaseProvenance() passed after 0.032 seconds.
+◇ Test defaultFalseRequiresOwningGlobalAndFalseDominates() started.
+✔ Test defaultFalseRequiresOwningGlobalAndFalseDominates() passed after 0.114 seconds.
+◇ Test unionsCapsAndEqualReplacementsHaveLiteralProvenance() started.
+✔ Test unionsCapsAndEqualReplacementsHaveLiteralProvenance() passed after 0.013 seconds.
+◇ Test scanAdmissionAndNumericProvenanceAreDistinct() started.
+✔ Test scanAdmissionAndNumericProvenanceAreDistinct() passed after 0.128 seconds.
+◇ Test budgetByteRoundingAndUnavailableObservations() started.
+✔ Test budgetByteRoundingAndUnavailableObservations() passed after 0.064 seconds.
+◇ Test replacementsAndIndependentRestrictions() started.
+✔ Test replacementsAndIndependentRestrictions() passed after 0.102 seconds.
+◇ Test genericThenVolumeAtEveryLayer() started.
+✔ Test genericThenVolumeAtEveryLayer() passed after 0.483 seconds.
+◇ Test unavailableAndUnmatchedAreNotZeroOrAuthorization() started.
+✔ Test unavailableAndUnmatchedAreNotZeroOrAuthorization() passed after 0.052 seconds.
+◇ Test immutablePressureAndCPUCeilings() started.
+✔ Test immutablePressureAndCPUCeilings() passed after 0.093 seconds.
+◇ Test explicitlyEnabledUnconfiguredBudgetIsForcedOffWithProvenance() started.
+✔ Test explicitlyEnabledUnconfiguredBudgetIsForcedOffWithProvenance() passed after 0.012 seconds.
+✔ Suite PolicyResolutionTests passed after 1.164 seconds.
+◇ Suite PolicyValidationTests started.
+◇ Test exactTaggedWireFormRoundTripsAndRejectsAmbiguity() started.
+✔ Test exactTaggedWireFormRoundTripsAndRejectsAmbiguity() passed after 0.002 seconds.
+◇ Test volumeIDsRequireCanonicalUppercaseUUIDSpelling() started.
+✔ Test volumeIDsRequireCanonicalUppercaseUUIDSpelling() passed after 0.001 seconds.
+◇ Test excludedRootsRequirePureLexicalCanonicalAbsolutePaths() started.
+✔ Test excludedRootsRequirePureLexicalCanonicalAbsolutePaths() passed after 0.001 seconds.
+◇ Test disablingBudgetNeverRequiresVolumeBounds() started.
+✔ Test disablingBudgetNeverRequiresVolumeBounds() passed after 0.001 seconds.
+◇ Test quietRelationUsesMergedOperandsNotLayerDefaults() started.
+✔ Test quietRelationUsesMergedOperandsNotLayerDefaults() passed after 0.013 seconds.
+◇ Test unmatchedVolumeCanPersistButCannotBorrowAnotherCapacity() started.
+✔ Test unmatchedVolumeCanPersistButCannotBorrowAnotherCapacity() passed after 0.001 seconds.
+◇ Test budgetEnableErrorsIdentifyTheBoundNotAnUnrelatedField() started.
+✔ Test budgetEnableErrorsIdentifyTheBoundNotAnUnrelatedField() passed after 0.001 seconds.
+◇ Test everyNumericRangeRejectsBothNeighbors() started.
+✔ Test everyNumericRangeRejectsBothNeighbors() passed after 0.052 seconds.
+◇ Test nonIntegralAndOverflowInputsNeverReachMultiplication() started.
+✔ Test nonIntegralAndOverflowInputsNeverReachMultiplication() passed after 0.001 seconds.
+◇ Test keyLayerAuthorityAndIdentityTable() started.
+✔ Test keyLayerAuthorityAndIdentityTable() passed after 0.020 seconds.
+◇ Test relationsAndUnavailableBounds() started.
+✔ Test relationsAndUnavailableBounds() passed after 0.001 seconds.
+◇ Test everyChangedVolumeOverrideIsValidatedInStableKeyOrder() started.
+✔ Test everyChangedVolumeOverrideIsValidatedInStableKeyOrder() passed after 0.001 seconds.
+✔ Suite PolicyValidationTests passed after 0.094 seconds.
+◇ Suite ProcessBudgetIntegrationTests started.
+◇ Test productionRunnerAndSchedulerPolicyShareOnePhysicalGate() started.
+✔ Test productionRunnerAndSchedulerPolicyShareOnePhysicalGate() passed after 0.001 seconds.
+◇ Test zeroPausesReadersWithoutRevokingWorkOrChangingMutatorOwnership() started.
+✔ Test zeroPausesReadersWithoutRevokingWorkOrChangingMutatorOwnership() passed after 0.001 seconds.
+◇ Test fullPausedReaderQueueCannotRejectEligibleMutator() started.
+✔ Test fullPausedReaderQueueCannotRejectEligibleMutator() passed after 0.006 seconds.
+◇ Test aggregateTwoAndReaderOneCapsComposeWithoutASecondGate() started.
+✔ Test aggregateTwoAndReaderOneCapsComposeWithoutASecondGate() passed after 0.004 seconds.
+◇ Test cancelledReaderLeavesEligibleFIFOOrderExact() started.
+✔ Test cancelledReaderLeavesEligibleFIFOOrderExact() passed after 0.007 seconds.
+◇ Test rawMutationGateAndSessionLaunchDoNotCompileForImporters() started.
+✘ Test rawMutationGateAndSessionLaunchDoNotCompileForImporters() recorded an issue at ProcessBudgetIntegrationTests.swift:226:6: Caught error: Error Domain=NSCocoaErrorDomain Code=4 "The file doesn’t exist."
+✘ Test rawMutationGateAndSessionLaunchDoNotCompileForImporters() failed after 0.001 seconds with 1 issue.
+◇ Test testSPIIsolatedLaunchCannotTargetProductionGate() started.
+✔ Test testSPIIsolatedLaunchCannotTargetProductionGate() passed after 0.001 seconds.
+◇ Test undeclaredForgedAndNestedLaunchesRejectBeforeGateActivity() started.
+✔ Test undeclaredForgedAndNestedLaunchesRejectBeforeGateActivity() passed after 0.001 seconds.
+◇ Test twentyDirectChildCyclesReturnEveryLeaseAndOwnedDescriptor() started.
+✔ Test twentyDirectChildCyclesReturnEveryLeaseAndOwnedDescriptor() passed after 0.029 seconds.
+◇ Test discoverySourcesHaveNoPrivateProcessOrWaitEscape() started.
+✔ Test discoverySourcesHaveNoPrivateProcessOrWaitEscape() passed after 0.003 seconds.
+✘ Suite ProcessBudgetIntegrationTests failed after 0.055 seconds with 1 issue.
+◇ Suite "ProcessRunner" started.
+◇ Test "captures stdout from a simple command" started.
+✔ Test "captures stdout from a simple command" passed after 0.001 seconds.
+◇ Test "reports a non-zero exit code as not succeeded" started.
+✔ Test "reports a non-zero exit code as not succeeded" passed after 0.002 seconds.
+◇ Test "never deadlocks on a chatty command whose output exceeds a pipe buffer" started.
+✔ Test "never deadlocks on a chatty command whose output exceeds a pipe buffer" passed after 0.002 seconds.
+◇ Test "runDiscardingOutput reports success without capturing anything" started.
+✔ Test "runDiscardingOutput reports success without capturing anything" passed after 0.001 seconds.
+◇ Test "minimal environment carries no inherited PATH beyond the fixed one" started.
+✔ Test "minimal environment carries no inherited PATH beyond the fixed one" passed after 0.001 seconds.
+◇ Test "a process that outlives its timeout is killed and reported as timed out, not hung forever" started.
+✔ Test "a process that outlives its timeout is killed and reported as timed out, not hung forever" passed after 0.792 seconds.
+◇ Test "a process well under its timeout is not reported as timed out" started.
+✔ Test "a process well under its timeout is not reported as timed out" passed after 16.786 seconds.
+✔ Suite "ProcessRunner" passed after 17.588 seconds.
+◇ Suite "RunLog" started.
+◇ Test "appends one JSON line per call and reads them all back" started.
+✔ Test "appends one JSON line per call and reads them all back" passed after 0.001 seconds.
+◇ Test "creates the containing directory if it does not exist yet" started.
+✔ Test "creates the containing directory if it does not exist yet" passed after 0.001 seconds.
+◇ Test "readAll returns an empty array when the file does not exist" started.
+✔ Test "readAll returns an empty array when the file does not exist" passed after 0.001 seconds.
+✔ Suite "RunLog" passed after 0.002 seconds.
+◇ Suite RunRecoveryTests started.
+◇ Test transitionAndRoundTrip() started.
+✔ Test transitionAndRoundTrip() passed after 0.041 seconds.
+◇ Test actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .shortWriteThenENOSPC to actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .fileSync to actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .renameBefore to actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .renameAfter to actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .directorySync to actualPublicationFaultRetainsEvidenceAndBlocks(_:) started.
+✔ Test actualPublicationFaultRetainsEvidenceAndBlocks(_:) with 5 test cases passed after 0.202 seconds.
+◇ Test positiveShortWriteRetriesWithoutTruncation() started.
+✔ Test positiveShortWriteRetriesWithoutTruncation() passed after 0.037 seconds.
+◇ Test capacityAndSequenceOverflowDoNotPublish() started.
+✔ Test capacityAndSequenceOverflowDoNotPublish() passed after 0.061 seconds.
+◇ Test childUpdatePreservesOtherUnresolvedOperation() started.
+✔ Test childUpdatePreservesOtherUnresolvedOperation() passed after 0.044 seconds.
+◇ Test preparedWithoutPIDSurvivesHistoryPruningAndRelaunch() started.
+✔ Test preparedWithoutPIDSurvivesHistoryPruningAndRelaunch() passed after 0.039 seconds.
+◇ Test corruptLedgerNeverBecomesEmpty() started.
+✔ Test corruptLedgerNeverBecomesEmpty() passed after 0.017 seconds.
+◇ Test diagnosticCorruptTailIsPreservedAndDoesNotClearAdmission() started.
+✔ Test diagnosticCorruptTailIsPreservedAndDoesNotClearAdmission() passed after 0.037 seconds.
+◇ Test diagnosticFIFOReaderRejectsPromptlyAndPreservesUnfinishedAdmission() started.
+✔ Test diagnosticFIFOReaderRejectsPromptlyAndPreservesUnfinishedAdmission() passed after 0.038 seconds.
+◇ Test capturedChildCannotChooseAmongDuplicatedPersistedOperations() started.
+✔ Test capturedChildCannotChooseAmongDuplicatedPersistedOperations() passed after 0.040 seconds.
+◇ Test everyJournalEntryRequiresTheBorrowedLock() started.
+✔ Test everyJournalEntryRequiresTheBorrowedLock() passed after 0.032 seconds.
+◇ Test diagnosticDirectoryMustMatchTheLockedStore() started.
+✔ Test diagnosticDirectoryMustMatchTheLockedStore() passed after 0.018 seconds.
+◇ Test duplicateOperationAcrossRunsCannotReplaceOrAppend() started.
+✔ Test duplicateOperationAcrossRunsCannotReplaceOrAppend() passed after 0.063 seconds.
+◇ Test childTupleMustBeCompleteAndCannotChangeIdentity() started.
+✔ Test childTupleMustBeCompleteAndCannotChangeIdentity() passed after 0.073 seconds.
+◇ Test finishAllowsOnlyConfirmedNoEffectRunAndDoesNotPublishAdmission() started.
+✔ Test finishAllowsOnlyConfirmedNoEffectRunAndDoesNotPublishAdmission() passed after 0.044 seconds.
+◇ Test diagnosticSucceededNeverSuppliesTerminalProof() started.
+✔ Test diagnosticSucceededNeverSuppliesTerminalProof() passed after 0.055 seconds.
+◇ Test onlyUnreferencedMissingJournalMeansNewRun() started.
+✔ Test onlyUnreferencedMissingJournalMeansNewRun() passed after 0.035 seconds.
+◇ Test existingZeroLengthDiagnosticIsNotNewRun() started.
+✔ Test existingZeroLengthDiagnosticIsNotNewRun() passed after 0.020 seconds.
+◇ Test frameHeaderAndRecordSequenceHaveExactWidths() started.
+✔ Test frameHeaderAndRecordSequenceHaveExactWidths() passed after 0.019 seconds.
+◇ Test agePruningUsesFinishedMtimeAndLeavesFreshHistory() started.
+✔ Test agePruningUsesFinishedMtimeAndLeavesFreshHistory() passed after 0.038 seconds.
+◇ Test retentionPreservesNonhistoryFilesAndRejectsStaleRemoval() started.
+✔ Test retentionPreservesNonhistoryFilesAndRejectsStaleRemoval() passed after 0.047 seconds.
+◇ Test corruptHistoryBlocksPruningBeforeAnyRemoval() started.
+✔ Test corruptHistoryBlocksPruningBeforeAnyRemoval() passed after 0.063 seconds.
+◇ Test unknownOrUnsafeHistoryBlocksPruning(_:) started.
+◇ Test case passing 1 argument kind → "futureSchema" to unknownOrUnsafeHistoryBlocksPruning(_:) started.
+◇ Test case passing 1 argument kind → "symlink" to unknownOrUnsafeHistoryBlocksPruning(_:) started.
+✔ Test unknownOrUnsafeHistoryBlocksPruning(_:) with 2 test cases passed after 0.124 seconds.
+◇ Test retentionDirectorySyncFailureLatchesWithoutChangingSafetyBytes() started.
+✔ Test retentionDirectorySyncFailureLatchesWithoutChangingSafetyBytes() passed after 0.037 seconds.
+◇ Test invalidHistoryByteLimitsDoNotChangeAnyFile(_:) started.
+◇ Test case passing 1 argument limit → 0 to invalidHistoryByteLimitsDoNotChangeAnyFile(_:) started.
+◇ Test case passing 1 argument limit → 1048575 to invalidHistoryByteLimitsDoNotChangeAnyFile(_:) started.
+◇ Test case passing 1 argument limit → 52428801 to invalidHistoryByteLimitsDoNotChangeAnyFile(_:) started.
+✔ Test invalidHistoryByteLimitsDoNotChangeAnyFile(_:) with 3 test cases passed after 0.107 seconds.
+◇ Test firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+◇ Test case passing 1 argument fault → .shortWriteThenENOSPC to firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+◇ Test case passing 1 argument fault → .fileSync to firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+◇ Test case passing 1 argument fault → .renameBefore to firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+◇ Test case passing 1 argument fault → .renameAfter to firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+◇ Test case passing 1 argument fault → .directorySync to firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) started.
+✔ Test firstIntentPublicationFaultNeverBecomesSuccessfulAdmission(_:) with 5 test cases passed after 0.166 seconds.
+◇ Test diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .shortWriteThenENOSPC to diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .fileSync to diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .renameBefore to diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .renameAfter to diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+◇ Test case passing 1 argument fault → .directorySync to diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) started.
+✔ Test diagnosticPublicationFaultPreservesMandatoryIntentAndBlocks(_:) with 5 test cases passed after 0.199 seconds.
+◇ Test writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .zero, destination → "intent" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .zero, destination → "diagnostic" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .overRemaining, destination → "intent" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .overRemaining, destination → "diagnostic" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .interrupted, destination → "intent" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+◇ Test case passing 2 arguments fault → .interrupted, destination → "diagnostic" to writeProgressIsCheckedAndEINTRRetries(_:_:) started.
+✔ Test writeProgressIsCheckedAndEINTRRetries(_:_:) with 6 test cases passed after 0.211 seconds.
+◇ Test malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .checksum to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .sequenceGap to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .prefixPayloadMismatch to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .foreignRun to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .headerOnly to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .zeroLength to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .excessiveLength to malformedFrameCannotBecomePartialSuccess(_:) started.
+◇ Test case passing 1 argument kind → .truncatedPayload to malformedFrameCannotBecomePartialSuccess(_:) started.
+✔ Test malformedFrameCannotBecomePartialSuccess(_:) with 8 test cases passed after 0.365 seconds.
+◇ Test cumulativeSegmentCapRejectsBeforeIOAndAllowsSmallBookkeeping() started.
+✔ Test cumulativeSegmentCapRejectsBeforeIOAndAllowsSmallBookkeeping() passed after 0.270 seconds.
+◇ Test productionScanLimitsAreUsedAndCanOnlyBeReduced() started.
+✔ Test productionScanLimitsAreUsedAndCanOnlyBeReduced() passed after 0.014 seconds.
+◇ Test exactDirectoryLimitIncludesUnrelatedNamesAndReservesStaging() started.
+✔ Test exactDirectoryLimitIncludesUnrelatedNamesAndReservesStaging() passed after 0.020 seconds.
+◇ Test freshOversizedDirectoryCannotCreateBootstrapOrLock() started.
+✔ Test freshOversizedDirectoryCannotCreateBootstrapOrLock() passed after 0.003 seconds.
+◇ Test pendingStageAtExactDirectoryLimitRemainsFailClosed() started.
+✔ Test pendingStageAtExactDirectoryLimitRemainsFailClosed() passed after 0.012 seconds.
+◇ Test journalEnumerationExactAndPlusOnePreserveEveryByte() started.
+✔ Test journalEnumerationExactAndPlusOnePreserveEveryByte() passed after 0.054 seconds.
+◇ Test minimumOptionalBudgetPermitsFirstRunAndIntent() started.
+✔ Test minimumOptionalBudgetPermitsFirstRunAndIntent() passed after 0.042 seconds.
+◇ Test minimumHistoryPreservesActiveBytesAndAllowsBookkeeping() started.
+✔ Test minimumHistoryPreservesActiveBytesAndAllowsBookkeeping() passed after 0.093 seconds.
+◇ Test eightActiveReservationsRejectNinthBeforeIOAndSurviveReopen() started.
+✔ Test eightActiveReservationsRejectNinthBeforeIOAndSurviveReopen() passed after 0.137 seconds.
+◇ Test optionalBytePruningDoesNotChargeLedgerOrActiveReservation() started.
+✔ Test optionalBytePruningDoesNotChargeLedgerOrActiveReservation() passed after 0.714 seconds.
+◇ Test disabledHistoryPrunesOnlyCompletedAndStillPersistsSafety() started.
+✔ Test disabledHistoryPrunesOnlyCompletedAndStillPersistsSafety() passed after 0.089 seconds.
+◇ Test disabledHistoryStillRejectsInvalidByteLimits(_:) started.
+◇ Test case passing 1 argument bytes → 0 to disabledHistoryStillRejectsInvalidByteLimits(_:) started.
+◇ Test case passing 1 argument bytes → 1048575 to disabledHistoryStillRejectsInvalidByteLimits(_:) started.
+◇ Test case passing 1 argument bytes → 52428801 to disabledHistoryStillRejectsInvalidByteLimits(_:) started.
+◇ Test case passing 1 argument bytes → 9223372036854775807 to disabledHistoryStillRejectsInvalidByteLimits(_:) started.
+✔ Test disabledHistoryStillRejectsInvalidByteLimits(_:) with 4 test cases passed after 0.139 seconds.
+◇ Test finishAtOptionalCapAutomaticallyPrunesWithoutGrowingHistory() started.
+✔ Test finishAtOptionalCapAutomaticallyPrunesWithoutGrowingHistory() passed after 0.662 seconds.
+◇ Test finishedPublicationThenPruneSyncFailurePreservesSafetyAndLatches() started.
+✔ Test finishedPublicationThenPruneSyncFailurePreservesSafetyAndLatches() passed after 0.051 seconds.
+◇ Test observedOptionalOverageBlocksGrowthButNotExistingBookkeeping() started.
+✔ Test observedOptionalOverageBlocksGrowthButNotExistingBookkeeping() passed after 1.712 seconds.
+✔ Suite RunRecoveryTests passed after 6.310 seconds.
+◇ Suite "ScanEngine" started.
+◇ Test "returns a structurally valid report without launching discovery or measurement" started.
+✔ Test "returns a structurally valid report without launching discovery or measurement" passed after 0.005 seconds.
+✔ Suite "ScanEngine" passed after 0.005 seconds.
+◇ Suite "T09 ScanIndex durable aggregate cache" started.
+◇ Test "resolveIsStableAndDistinguishesFiles" started.
+✔ Test "resolveIsStableAndDistinguishesFiles" passed after 0.001 seconds.
+◇ Test "a fresh store has no record for any key" started.
+✔ Test "a fresh store has no record for any key" passed after 0.004 seconds.
+◇ Test "commit then read round-trips every field" started.
+✔ Test "commit then read round-trips every field" passed after 0.004 seconds.
+◇ Test "partial scans never replace a previously complete record" started.
+✔ Test "partial scans never replace a previously complete record" passed after 0.005 seconds.
+◇ Test "a partial record can still be recorded when nothing complete exists yet" started.
+✔ Test "a partial record can still be recorded when nothing complete exists yet" passed after 0.004 seconds.
+◇ Test "a corrupted database file is reported, never silently treated as empty" started.
+✔ Test "a corrupted database file is reported, never silently treated as empty" passed after 0.004 seconds.
+◇ Test "bounded eviction keeps the database at or under its configured cap" started.
+✔ Test "bounded eviction keeps the database at or under its configured cap" passed after 0.114 seconds.
+◇ Test "cursor and device UUID persist independently of any aggregate record" started.
+✔ Test "cursor and device UUID persist independently of any aggregate record" passed after 0.003 seconds.
+◇ Test "commit succeeds and status reports cached when nothing invalidated the root" started.
+✔ Test "commit succeeds and status reports cached when nothing invalidated the root" passed after 0.004 seconds.
+◇ Test "invalidation immediately before commit retains stale, does not overwrite fresh totals" started.
+✔ Test "invalidation immediately before commit retains stale, does not overwrite fresh totals" passed after 0.005 seconds.
+◇ Test "dropped events during the barrier are treated as history loss, not silently ignored" started.
+✔ Test "dropped events during the barrier are treated as history loss, not silently ignored" passed after 0.005 seconds.
+◇ Test "lostHistoryCannotReuseCachedAuthority" started.
+✔ Test "lostHistoryCannotReuseCachedAuthority" passed after 0.001 seconds.
+◇ Test "indexing disabled reports unavailable and never starts a watch" started.
+✔ Test "indexing disabled reports unavailable and never starts a watch" passed after 0.004 seconds.
+◇ Test "an expired record is reported unavailable, never presented as cached" started.
+✔ Test "an expired record is reported unavailable, never presented as cached" passed after 0.004 seconds.
+◇ Test "a failed commit leaves both the aggregate and the volume cursor exactly as they were" started.
+✔ Test "a failed commit leaves both the aggregate and the volume cursor exactly as they were" passed after 0.005 seconds.
+◇ Test "a successful commit durably persists the aggregate and the cursor/device UUID together" started.
+✔ Test "a successful commit durably persists the aggregate and the cursor/device UUID together" passed after 0.009 seconds.
+◇ Test "an unchanged tree served from the index matches a fresh reference walk exactly" started.
+✔ Test "an unchanged tree served from the index matches a fresh reference walk exactly" passed after 0.015 seconds.
+◇ Test "a change deep in the tree invalidates the cache and the next walk again matches a fresh reference" started.
+✔ Test "a change deep in the tree invalidates the cache and the next walk again matches a fresh reference" passed after 0.015 seconds.
+◇ Test "the unchanged case reduces metadata visits by at least 80% versus a fresh walk" started.
+✔ Test "the unchanged case reduces metadata visits by at least 80% versus a fresh walk" passed after 0.013 seconds.
+◇ Test "policy fingerprint change is an independent record, never read as the old fingerprint's cache" started.
+✔ Test "policy fingerprint change is an independent record, never read as the old fingerprint's cache" passed after 0.004 seconds.
+◇ Test "a moved root is not silently trusted: only an explicit invalidateAllApprovedRoots call protects it" started.
+✔ Test "a moved root is not silently trusted: only an explicit invalidateAllApprovedRoots call protects it" passed after 0.005 seconds.
+◇ Test "a second ScanEngine.start on an unchanged fixture serves the home root from the index, skipping its walk entirely" started.
+✔ Test "a second ScanEngine.start on an unchanged fixture serves the home root from the index, skipping its walk entirely" passed after 0.074 seconds.
+✔ Suite "T09 ScanIndex durable aggregate cache" passed after 0.310 seconds.
+◇ Suite "T09 ScanInvalidation generation ledger" started.
+◇ Test "a deeply changed descendant bumps the root's generation even though the root path itself never appears in the event" started.
+✔ Test "a deeply changed descendant bumps the root's generation even though the root path itself never appears in the event" passed after 0.001 seconds.
+◇ Test "an event on an unrelated path does not bump an unrelated approved root" started.
+✔ Test "an event on an unrelated path does not bump an unrelated approved root" passed after 0.001 seconds.
+◇ Test "dropped/coalesced events mark history unreliable and invalidate every approved root, not just the reported one" started.
+✔ Test "dropped/coalesced events mark history unreliable and invalidate every approved root, not just the reported one" passed after 0.001 seconds.
+◇ Test "once history is unreliable it stays unreliable until a fresh start, so later reliable-looking batches still widen" started.
+✔ Test "once history is unreliable it stays unreliable until a fresh start, so later reliable-looking batches still widen" passed after 0.001 seconds.
+◇ Test "a volume unmount/mount flag is treated the same as a dropped event: invalidate all approved roots" started.
+✔ Test "a volume unmount/mount flag is treated the same as a dropped event: invalidate all approved roots" passed after 0.001 seconds.
+◇ Test "explicit invalidateAllApprovedRoots covers root moves and policy/protected-root changes, which the event stream cannot name" started.
+✔ Test "explicit invalidateAllApprovedRoots covers root moves and policy/protected-root changes, which the event stream cannot name" passed after 0.001 seconds.
+◇ Test "resuming start() replays the persisted cursor into the event source" started.
+✔ Test "resuming start() replays the persisted cursor into the event source" passed after 0.001 seconds.
+◇ Test "the barrier drains events already accepted by the stream before returning" started.
+✔ Test "the barrier drains events already accepted by the stream before returning" passed after 0.001 seconds.
+◇ Test "lostHistoryCannotReuseCachedAuthority" started.
+✔ Test "lostHistoryCannotReuseCachedAuthority" passed after 0.001 seconds.
+◇ Test "stop() deterministically halts the pump before returning: events emitted afterward are never applied" started.
+✔ Test "stop() deterministically halts the pump before returning: events emitted afterward are never applied" passed after 0.001 seconds.
+◇ Test "starting a fresh watch stops the previous pump before the new one begins" started.
+✔ Test "starting a fresh watch stops the previous pump before the new one begins" passed after 0.001 seconds.
+◇ Test "an invalidation ledger with no active watch reports itself inactive" started.
+✔ Test "an invalidation ledger with no active watch reports itself inactive" passed after 0.001 seconds.
+✔ Suite "T09 ScanInvalidation generation ledger" passed after 0.001 seconds.
+◇ Suite ScanSessionTests started.
+◇ Test "two unique subscribers receive the same cumulative terminal state" started.
+✔ Test "two unique subscribers receive the same cumulative terminal state" passed after 0.001 seconds.
+◇ Test "cancelling one subscription leaves the other and owned work active" started.
+✔ Test "cancelling one subscription leaves the other and owned work active" passed after 0.001 seconds.
+◇ Test "session cancellation remains active until slow owned work actually ends" started.
+✔ Test "session cancellation remains active until slow owned work actually ends" passed after 0.001 seconds.
+◇ Test "slow full subscriber drops bounded progress without corrupting final state" started.
+✔ Test "slow full subscriber drops bounded progress without corrupting final state" passed after 0.001 seconds.
+◇ Test "zero subscribers retain no event backlog, only bounded final state" started.
+✔ Test "zero subscribers retain no event backlog, only bounded final state" passed after 0.001 seconds.
+◇ Test "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" started.
+◇ Test case passing 1 argument rate → 1 to "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" started.
+◇ Test case passing 1 argument rate → 2 to "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" started.
+◇ Test case passing 1 argument rate → 3 to "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" started.
+◇ Test case passing 1 argument rate → 4 to "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" started.
+✔ Test "injected clock coalesces exactly at configured 1 2 3 and 4 batch rates" with 4 test cases passed after 0.001 seconds.
+◇ Test "non-cumulative or oversized snapshots reject without changing shared state" started.
+✔ Test "non-cumulative or oversized snapshots reject without changing shared state" passed after 0.001 seconds.
+◇ Test "terminal kind and coverage cannot contradict one another" started.
+✔ Test "terminal kind and coverage cannot contradict one another" passed after 0.001 seconds.
+✔ Suite ScanSessionTests passed after 0.002 seconds.
+◇ Suite SessionProfileTests started.
+◇ Test everyRestrictionDefinitionHasExactlyOneComparator() started.
+✔ Test everyRestrictionDefinitionHasExactlyOneComparator() passed after 1.511 seconds.
+◇ Test booleanAndInverseBooleanDirectionsAreExact() started.
+✔ Test booleanAndInverseBooleanDirectionsAreExact() passed after 0.001 seconds.
+◇ Test pauseSetsAndCapsAreMonotone() started.
+✔ Test pauseSetsAndCapsAreMonotone() passed after 0.001 seconds.
+◇ Test validProfileCannotWeakenInheritedProtection() started.
+✔ Test validProfileCannotWeakenInheritedProtection() passed after 0.001 seconds.
+◇ Test createTrimsNameAllowsDuplicateNamesAndRejectsDuplicateIDs() started.
+✔ Test createTrimsNameAllowsDuplicateNamesAndRejectsDuplicateIDs() passed after 0.001 seconds.
+◇ Test profileBoundAndUnsupportedOrAuthorityFieldsReject() started.
+✔ Test profileBoundAndUnsupportedOrAuthorityFieldsReject() passed after 0.001 seconds.
+◇ Test canonicalProjectAndVolumeIdentitiesCannotEnterProfiles() started.
+✔ Test canonicalProjectAndVolumeIdentitiesCannotEnterProfiles() passed after 0.001 seconds.
+◇ Test cloneAndFactoryAppendWithoutActivationOrTemplateIdentity() started.
+✔ Test cloneAndFactoryAppendWithoutActivationOrTemplateIdentity() passed after 0.001 seconds.
+◇ Test diffIsStableAndUsesDefinitionMetadataWithoutCopy() started.
+✔ Test diffIsStableAndUsesDefinitionMetadataWithoutCopy() passed after 0.001 seconds.
+◇ Test selectiveResetRequiresExplicitRestrictionPreviewAndTouchesNothingElse() started.
+✔ Test selectiveResetRequiresExplicitRestrictionPreviewAndTouchesNothingElse() passed after 0.002 seconds.
+◇ Test deleteAndRenamePreserveArrayPositionAndNeverActivate() started.
+✔ Test deleteAndRenamePreserveArrayPositionAndNeverActivate() passed after 0.001 seconds.
+◇ Test everyRestrictionExercisesEqualStricterAndWeakerDirections() started.
+✔ Test everyRestrictionExercisesEqualStricterAndWeakerDirections() passed after 4.455 seconds.
+◇ Test comparatorRejectsUnknownNonRestrictionMalformedAndInventedShapes() started.
+✔ Test comparatorRejectsUnknownNonRestrictionMalformedAndInventedShapes() passed after 0.010 seconds.
+◇ Test everyProfileNameEntryPointUsesUTF8ByteLimit() started.
+✔ Test everyProfileNameEntryPointUsesUTF8ByteLimit() passed after 0.001 seconds.
+◇ Test malformedExistingArraysFailBeforeOperationSpecificErrors() started.
+✔ Test malformedExistingArraysFailBeforeOperationSpecificErrors() passed after 0.001 seconds.
+◇ Test allFactoriesAreExactAndProviderOutputIsValidated() started.
+✔ Test allFactoriesAreExactAndProviderOutputIsValidated() passed after 0.053 seconds.
+◇ Test everyProfileEntryPointRevalidatesStructureAndMonotonicity() started.
+✔ Test everyProfileEntryPointRevalidatesStructureAndMonotonicity() passed after 0.001 seconds.
+◇ Test everyArrayWrapperValidatesUnrelatedProfilesAndSharedPrecedence() started.
+✔ Test everyArrayWrapperValidatesUnrelatedProfilesAndSharedPrecedence() passed after 0.005 seconds.
+◇ Test diffRejectsIdentityAndInvalidSidesAndReportsAbsentProvenance() started.
+✔ Test diffRejectsIdentityAndInvalidSidesAndReportsAbsentProvenance() passed after 0.002 seconds.
+◇ Test resetNegativePathsAndProvenanceAreExactAndPure() started.
+✔ Test resetNegativePathsAndProvenanceAreExactAndPure() passed after 0.005 seconds.
+✔ Suite SessionProfileTests passed after 6.058 seconds.
+◇ Suite "Settings publication" started.
+◇ Test wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "schema" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "threshold" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "profiles" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "list" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "string" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+◇ Test case passing 1 argument kind → "encodedBytes" to wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) started.
+✔ Test wholePreferenceValidationPrecedesEvenDirectoryCreation(kind:) with 6 test cases passed after 0.007 seconds.
+◇ Test explicitFirstSaveCreatesOwnerOnlyDirectoryAndNoFakeBackup() started.
+✔ Test explicitFirstSaveCreatesOwnerOnlyDirectoryAndNoFakeBackup() passed after 0.023 seconds.
+◇ Test bootstrapCompletionThenMarkerCreateFailureLatchesOriginalActor() started.
+✔ Test bootstrapCompletionThenMarkerCreateFailureLatchesOriginalActor() passed after 0.015 seconds.
+◇ Test inheritedCreationMaskLatchesImmediatelyAfterExclusiveCreate(variant:) started.
+◇ Test case passing 1 argument variant → "bootstrap" to inheritedCreationMaskLatchesImmediatelyAfterExclusiveCreate(variant:) started.
+Settings create-latch regression variant=bootstrap observedMode=600
+◇ Test case passing 1 argument variant → "initialized" to inheritedCreationMaskLatchesImmediatelyAfterExclusiveCreate(variant:) started.
+Settings create-latch regression variant=initialized observedMode=600
+✔ Test inheritedCreationMaskLatchesImmediatelyAfterExclusiveCreate(variant:) with 2 test cases passed after 0.045 seconds.
+◇ Test changedMarkerBytesCannotBeDeletedDuringFinalization() started.
+✔ Test changedMarkerBytesCannotBeDeletedDuringFinalization() passed after 0.058 seconds.
+◇ Test rejectedAdmissionDoesNotEraseLastActualPublicationFailure() started.
+✔ Test rejectedAdmissionDoesNotEraseLastActualPublicationFailure() passed after 0.068 seconds.
+◇ Test invalidLegacyEditCannotBootstrapAndValidEditStillSucceeds() started.
+✔ Test invalidLegacyEditCannotBootstrapAndValidEditStillSucceeds() passed after 0.055 seconds.
+◇ Test bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+◇ Test case passing 1 argument fault → .bootstrapLockWrite to bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+◇ Test case passing 1 argument fault → .bootstrapLockSync to bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+◇ Test case passing 1 argument fault → .bootstrapStoreWrite to bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+◇ Test case passing 1 argument fault → .bootstrapStoreSync to bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+◇ Test case passing 1 argument fault → .bootstrapDirectorySync to bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) started.
+✔ Test bootstrapFaultNeverPublishesConfigAndPreservesReopenEvidence(fault:) with 5 test cases passed after 0.193 seconds.
+◇ Test independentStoreCannotOverwriteNewerDiskRevision() started.
+✔ Test independentStoreCannotOverwriteNewerDiskRevision() passed after 0.178 seconds.
+◇ Test independentHeldLockBlocksWithoutWritingThenExplicitRetrySucceeds() started.
+✔ Test independentHeldLockBlocksWithoutWritingThenExplicitRetrySucceeds() passed after 0.176 seconds.
+◇ Test independentBootstrapContenderCannotInitializeWinnersMetadata() started.
+✔ Test independentBootstrapContenderCannotInitializeWinnersMetadata() passed after 0.149 seconds.
+◇ Test faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .markerSync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .preparedDirectorySync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .candidateShortWrite to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .candidateSync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .backupSync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .backupRenameBefore to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .backupRenameAfter to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .backupDirectorySync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .configRenameBefore to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .configRenameAfter to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .configDirectorySync to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+◇ Test case passing 1 argument fault → .markerRemoval to faultsPreserveEvidenceAndBlockFreshStore(fault:) started.
+✔ Test faultsPreserveEvidenceAndBlockFreshStore(fault:) with 12 test cases passed after 1.613 seconds.
+◇ Test firstSaveFailureNeverBecomesDefaultsOnRelaunch() started.
+✔ Test firstSaveFailureNeverBecomesDefaultsOnRelaunch() passed after 0.019 seconds.
+◇ Test rollbackFailurePreservesPreRollbackBytesAndBlocksOldPreview() started.
+✔ Test rollbackFailurePreservesPreRollbackBytesAndBlocksOldPreview() passed after 0.104 seconds.
+◇ Test completedTransactionReopensButInitializedMissingFilesDoNotReset() started.
+✔ Test completedTransactionReopensButInitializedMissingFilesDoNotReset() passed after 0.221 seconds.
+◇ Test unknownMetadataAndMarkerArePreservedWithoutAutomaticFinalization() started.
+✔ Test unknownMetadataAndMarkerArePreservedWithoutAutomaticFinalization() passed after 0.176 seconds.
+◇ Test partialMarkerBlocksEvenWhenConfigAndBackupAreValid(bytes:) started.
+◇ Test case passing 1 argument bytes → 0 bytes to partialMarkerBlocksEvenWhenConfigAndBackupAreValid(bytes:) started.
+◇ Test case passing 1 argument bytes → 12 bytes to partialMarkerBlocksEvenWhenConfigAndBackupAreValid(bytes:) started.
+✔ Test partialMarkerBlocksEvenWhenConfigAndBackupAreValid(bytes:) with 2 test cases passed after 0.114 seconds.
+◇ Test fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → "config.json" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → "config.backup.json" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → "config.lock" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → "config.store.json" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → "config.pending.json" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → ".config-candidate-11111111-1111-1111-1111-111111111111" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+◇ Test case passing 1 argument name → ".config-backup-11111111-1111-1111-1111-111111111111" to fifoInitializedSettingsAndArtifactsArePreserved(name:) started.
+✔ Test fifoInitializedSettingsAndArtifactsArePreserved(name:) with 7 test cases passed after 0.400 seconds.
+✔ Suite "Settings publication" passed after 3.624 seconds.
+◇ Suite "Settings migration" started.
+◇ Test bothHistoricalShapesPersistRoundTrip(name:) started.
+◇ Test case passing 1 argument name → "v1-original" to bothHistoricalShapesPersistRoundTrip(name:) started.
+◇ Test case passing 1 argument name → "v1-memory" to bothHistoricalShapesPersistRoundTrip(name:) started.
+✔ Test bothHistoricalShapesPersistRoundTrip(name:) with 2 test cases passed after 0.151 seconds.
+◇ Test realWriteFailureLeavesExistingConfigAndRevision() started.
+✔ Test realWriteFailureLeavesExistingConfigAndRevision() passed after 0.033 seconds.
+◇ Test staleRevisionAndExternalReplacementCannotOverwrite() started.
+✔ Test staleRevisionAndExternalReplacementCannotOverwrite() passed after 0.089 seconds.
+◇ Test invalidEditAndExplicitRollback() started.
+✔ Test invalidEditAndExplicitRollback() passed after 0.109 seconds.
+◇ Test revisionOverflowNeverWrapsOrWrites() started.
+✔ Test revisionOverflowNeverWrapsOrWrites() passed after 0.001 seconds.
+◇ Test ownedLegacy755DirectoryAnd644FileSaveOwnerOnlyCopies() started.
+✔ Test ownedLegacy755DirectoryAnd644FileSaveOwnerOnlyCopies() passed after 0.058 seconds.
+◇ Test replacingBackupAfterPreviewCannotRollbackDifferentValue() started.
+✔ Test replacingBackupAfterPreviewCannotRollbackDifferentValue() passed after 0.075 seconds.
+◇ Test recoveryCannotUsePreviouslyIssuedRollbackPreview() started.
+✔ Test recoveryCannotUsePreviouslyIssuedRollbackPreview() passed after 0.076 seconds.
+◇ Test missingOnlyCreatesInMemoryDefaults() started.
+✔ Test missingOnlyCreatesInMemoryDefaults() passed after 0.001 seconds.
+◇ Test bothHistoricalShapes(name:) started.
+◇ Test case passing 1 argument name → "v1-original" to bothHistoricalShapes(name:) started.
+◇ Test case passing 1 argument name → "v1-memory" to bothHistoricalShapes(name:) started.
+✔ Test bothHistoricalShapes(name:) with 2 test cases passed after 0.001 seconds.
+◇ Test recoveryPreservesBytes(name:) started.
+◇ Test case passing 1 argument name → "corrupt" to recoveryPreservesBytes(name:) started.
+◇ Test case passing 1 argument name → "v999" to recoveryPreservesBytes(name:) started.
+✔ Test recoveryPreservesBytes(name:) with 2 test cases passed after 0.001 seconds.
+◇ Test existingInvalidIsNeverNewDefaults(bytes:) started.
+◇ Test case passing 1 argument bytes → 0 bytes to existingInvalidIsNeverNewDefaults(bytes:) started.
+◇ Test case passing 1 argument bytes → 50 bytes to existingInvalidIsNeverNewDefaults(bytes:) started.
+◇ Test case passing 1 argument bytes → 37 bytes to existingInvalidIsNeverNewDefaults(bytes:) started.
+◇ Test case passing 1 argument bytes → 1048577 bytes to existingInvalidIsNeverNewDefaults(bytes:) started.
+◇ Test case passing 1 argument bytes → 2 bytes to existingInvalidIsNeverNewDefaults(bytes:) started.
+✔ Test existingInvalidIsNeverNewDefaults(bytes:) with 5 test cases passed after 0.015 seconds.
+◇ Test symlinkDoesNotAuthorizeReadingOrReplacingDestination() started.
+✔ Test symlinkDoesNotAuthorizeReadingOrReplacingDestination() passed after 0.001 seconds.
+◇ Test oldReportsHaveUnavailableMemoryNotMeasuredZero() started.
+✔ Test oldReportsHaveUnavailableMemoryNotMeasuredZero() passed after 0.001 seconds.
+◇ Test emptyHistoricalAndCoordinatorReportsHaveUnavailableMemoryNotMeasuredZero() started.
+✔ Test emptyHistoricalAndCoordinatorReportsHaveUnavailableMemoryNotMeasuredZero() passed after 0.001 seconds.
+◇ Test missingConfigWithHistoricalAuxiliaryIsRecovery(name:) started.
+◇ Test case passing 1 argument name → "config.backup.json" to missingConfigWithHistoricalAuxiliaryIsRecovery(name:) started.
+◇ Test case passing 1 argument name → "config.lock" to missingConfigWithHistoricalAuxiliaryIsRecovery(name:) started.
+✔ Test missingConfigWithHistoricalAuxiliaryIsRecovery(name:) with 2 test cases passed after 0.001 seconds.
+◇ Test directoryAndUnreadableExistingFilesNeverBecomeDefaults() started.
+✔ Test directoryAndUnreadableExistingFilesNeverBecomeDefaults() passed after 0.001 seconds.
+◇ Test validStateSavesButUnissuedPreviewAndRecoveryRejectRollback() started.
+✔ Test validStateSavesButUnissuedPreviewAndRecoveryRejectRollback() passed after 0.058 seconds.
+◇ Test strictBoundsAndTypesRejectOtherwiseValidSettings() started.
+✔ Test strictBoundsAndTypesRejectOtherwiseValidSettings() passed after 0.006 seconds.
+◇ Test exactCollectionStringAndByteBoundsRemainReadable() started.
+✔ Test exactCollectionStringAndByteBoundsRemainReadable() passed after 0.364 seconds.
+◇ Test explicitZeroMixedUnknownAndOverflowMemoryStayTruthful() started.
+✔ Test explicitZeroMixedUnknownAndOverflowMemoryStayTruthful() passed after 0.001 seconds.
+◇ Test knownSchema2LoadsNonzeroRevisionWithoutWriting() started.
+✔ Test knownSchema2LoadsNonzeroRevisionWithoutWriting() passed after 0.001 seconds.
+◇ Test unknownSchema2ExtensionAndNestedMismatchAreReadOnly() started.
+✔ Test unknownSchema2ExtensionAndNestedMismatchAreReadOnly() passed after 0.003 seconds.
+◇ Test depthListAndStringBoundsRejectWithoutRewrite() started.
+✔ Test depthListAndStringBoundsRejectWithoutRewrite() passed after 0.006 seconds.
+◇ Test ownedLegacy755DirectoryAnd644FileMigrateWithoutSilentChmod() started.
+✔ Test ownedLegacy755DirectoryAnd644FileMigrateWithoutSilentChmod() passed after 0.001 seconds.
+◇ Test groupWritableLegacyLocationIsReadOnly(directory:) started.
+◇ Test case passing 1 argument directory → true to groupWritableLegacyLocationIsReadOnly(directory:) started.
+◇ Test case passing 1 argument directory → false to groupWritableLegacyLocationIsReadOnly(directory:) started.
+✔ Test groupWritableLegacyLocationIsReadOnly(directory:) with 2 test cases passed after 0.002 seconds.
+◇ Test unsafeExistingAuxiliaryFilesAreNotRepaired(name:) started.
+◇ Test case passing 1 argument name → "config.lock" to unsafeExistingAuxiliaryFilesAreNotRepaired(name:) started.
+◇ Test case passing 1 argument name → "config.backup.json" to unsafeExistingAuxiliaryFilesAreNotRepaired(name:) started.
+✔ Test unsafeExistingAuxiliaryFilesAreNotRepaired(name:) with 2 test cases passed after 0.001 seconds.
+◇ Test fifoConfigReadRejectsPromptlyWithoutBootstrap() started.
+✔ Test fifoConfigReadRejectsPromptlyWithoutBootstrap() passed after 0.001 seconds.
+✔ Suite "Settings migration" passed after 1.069 seconds.
+◇ Suite "Settings presentation registry" started.
+◇ Test "fixed validation and rendered universes are separate and deterministic" started.
+✔ Test "fixed validation and rendered universes are separate and deterministic" passed after 0.292 seconds.
+◇ Test "missing, ambiguous, orphan, and duplicate order entries reject" started.
+✔ Test "missing, ambiguous, orphan, and duplicate order entries reject" passed after 0.029 seconds.
+◇ Test "dynamic patterns reject lookalikes and are stable" started.
+✔ Test "dynamic patterns reject lookalikes and are stable" passed after 0.001 seconds.
+◇ Test "stable accessibility IDs do not depend on copy" started.
+✔ Test "stable accessibility IDs do not depend on copy" passed after 0.001 seconds.
+✔ Suite "Settings presentation registry" passed after 0.322 seconds.
+◇ Suite SettingsProcessAcceptanceTests started.
+◇ Test independentWritersContendThenRejectStaleLoadedBytes(_:) started.
+◇ Test case passing 1 argument mode → "bootstrap-hold" to independentWritersContendThenRejectStaleLoadedBytes(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-6636D005-62BD-4DD8-B84C-B1C60309F663
+A2P owned reap: pid=88826 raw=0 exit=0 reaps=1 signals=0
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-FD8C6615-8D79-48FE-A0B9-4A151D1EE89F
+A2P owned reap: pid=89077 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89079 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89077 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89079 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89080 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89077 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89079 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89080 raw=0 exit=0 reaps=1 signals=0
+◇ Test case passing 1 argument mode → "stable-hold" to independentWritersContendThenRejectStaleLoadedBytes(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-F9721439-5F8F-40B5-AC05-151C99C4B7A3
+A2P owned reap: pid=89081 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89082 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89083 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89084 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89083 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89084 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89085 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89081 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89082 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89083 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89084 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89085 raw=0 exit=0 reaps=1 signals=0
+✔ Test independentWritersContendThenRejectStaleLoadedBytes(_:) with 2 test cases passed after 18.032 seconds.
+◇ Test bootstrapWinnerDeathCannotBeCompletedByAnotherProcess() started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-373A39D3-1130-45DB-9F49-F34444EB242F
+A2P owned reap: pid=89087 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89086 raw=20480 exit=80 reaps=1 signals=0
+A2P owned reap: pid=89087 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89088 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89086 raw=20480 exit=80 reaps=1 signals=0
+A2P owned reap: pid=89087 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89088 raw=0 exit=0 reaps=1 signals=0
+✔ Test bootstrapWinnerDeathCannotBeCompletedByAnotherProcess() passed after 0.065 seconds.
+◇ Test abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+◇ Test case passing 1 argument prefix → 1 to abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-896CF2C7-B1EF-424B-A28C-C5E31BB8D2C3
+A2P owned reap: pid=89089 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89090 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89091 raw=20736 exit=81 reaps=1 signals=0
+A2P owned reap: pid=89092 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89089 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89090 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89091 raw=20736 exit=81 reaps=1 signals=0
+A2P owned reap: pid=89092 raw=0 exit=0 reaps=1 signals=0
+◇ Test case passing 1 argument prefix → 2 to abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-000FDEEF-3BBD-4F7F-8D97-4088279850EA
+A2P owned reap: pid=89093 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89094 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89095 raw=20992 exit=82 reaps=1 signals=0
+A2P owned reap: pid=89096 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89093 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89094 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89095 raw=20992 exit=82 reaps=1 signals=0
+A2P owned reap: pid=89096 raw=0 exit=0 reaps=1 signals=0
+◇ Test case passing 1 argument prefix → 3 to abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-16E662E7-1E8B-4B23-A7D4-7A5627C2D752
+A2P owned reap: pid=89097 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89098 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89099 raw=21248 exit=83 reaps=1 signals=0
+A2P owned reap: pid=89100 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89097 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89098 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89099 raw=21248 exit=83 reaps=1 signals=0
+A2P owned reap: pid=89100 raw=0 exit=0 reaps=1 signals=0
+◇ Test case passing 1 argument prefix → 4 to abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-EE642192-EDEB-4274-9F3E-7A60BEC5A64C
+A2P owned reap: pid=89101 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89102 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89103 raw=21504 exit=84 reaps=1 signals=0
+A2P owned reap: pid=89104 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89101 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89102 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89103 raw=21504 exit=84 reaps=1 signals=0
+A2P owned reap: pid=89104 raw=0 exit=0 reaps=1 signals=0
+◇ Test case passing 1 argument prefix → 5 to abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) started.
+Retained A2P artifacts: /private/tmp/tidy-t05-a2p-7C26E0F9-F4B5-45B4-8886-112089796A74
+A2P owned reap: pid=89105 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89106 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89109 raw=21760 exit=85 reaps=1 signals=0
+A2P owned reap: pid=89110 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89105 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89106 raw=0 exit=0 reaps=1 signals=0
+A2P owned reap: pid=89109 raw=21760 exit=85 reaps=1 signals=0
+A2P owned reap: pid=89110 raw=0 exit=0 reaps=1 signals=0
+✔ Test abruptPublicationPrefixReopensFromExactRetainedArtifacts(_:) with 5 test cases passed after 0.659 seconds.
+✔ Suite SettingsProcessAcceptanceTests passed after 18.757 seconds.
+◇ Suite SettingsProfilePersistenceTests started.
+◇ Test olderSchema2DefaultsNewStateWithoutRewrite() started.
+✔ Test olderSchema2DefaultsNewStateWithoutRewrite() passed after 0.002 seconds.
+◇ Test finiteRootGrammarAcceptsOnlyFourExactKeySets() started.
+✔ Test finiteRootGrammarAcceptsOnlyFourExactKeySets() passed after 0.013 seconds.
+◇ Test activeAndInertRoundTripWhileInvalidSelectionRecoversReadOnly() started.
+✔ Test activeAndInertRoundTripWhileInvalidSelectionRecoversReadOnly() passed after 0.029 seconds.
+◇ Test rollbackRestoresProfilesActiveSelectionAndInertStateTogether() started.
+✔ Test rollbackRestoresProfilesActiveSelectionAndInertStateTogether() passed after 0.076 seconds.
+◇ Test exactDocumentDeltaPreservesUnrelatedAndRejectsTouchedConflict() started.
+✔ Test exactDocumentDeltaPreservesUnrelatedAndRejectsTouchedConflict() passed after 0.086 seconds.
+◇ Test touchedCompatibilityGlobalReverseProjectsWithoutChangingUntouchedLegacy() started.
+✔ Test touchedCompatibilityGlobalReverseProjectsWithoutChangingUntouchedLegacy() passed after 0.027 seconds.
+◇ Test deletingActiveProfileClearsSelectionAtomically() started.
+✔ Test deletingActiveProfileClearsSelectionAtomically() passed after 0.047 seconds.
+◇ Test authorityAndMalformedMixedDeltaRejectBeforePublication() started.
+✔ Test authorityAndMalformedMixedDeltaRejectBeforePublication() passed after 0.001 seconds.
+◇ Test durableGlobalEligibilityOptInPersistsWhileProfileAndImportCannotWeaken() started.
+✔ Test durableGlobalEligibilityOptInPersistsWhileProfileAndImportCannotWeaken() passed after 0.030 seconds.
+◇ Test hostileBytesThroughStoreCommitOnlySafePortableAndInertRows() started.
+✔ Test hostileBytesThroughStoreCommitOnlySafePortableAndInertRows() passed after 0.104 seconds.
+◇ Test importReverseProjectsOnlyChangedCompatibilityGlobals() started.
+✔ Test importReverseProjectsOnlyChangedCompatibilityGlobals() passed after 0.035 seconds.
+◇ Test issuedPreviewBindsChoicesAndCommitsReviewedCandidateOnce() started.
+✔ Test issuedPreviewBindsChoicesAndCommitsReviewedCandidateOnce() passed after 0.065 seconds.
+◇ Test staleCancelledReloadedAndSupersededTokensWriteNothing() started.
+✔ Test staleCancelledReloadedAndSupersededTokensWriteNothing() passed after 0.015 seconds.
+◇ Test analysisIsSingleUseCancelableAndBoundBeforeIssuance() started.
+✔ Test analysisIsSingleUseCancelableAndBoundBeforeIssuance() passed after 0.067 seconds.
+◇ Test externalChangeAndStaleRevisionConsumePreviewWithoutImportWrite() started.
+✔ Test externalChangeAndStaleRevisionConsumePreviewWithoutImportWrite() passed after 0.010 seconds.
+◇ Test duplicateTouchedKeysAndWrongProfileBasesRejectExactly() started.
+✔ Test duplicateTouchedKeysAndWrongProfileBasesRejectExactly() passed after 0.064 seconds.
+◇ Test inertEditsCompareExactWholeValuesAndDuplicateKeysReject() started.
+✔ Test inertEditsCompareExactWholeValuesAndDuplicateKeysReject() passed after 0.025 seconds.
+◇ Test completeCandidateBoundsRejectWithoutTruncation() started.
+✔ Test completeCandidateBoundsRejectWithoutTruncation() passed after 0.020 seconds.
+◇ Test malformedPersistedInertAndNoncanonicalActiveUUIDRecover() started.
+✔ Test malformedPersistedInertAndNoncanonicalActiveUUIDRecover() passed after 0.012 seconds.
+◇ Test closedInertWireRoundTripsEveryShapeAndRejectsMalformedWithoutRewrite() started.
+✔ Test closedInertWireRoundTripsEveryShapeAndRejectsMalformedWithoutRewrite() passed after 0.072 seconds.
+◇ Test malformedPersistedBoundsNeverTruncateOrRewrite() started.
+✔ Test malformedPersistedBoundsNeverTruncateOrRewrite() passed after 0.638 seconds.
+◇ Test previewDigestsAreStableAndCandidateIsExact() started.
+✔ Test previewDigestsAreStableAndCandidateIsExact() passed after 0.032 seconds.
+◇ Test newPreviewAndExternalDiskIdentityInvalidatePriorBinding() started.
+✔ Test newPreviewAndExternalDiskIdentityInvalidatePriorBinding() passed after 0.089 seconds.
+◇ Test successfulImportUsesOneConfigPublicationSequence() started.
+✔ Test successfulImportUsesOneConfigPublicationSequence() passed after 0.032 seconds.
+◇ Test failedPublicationConsumesPreviewBeforeFirstAttempt() started.
+✔ Test failedPublicationConsumesPreviewBeforeFirstAttempt() passed after 0.033 seconds.
+✔ Suite SettingsProfilePersistenceTests passed after 1.637 seconds.
+◇ Suite SettingsTransferTests started.
+◇ Test sharedParserRejectsDuplicatesDepthInvalidUTF8AndCanonicalizes() started.
+✔ Test sharedParserRejectsDuplicatesDepthInvalidUTF8AndCanonicalizes() passed after 0.001 seconds.
+◇ Test settingsMalformedFixturesStillMapToExistingFailures() started.
+✔ Test settingsMalformedFixturesStillMapToExistingFailures() passed after 0.014 seconds.
+◇ Test canonicalExportIsByteStableAndOmitsProjectsAndIdentities() started.
+✔ Test canonicalExportIsByteStableAndOmitsProjectsAndIdentities() passed after 0.006 seconds.
+◇ Test portableClassifierCoversEveryStaticDynamicAndCatalogDefinition() started.
+✔ Test portableClassifierCoversEveryStaticDynamicAndCatalogDefinition() passed after 4.363 seconds.
+◇ Test hostileInMemoryAuthorityFamiliesCannotEscapeThroughExport() started.
+✔ Test hostileInMemoryAuthorityFamiliesCannotEscapeThroughExport() passed after 0.003 seconds.
+◇ Test exportOmitsRestrictionsThatWeakenDefaultsOrMergedGlobal() started.
+✔ Test exportOmitsRestrictionsThatWeakenDefaultsOrMergedGlobal() passed after 0.003 seconds.
+◇ Test hostileKnownRowsAreVisibleButNeverCandidateValues() started.
+✔ Test hostileKnownRowsAreVisibleButNeverCandidateValues() passed after 0.023 seconds.
+◇ Test unknownSafeScalarsPersistAndSensitiveValuesRedactExactly() started.
+✔ Test unknownSafeScalarsPersistAndSensitiveValuesRedactExactly() passed after 0.044 seconds.
+◇ Test unsafeUnknownIDIsPreviewOnlyAndUnknownShapesRejectAtomically() started.
+✔ Test unsafeUnknownIDIsPreviewOnlyAndUnknownShapesRejectAtomically() passed after 0.003 seconds.
+◇ Test closedWireRejectsExtraKeysDuplicateProfilesAndOrphanInert() started.
+✔ Test closedWireRejectsExtraKeysDuplicateProfilesAndOrphanInert() passed after 11.317 seconds.
+◇ Test collisionsRequireExactChoiceAndCloneRemapsProfileInert() started.
+✔ Test collisionsRequireExactChoiceAndCloneRemapsProfileInert() passed after 0.024 seconds.
+◇ Test inertMergeDeduplicatesAndKeepsCurrentOnGlobalConflict() started.
+✔ Test inertMergeDeduplicatesAndKeepsCurrentOnGlobalConflict() passed after 0.003 seconds.
+◇ Test eachProfileCollisionChoiceOwnsCurrentAndImportedInertExactly() started.
+✔ Test eachProfileCollisionChoiceOwnsCurrentAndImportedInertExactly() passed after 0.018 seconds.
+◇ Test replaceWithoutImportedInertStillDiscardsAllLocalProfileInert() started.
+✔ Test replaceWithoutImportedInertStillDiscardsAllLocalProfileInert() passed after 0.005 seconds.
+◇ Test collisionChoiceSetAndProfileLimitFailClosed() started.
+✔ Test collisionChoiceSetAndProfileLimitFailClosed() passed after 0.050 seconds.
+◇ Test importMergesExplicitGlobalAndPreservesProjectsAndAbsentValues() started.
+✔ Test importMergesExplicitGlobalAndPreservesProjectsAndAbsentValues() passed after 0.004 seconds.
+◇ Test importedProfilesCannotWeakenPostMergeGlobalRestrictions() started.
+✔ Test importedProfilesCannotWeakenPostMergeGlobalRestrictions() passed after 0.014 seconds.
+◇ Test stricterImportedGlobalCannotSilentlyInvalidateLocalProfile() started.
+✔ Test stricterImportedGlobalCannotSilentlyInvalidateLocalProfile() passed after 0.003 seconds.
+◇ Test contextFreeRelationsRejectImportedRowAndPreserveCurrent() started.
+✔ Test contextFreeRelationsRejectImportedRowAndPreserveCurrent() passed after 0.004 seconds.
+◇ Test inputBoundIsExact() started.
+✔ Test inputBoundIsExact() passed after 0.001 seconds.
+◇ Test mergedCandidateAggregateFieldAndInertBoundsAreExact() started.
+✔ Test mergedCandidateAggregateFieldAndInertBoundsAreExact() passed after 2.583 seconds.
+◇ Test resolveRejectsCanonicalOutputOverflowCreatedOnlyByMerge() started.
+✔ Test resolveRejectsCanonicalOutputOverflowCreatedOnlyByMerge() passed after 35.762 seconds.
+◇ Test canonicalEncoderExactOneMiBBoundaryAndCheckedGrowth() started.
+✔ Test canonicalEncoderExactOneMiBBoundaryAndCheckedGrowth() passed after 0.238 seconds.
+◇ Test malformedPreservedStateRejectsWithoutTruncationOrRepair() started.
+✔ Test malformedPreservedStateRejectsWithoutTruncationOrRepair() passed after 0.008 seconds.
+◇ Test candidateChecksCrossLayerRelationsAndUTF8ValueBytes() started.
+✔ Test candidateChecksCrossLayerRelationsAndUTF8ValueBytes() passed after 0.003 seconds.
+◇ Test authorityAndReassociationRowsValidateRulesBeforeClassification() started.
+✔ Test authorityAndReassociationRowsValidateRulesBeforeClassification() passed after 0.001 seconds.
+◇ Test canonicalEncoderRejectsConstructedDepthAndNoncanonicalIntegers() started.
+✔ Test canonicalEncoderRejectsConstructedDepthAndNoncanonicalIntegers() passed after 0.001 seconds.
+◇ Test canonicalEscapingNumbersProfileAndInertOrderAreDeterministic() started.
+✔ Test canonicalEscapingNumbersProfileAndInertOrderAreDeterministic() passed after 0.010 seconds.
+✔ Suite SettingsTransferTests passed after 54.518 seconds.
+◇ Suite "Settings workflow" started.
+◇ Test lifecycleExactDeltas() started.
+✔ Test lifecycleExactDeltas() passed after 0.026 seconds.
+◇ Test lifecycleNegatives() started.
+✔ Test lifecycleNegatives() passed after 0.002 seconds.
+◇ Test selectiveResetPreservesImmutableState() started.
+✔ Test selectiveResetPreservesImmutableState() passed after 0.006 seconds.
+◇ Test resetNegatives() started.
+✔ Test resetNegatives() passed after 0.003 seconds.
+◇ Test importUISummaryIsPublicBoundedAndMinimal() started.
+✔ Test importUISummaryIsPublicBoundedAndMinimal() passed after 0.001 seconds.
+◇ Test exportBoundary() started.
+✔ Test exportBoundary() passed after 0.002 seconds.
+✔ Suite "Settings workflow" passed after 0.043 seconds.
+◇ Suite "SimulatorPruner" started.
+◇ Test "returns nothing when the approval list is empty" started.
+✔ Test "returns nothing when the approval list is empty" passed after 0.001 seconds.
+◇ Test "only returns devices whose name exactly matches an approved entry" started.
+✔ Test "only returns devices whose name exactly matches an approved entry" passed after 0.001 seconds.
+◇ Test "matches by exact name only, never by substring" started.
+✔ Test "matches by exact name only, never by substring" passed after 0.001 seconds.
+◇ Test "matching is case-sensitive on the exact device name" started.
+✔ Test "matching is case-sensitive on the exact device name" passed after 0.001 seconds.
+◇ Test "deleteDevice against a UDID that cannot correspond to a real device fails gracefully" started.
+✔ Test "deleteDevice against a UDID that cannot correspond to a real device fails gracefully" passed after 0.001 seconds.
+✔ Suite "SimulatorPruner" passed after 0.001 seconds.
+◇ Suite "SizeScanner" started.
+◇ Test "measures a known amount of file content, at least as large as the logical size" started.
+✔ Test "measures a known amount of file content, at least as large as the logical size" passed after 0.001 seconds.
+◇ Test "returns zero for a path that does not exist" started.
+✔ Test "returns zero for a path that does not exist" passed after 0.001 seconds.
+◇ Test "measures a single file target directly, not just directories" started.
+✔ Test "measures a single file target directly, not just directories" passed after 0.001 seconds.
+◇ Test "excludes a protected root from the measured total" started.
+✔ Test "excludes a protected root from the measured total" passed after 0.001 seconds.
+◇ Test "streams exactly one onItem callback per requested path" started.
+✔ Test "streams exactly one onItem callback per requested path" passed after 0.002 seconds.
+◇ Test "cancelAll on an idle scanner does not corrupt a later scan" started.
+✔ Test "cancelAll on an idle scanner does not corrupt a later scan" passed after 0.001 seconds.
+◇ Test "does not walk onto a different mounted volume than the root path" started.
+✔ Test "does not walk onto a different mounted volume than the root path" passed after 0.001 seconds.
+◇ Test "bounded disk usage requires the supplied bridge facade and preserves bytes" started.
+✔ Test "bounded disk usage requires the supplied bridge facade and preserves bytes" passed after 0.046 seconds.
+✔ Suite "SizeScanner" passed after 0.053 seconds.
+◇ Suite "SnapshotDeleter" started.
+◇ Test "accepts tmutil's own date component format" started.
+◇ Test case passing 1 argument value → "2026-07-31-120000" to "accepts tmutil's own date component format" started.
+◇ Test case passing 1 argument value → "2020-01-01-000000" to "accepts tmutil's own date component format" started.
+◇ Test case passing 1 argument value → "9999-12-31-235959" to "accepts tmutil's own date component format" started.
+✔ Test "accepts tmutil's own date component format" with 3 test cases passed after 0.001 seconds.
+◇ Test "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "2026-07-31" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "2026-07-31-1200000" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "2026-07-31-12000" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "'; rm -rf ~ #" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "2026-07-31-120000; rm -rf ~" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "com.apple.TimeMachine.2026-07-31-120000.local" to "rejects anything that isn't exactly that format" started.
+◇ Test case passing 1 argument value → "not-a-date-at-all" to "rejects anything that isn't exactly that format" started.
+✔ Test "rejects anything that isn't exactly that format" with 8 test cases passed after 0.001 seconds.
+◇ Test "deleting an empty snapshot list returns false without attempting anything" started.
+✔ Test "deleting an empty snapshot list returns false without attempting anything" passed after 0.001 seconds.
+◇ Test "deleting a list whose every entry fails validation returns false without attempting anything" started.
+✔ Test "deleting a list whose every entry fails validation returns false without attempting anything" passed after 0.001 seconds.
+✔ Suite "SnapshotDeleter" passed after 0.001 seconds.
+◇ Suite "StaleNodeModulesScanner" started.
+◇ Test "finds a node_modules directory older than the threshold" started.
+✔ Test "finds a node_modules directory older than the threshold" passed after 0.001 seconds.
+◇ Test "does not report a recently touched node_modules directory" started.
+✔ Test "does not report a recently touched node_modules directory" passed after 0.001 seconds.
+◇ Test "does not walk into a node_modules directory's own contents" started.
+✔ Test "does not walk into a node_modules directory's own contents" passed after 0.001 seconds.
+◇ Test "returns nothing when the threshold is not positive" started.
+✔ Test "returns nothing when the threshold is not positive" passed after 0.001 seconds.
+◇ Test "bounded stale scan requires the supplied bridge facade and prunes matches" started.
+✔ Test "bounded stale scan requires the supplied bridge facade and prunes matches" passed after 0.044 seconds.
+✔ Suite "StaleNodeModulesScanner" passed after 0.046 seconds.
+◇ Suite "DiskStats" started.
+◇ Test "reports sane figures for the root volume" started.
+✔ Test "reports sane figures for the root volume" passed after 0.009 seconds.
+✔ Suite "DiskStats" passed after 0.009 seconds.
+◇ Suite "MemoryStats" started.
+◇ Test "reports sane figures for physical memory" started.
+✔ Test "reports sane figures for physical memory" passed after 0.001 seconds.
+◇ Test "denial is reported explicitly, never silently shown as zero bytes used" started.
+✔ Test "denial is reported explicitly, never silently shown as zero bytes used" passed after 0.001 seconds.
+✔ Suite "MemoryStats" passed after 0.001 seconds.
+◇ Suite "SwapStats" started.
+◇ Test "reports sane figures when swap is enabled" started.
+✔ Test "reports sane figures when swap is enabled" passed after 0.001 seconds.
+✔ Suite "SwapStats" passed after 0.001 seconds.
+◇ Suite "PathDisplay" started.
+◇ Test "shortens home directory to a tilde" started.
+✔ Test "shortens home directory to a tilde" passed after 0.001 seconds.
+◇ Test "shortens a path under home" started.
+✔ Test "shortens a path under home" passed after 0.001 seconds.
+◇ Test "leaves a path outside home untouched" started.
+✔ Test "leaves a path outside home untouched" passed after 0.001 seconds.
+◇ Test "does not shorten a sibling that merely shares a prefix with home" started.
+✔ Test "does not shorten a sibling that merely shares a prefix with home" passed after 0.001 seconds.
+✔ Suite "PathDisplay" passed after 0.001 seconds.
+◇ Suite "ByteFormat" started.
+◇ Test "never returns an empty string" started.
+✔ Test "never returns an empty string" passed after 0.001 seconds.
+◇ Test "formats gigabyte-scale and megabyte-scale values distinctly" started.
+✔ Test "formats gigabyte-scale and megabyte-scale values distinctly" passed after 0.001 seconds.
+◇ Test "clamps negative input to zero rather than crashing" started.
+✔ Test "clamps negative input to zero rather than crashing" passed after 0.001 seconds.
+✔ Suite "ByteFormat" passed after 0.001 seconds.
+◇ Suite "ProcessSurvey" started.
+◇ Test "reports plausible top memory consumers" started.
+✔ Test "reports plausible top memory consumers" passed after 0.043 seconds.
+◇ Test "respects the requested limit" started.
+✔ Test "respects the requested limit" passed after 0.043 seconds.
+✔ Suite "ProcessSurvey" passed after 0.086 seconds.
+◇ Suite "ContainerSpaceInfo" started.
+◇ Test "reports sane figures for the root container" started.
+✔ Test "reports sane figures for the root container" passed after 0.287 seconds.
+✔ Suite "ContainerSpaceInfo" passed after 0.287 seconds.
+◇ Suite "SnapshotLister" started.
+◇ Test "never crashes, and every identifier it returns matches the expected prefix" started.
+✔ Test "never crashes, and every identifier it returns matches the expected prefix" passed after 0.048 seconds.
+◇ Test "dateComponent strips the well-known prefix and suffix" started.
+✔ Test "dateComponent strips the well-known prefix and suffix" passed after 0.001 seconds.
+✔ Suite "SnapshotLister" passed after 0.048 seconds.
+◇ Suite "ToolLocator" started.
+◇ Test "finds a tool that is guaranteed to exist on every Mac" started.
+✔ Test "finds a tool that is guaranteed to exist on every Mac" passed after 0.001 seconds.
+◇ Test "resolves an Xcode-owned tool through bounded async xcrun --find" started.
+✔ Test "resolves an Xcode-owned tool through bounded async xcrun --find" passed after 0.001 seconds.
+◇ Test "returns nil for a tool that does not exist anywhere in the search path" started.
+✔ Test "returns nil for a tool that does not exist anywhere in the search path" passed after 0.001 seconds.
+◇ Test "async lookup returns nil for undeclared tool names" started.
+✔ Test "async lookup returns nil for undeclared tool names" passed after 0.654 seconds.
+◇ Test "only searches the fixed directories, never an arbitrary PATH" started.
+✔ Test "only searches the fixed directories, never an arbitrary PATH" passed after 0.001 seconds.
+✔ Suite "ToolLocator" passed after 0.655 seconds.
+◇ Suite "ToolchainDetector" started.
+◇ Test "detects Xcode and git on any Mac with Xcode or the Command Line Tools installed" started.
+✔ Test "detects Xcode and git on any Mac with Xcode or the Command Line Tools installed" passed after 2.491 seconds.
+◇ Test "home-directory-dependent tools are absent under a bogus home, CLI-resolved tools are not" started.
+✔ Test "home-directory-dependent tools are absent under a bogus home, CLI-resolved tools are not" passed after 0.001 seconds.
+✔ Suite "ToolchainDetector" passed after 2.491 seconds.
+◇ Suite "TranscriptPruneScanner" started.
+◇ Test "finds an old transcript file" started.
+✔ Test "finds an old transcript file" passed after 0.001 seconds.
+◇ Test "does not report a recent transcript file" started.
+✔ Test "does not report a recent transcript file" passed after 0.001 seconds.
+◇ Test "never walks into a memory/ directory, no matter how old its contents are" started.
+✔ Test "never walks into a memory/ directory, no matter how old its contents are" passed after 0.001 seconds.
+◇ Test "finds a memory-adjacent nested project's old transcripts while still preserving that project's own memory dir" started.
+✔ Test "finds a memory-adjacent nested project's old transcripts while still preserving that project's own memory dir" passed after 0.002 seconds.
+◇ Test "returns nothing when the threshold is not positive" started.
+✔ Test "returns nothing when the threshold is not positive" passed after 0.001 seconds.
+✔ Suite "TranscriptPruneScanner" passed after 0.005 seconds.
+◇ Suite "UnclaimedSpaceScanner" started.
+◇ Test "a directory containing a claimed path counts as covered" started.
+✔ Test "a directory containing a claimed path counts as covered" passed after 0.136 seconds.
+◇ Test "a claimed path's own descendants count as covered" started.
+✔ Test "a claimed path's own descendants count as covered" passed after 0.049 seconds.
+◇ Test "a directory with no claim anywhere inside it is unclaimed" started.
+✔ Test "a directory with no claim anywhere inside it is unclaimed" passed after 0.038 seconds.
+◇ Test "a name-prefix sibling of a claim is not treated as covered" started.
+✔ Test "a name-prefix sibling of a claim is not treated as covered" passed after 0.038 seconds.
+◇ Test "flags a big top-level directory that no catalog item claims" started.
+✔ Test "flags a big top-level directory that no catalog item claims" passed after 0.001 seconds.
+◇ Test "does not flag a directory below the size threshold" started.
+✔ Test "does not flag a directory below the size threshold" passed after 0.001 seconds.
+◇ Test "flags an unclaimed sibling of a claimed path" started.
+✔ Test "flags an unclaimed sibling of a claimed path" passed after 0.002 seconds.
+◇ Test "reports ranked items only, never anything deletable" started.
+✔ Test "reports ranked items only, never anything deletable" passed after 0.001 seconds.
+✔ Suite "UnclaimedSpaceScanner" passed after 0.267 seconds.
+◇ Suite WorkSchedulerTests started.
+◇ Test tenSessionsShareOneExactAggregateCap() started.
+✔ Test tenSessionsShareOneExactAggregateCap() passed after 0.025 seconds.
+◇ Test realEnvelopeSelectsGlobalAndActiveProfileWithNeutralScopeInputs() started.
+✔ Test realEnvelopeSelectsGlobalAndActiveProfileWithNeutralScopeInputs() passed after 0.024 seconds.
+◇ Test projectDocumentsAreExplicitlySchedulerIrrelevantButActiveProfileIsNot() started.
+✔ Test projectDocumentsAreExplicitlySchedulerIrrelevantButActiveProfileIsNot() passed after 0.076 seconds.
+◇ Test legacyCompatibilityRequiresExactFourPairLockstep() started.
+✔ Test legacyCompatibilityRequiresExactFourPairLockstep() passed after 0.892 seconds.
+◇ Test malformedInputsDuplicateProfilesStaleAuthorityAndLayerMatricesFailClosed() started.
+✔ Test malformedInputsDuplicateProfilesStaleAuthorityAndLayerMatricesFailClosed() passed after 0.042 seconds.
+◇ Test firstInstallInvalidatesAndCandidateMustMatchExactAcknowledgement() started.
+✔ Test firstInstallInvalidatesAndCandidateMustMatchExactAcknowledgement() passed after 0.024 seconds.
+◇ Test synchronousBarrierBlocksEverySessionAndGrantBeforeAsyncPrepare() started.
+✔ Test synchronousBarrierBlocksEverySessionAndGrantBeforeAsyncPrepare() passed after 0.048 seconds.
+◇ Test bridgeAdmissionHoldsBlockQueuedPermitUntilAllAcceptedHandoffsFinish() started.
+✔ Test bridgeAdmissionHoldsBlockQueuedPermitUntilAllAcceptedHandoffsFinish() passed after 0.073 seconds.
+◇ Test presentationPrepareAndAcknowledgementNeverCloseSessionsOrQueuedGrant() started.
+✔ Test presentationPrepareAndAcknowledgementNeverCloseSessionsOrQueuedGrant() passed after 0.048 seconds.
+◇ Test presentationPathRejectsAnythingExceptValidatedNoneAndEqualIdentity() started.
+✔ Test presentationPathRejectsAnythingExceptValidatedNoneAndEqualIdentity() passed after 0.082 seconds.
+◇ Test foreignSupersededFailedAndLateTokensCannotReopen() started.
+✔ Test foreignSupersededFailedAndLateTokensCannotReopen() passed after 0.071 seconds.
+◇ Test observationEpochUsesSameEnvelopeAndNeverInventsSettingsRevision() started.
+✔ Test observationEpochUsesSameEnvelopeAndNeverInventsSettingsRevision() passed after 0.093 seconds.
+◇ Test snapshotProjectsOnlyAcknowledgedSliceAndPresentationRate() started.
+✔ Test snapshotProjectsOnlyAcknowledgedSliceAndPresentationRate() passed after 0.146 seconds.
+◇ Test staleAndWrongRequirementsCapabilitiesRejectBeforeAccounting() started.
+✔ Test staleAndWrongRequirementsCapabilitiesRejectBeforeAccounting() passed after 0.047 seconds.
+◇ Test actualTwoToZeroFreezesThenPausedToExplicitResumesOldest() started.
+✔ Test actualTwoToZeroFreezesThenPausedToExplicitResumesOldest() passed after 0.071 seconds.
+◇ Test sliceChangeCancelsButRateOnlyPreservesActive() started.
+✔ Test sliceChangeCancelsButRateOnlyPreservesActive() passed after 0.071 seconds.
+◇ Test deterministicStarvationSequenceKeepsOldestAheadOfReacquire() started.
+✔ Test deterministicStarvationSequenceKeepsOldestAheadOfReacquire() passed after 0.024 seconds.
+◇ Test activeCancelSetsProbeAndAutomaticallyReclaimsSession() started.
+✔ Test activeCancelSetsProbeAndAutomaticallyReclaimsSession() passed after 0.024 seconds.
+◇ Test cancelAIsolationAndCancelFinishReleaseRaceAreExact() started.
+✔ Test cancelAIsolationAndCancelFinishReleaseRaceAreExact() passed after 0.024 seconds.
+◇ Test releaseRacingInvalidatingPrepareCannotGrantAcrossBarrier() started.
+✔ Test releaseRacingInvalidatingPrepareCannotGrantAcrossBarrier() passed after 0.048 seconds.
+◇ Test twentyActiveCancelFinishCyclesReclaimEverything() started.
+✔ Test twentyActiveCancelFinishCyclesReclaimEverything() passed after 0.024 seconds.
+◇ Test limitsQueuesTombstonesAndSixtyFifthFreshSessionAreBounded() started.
+✔ Test limitsQueuesTombstonesAndSixtyFifthFreshSessionAreBounded() passed after 0.024 seconds.
+◇ Test totalAndPerSessionQueueOverflowNeverRunClosureAndCancellationReclaims() started.
+✔ Test totalAndPerSessionQueueOverflowNeverRunClosureAndCancellationReclaims() passed after 0.048 seconds.
+◇ Test fourToOneDrainsAndOneToFourFillsPreservedFIFO() started.
+✔ Test fourToOneDrainsAndOneToFourFillsPreservedFIFO() passed after 0.076 seconds.
+◇ Test featureLossOverlappingRequirementsAndAdmissionNarrowingAreExact() started.
+✔ Test featureLossOverlappingRequirementsAndAdmissionNarrowingAreExact() passed after 0.051 seconds.
+◇ Test foreignSessionCapabilityControllerAndCheckedOverflowsFailClosed() started.
+✔ Test foreignSessionCapabilityControllerAndCheckedOverflowsFailClosed() passed after 0.126 seconds.
+◇ Test allCancellationHooksPreventClosureBeforeStart() started.
+✔ Test allCancellationHooksPreventClosureBeforeStart() passed after 0.097 seconds.
+◇ Test newerBarrierTransitionRejectsOldPrepareAndPresentationWhilePreparedInvalidationOwnsBarrier() started.
+✔ Test newerBarrierTransitionRejectsOldPrepareAndPresentationWhilePreparedInvalidationOwnsBarrier() passed after 0.097 seconds.
+◇ Test rateCommitPreservesCapabilityAndPostGrantCancellationReleasesExactlyOnce() started.
+✔ Test rateCommitPreservesCapabilityAndPostGrantCancellationReleasesExactlyOnce() passed after 0.047 seconds.
+◇ Test replayOwnershipIsCapped() started.
+✔ Test replayOwnershipIsCapped() passed after 2.500 seconds.
+◇ Test postGrantCancellationReapsAndDrainsOldestSuccessor() started.
+✔ Test postGrantCancellationReapsAndDrainsOldestSuccessor() passed after 0.025 seconds.
+◇ Test presentationMismatchConsumesTokenBeforeAnyLaterCorrectCommit() started.
+✔ Test presentationMismatchConsumesTokenBeforeAnyLaterCorrectCommit() passed after 0.050 seconds.
+◇ Test supersededInvalidatingPrepareCannotCancelActiveOrQueuedVictims() started.
+✔ Test supersededInvalidatingPrepareCannotCancelActiveOrQueuedVictims() passed after 0.052 seconds.
+◇ Test invalidatingPreparationClaimBlocksTicketReplacementDuringDestruction() started.
+✔ Test invalidatingPreparationClaimBlocksTicketReplacementDuringDestruction() passed after 0.050 seconds.
+◇ Test sourceHasNoSuppliedPolicyEffectOrPublicAuthorityEscape() started.
+✔ Test sourceHasNoSuppliedPolicyEffectOrPublicAuthorityEscape() passed after 0.021 seconds.
+✔ Suite WorkSchedulerTests passed after 5.260 seconds.
+✘ Test run with 619 tests in 62 suites failed after 151.953 seconds with 1 issue.
+Note: Some test targets reported failures:
+  - TidyCoreTests (Swift Testing)

@@ -1,0 +1,21 @@
+{
+  "pid": 50870,
+  "processStart": "Sat Sep 19 12:24:55 2026",
+  "mode": "default acknowledged fixture control window visible; no UI actions during capture",
+  "durationSeconds": 30.442,
+  "sampleCount": 30,
+  "rssMinimumKiB": 89552,
+  "rssMaximumKiB": 89552,
+  "observedChildPIDs": [],
+  "footprintExit": 0,
+  "nettopExit": 0,
+  "claims": "bounded diagnostic observations only; not full-workflow traffic or reference performance acceptance",
+  "cpuDeltaSeconds": 0.0,
+  "cpuSampleSpanSeconds": 29.416,
+  "cpuPercentOfOneCore": 0.0,
+  "physicalFootprintBytes": 36160472,
+  "physicalFootprintLifetimePeakBytes": 36275160,
+  "nettopObservedProcessRows": 0,
+  "positiveControl": "/private/tmp/tidy-r13-nettop-control-r66q6l93",
+  "fixtureRemovedAfterCapture": true
+}

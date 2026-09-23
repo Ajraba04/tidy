@@ -58,15 +58,12 @@ struct SimulatorPrunerTests {
         #expect(!succeeded)
     }
 
-    @Test("real devices on this machine are never eligible when nothing real is approved (exercises the full listing pipeline read-only)")
-    func realDevicesNeverEligibleWithoutRealApproval() {
-        // Unlike the other tests here, this calls the real, synchronous
-        // simctl-backed listing (SimctlClient.listDevicesSync()) against
-        // whatever simulators actually exist on this machine. It never
-        // calls deleteDevice on the result, only asserts the read-only
-        // eligibility filter, so even a bug in the matching logic could at
-        // worst make this assertion fail, not delete anything.
+    @Test("quarantined legacy synchronous listing returns no host evidence")
+    func legacySynchronousListingReturnsNoEvidence() {
+        // The deprecated route is deliberately inert. Real service integration
+        // is a separate isolated-host acceptance gate, not this unit test.
         let realDevices = SimctlClient.listDevicesSync()
+        #expect(realDevices.isEmpty)
         let eligible = SimulatorPruner.devicesEligibleForDeletion(
             allDevices: realDevices,
             approvedForDeletion: ["definitely-not-a-real-simulator-name-xyz123"]
