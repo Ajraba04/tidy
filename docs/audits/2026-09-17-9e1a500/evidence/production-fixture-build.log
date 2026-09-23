@@ -1,0 +1,1334 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project /private/tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj -scheme Tidy -configuration Debug -derivedDataPath /private/tmp/tidy-audit-9e1a500-production-ui -jobs 2 build CODE_SIGNING_ALLOWED=NO PRODUCT_BUNDLE_IDENTIFIER=io.github.ajraba04.Tidy.AuditFixture
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+    PRODUCT_BUNDLE_IDENTIFIER = io.github.ajraba04.Tidy.AuditFixture
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  TidyCore: /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006001-001028921185801E, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006001-001028921185801E, name:My Mac }
+{ platform:macOS, name:Any Mac }
+Build Preparation
+Build task concurrency set to 2 via user default IDEBuildOperationMaxNumberOfConcurrentCompileTasks
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (3 targets)
+    Target 'Tidy' in project 'Tidy'
+        ➜ Explicit dependency on target 'TidyCore-product' in project 'TidyCore'
+    Target 'TidyCore-product' in project 'TidyCore'
+        ➜ Explicit dependency on target 'TidyCore' in project 'TidyCore'
+    Target 'TidyCore' in project 'TidyCore' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/xcstringstool compile --dry-run --output-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Localizable.xcstrings
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 2b2efc10eb4c89dada7bd5677de7d651
+Build description path: /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/XCBuildData/2b2efc10eb4c89dada7bd5677de7d651.xcbuilddata
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/CompilationCache.noindex
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/CompilationCache.noindex
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Products
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Products
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy-225c4760e9d8c809b578f3917460ff6d-VFS/all-product-headers.yaml
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy-225c4760e9d8c809b578f3917460ff6d-VFS/all-product-headers.yaml
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/PrecompiledHeaders
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/PrecompiledHeaders
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-create-build-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.modulemap (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.modulemap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyStaticMetadataFileList (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyMetadataFileList (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyMetadataFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_const_extract_protocols.json (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_const_extract_protocols.json
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftConstValuesFileList (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.LinkFileList (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.LinkFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-OutputFileMap.json (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-OutputFileMap.json
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/GeneratedModuleMaps/TidyCore.modulemap /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.modulemap (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.modulemap /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/GeneratedModuleMaps
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/empty-Tidy.plist (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/empty-Tidy.plist
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyStaticMetadataFileList (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyMetadataFileList (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyMetadataFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-project-headers.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-project-headers.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-own-target-headers.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-own-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-generated-files.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-generated-files.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-target-headers.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-non-framework-target-headers.hmap (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibPath-normal-arm64.txt (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibPath-normal-arm64.txt
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibInstallName-normal-arm64.txt (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibInstallName-normal-arm64.txt
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_const_extract_protocols.json (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_const_extract_protocols.json
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftConstValuesFileList (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.LinkFileList (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.LinkFileList
+
+WriteAuxiliaryFile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-OutputFileMap.json (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    write-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-OutputFileMap.json
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app
+
+SwiftDriver TidyCore normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name TidyCore -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name tidycore -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_const_extract_protocols.json -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-5WKUNFMNC690KI4O1Y5934GAE.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ptrauth-5MUBHJ2GLC29RK1ICY4G2JNTF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdbool-81MX7PNTXZPOCJV6M4BFFKMM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stddef-E303YYXF8DS9GOMD8WEX5K92K.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DeveloperToolsSupport-CKD58C0SXW2NML1XVW7IVI03D.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdarg-697XNM2XSDJFRVLWMIQREZQ6O.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_AvailabilityInternal-ARP5YSG8Q87OEEOU0J09UGCDJ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SwiftShims-CXFINP1Q7DIALFMC8N4WQKVQI.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_float-5HFLCT1LPEZW79IOY6TQWZJ50.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ptrcheck-582IKLKCU3YLN72AFGEOJGZMP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation1-ER32UVZ4PNQBZD8WU1LQXTBVU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SQLite3-3E517UOIQ8KUNDTXMEK0PBII4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation2-5TSHMNKEOWUETLZ1XX9BQDKO1.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_limits-9RFP0TTAIPDYVL24557PPKWD4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_tgmath-BE7G0RUPJX2IJ5X539ESIXPQU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/string_h-1TFD76GRJ680W6LFHAJ1EKO5A.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdint-61UH63D746AGUIVMM40SWV43U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/sys_types-BEOOMPDCMWN6WP1O51SFR6MAQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/libDER-5USC4HRUV8Z88DQ3BUTGYX1L3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_intrinsics-APTKTWW9SD86GM1YYI1VASV1M.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation3-BAULG6T6T230L8VVVIIOZI5KK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdatomic-CRHKSAAWRVPG3RLWJOTRTJ811.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_inttypes-D7I5RLTPQ7B7WVXJJN38SSMLL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/simd-9SCD6T7TW1ZHZ9OB06AZTJHFA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Darwin-5VSSURMC5498CFH52OZ2UEORN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/launch-6EDWDZBWNUSVVGI0COLCWYMS1.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/MachO-1OFU13E1DFBQCF4XK4HG9KI2A.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/libkern-2AN66TVR5ZHIEFTYC9TOAFEHN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CUPS-1XKT62PUTMXAF9YB9IQAJVXHB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ObjectiveC-KV1CFA3GNRUWCDAB1HYZYT3J.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Spatial-EGVMVJKJ7LIR8GREVTZJWCSMV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os_object-CJ3B8ISU7TQ0OZPRBUT5CGWID.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os_workgroup-7X18RMC4QP198DHE98QCJNDK7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Dispatch-9DDFCNSJ9M7YZEI0G7CNGQQHB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/XPC-EY1XN0R63H2C5HLK77KROM9LF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreFoundation-5SHT9KY7UZQ4K6RH5P7PCNJUL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os-6V1N0PYDVNOFLUE9MB8ZV8LVN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/IOKit-6LFYJ3HQ0JRPD072G66Z8PDPG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CFNetwork-7AI4PJ5ATW3ZBMLNMT4KZVD6D.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Security-7L8EC7R2X7M5YEC03ZNUPKKBY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ColorSync-51H45Q6YQ7D2JUQW2A7I49OSG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreGraphics-4VDWP8PEK0DL9KFXQA54EYCLP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DiskArbitration-8WNZ8G6059DXLW3WKO9A1QZ8T.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreServices-AZ3XCLOC6VGITFZVNQUK59C66.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreText-DI59U8UTP11OKIY4DC6XFHEDP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ImageIO-CBDJHPUOWU3MPZ5GVS1JXXQAS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Foundation-1XXVEZPBHSJR1AAFGCC9HRYMB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DataDetection-1P2K35D1ONGV2YIHXOF2T47OI.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-6KA2IMW9NF5U7UCLPTR8I52IH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreTransferable-RLPWXG8Q2773XVE6CCMQIRIS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/LocalAuthentication-E1GLAJJA5CSRHTGVL93A2VIHR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Symbols-ERJGW1IUAD1796MMTX4Y30DOO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ApplicationServices-EKRWAYH53WLSJ1NV4D6JXZT5H.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreData-5WYFTD8GEUP385DH0TASQLQZL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Accessibility-31EWLNLRRGJMJPPO0IGIUULJV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/IOSurface-D2V6DWXY358OTYKRQCXTGX33Y.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/OSLog-F05976026YJXAKXQS46D4P06Z.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/OpenGL-5WE3KBPNY295DQMPC87XF5G7H.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Metal-ZV8V3VW4W9PUW3VMV8VGUE0E.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreVideo-ALQ0LZ3KCCYHW0YSZ1KZONEVM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreImage-8SVJTXD6CUCEPBDJEWK9OJJV2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/QuartzCore-6V2AI25GI9G86WB1D6WYWL6CK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SwiftUICore-2MHUUZH5H8P535QA7MF73E8OG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/AppKit-10HJEQUMDHWMNMVOXT75J430I.pcm
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ TidyCore (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+SwiftCompile normal arm64 Compiling\ ChromiumCookieCleaner.swift,\ CookieDomainSuggester.swift,\ CleanCatalog+Android.swift,\ CleanCatalog+Browsers.swift,\ CleanCatalog+DependencyCaches.swift,\ CleanCatalog+Extras.swift,\ CleanCatalog+Git.swift,\ CleanCatalog+Helpers.swift,\ CleanCatalog+Memory.swift,\ CleanCatalog+SafeCaches.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Browsers/ChromiumCookieCleaner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Browsers/CookieDomainSuggester.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Android.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Browsers.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+DependencyCaches.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Extras.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Git.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Helpers.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Memory.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+SafeCaches.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Browsers/ChromiumCookieCleaner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ChromiumCookieCleaner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Browsers/CookieDomainSuggester.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CookieDomainSuggester.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Android.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Android.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Browsers.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Browsers.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+DependencyCaches.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+DependencyCaches.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Extras.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Extras.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Git.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Git.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Helpers.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Helpers.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Memory.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Memory.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+SafeCaches.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+SafeCaches.swift
+
+SwiftCompile normal arm64 Compiling\ StrictJSON.swift,\ AppRunningCheck.swift,\ PathGuard.swift,\ PermissionBroker.swift,\ BoundedTraversal.swift,\ ScanIndex.swift,\ ScanInvalidation.swift,\ ScanSession.swift,\ WorkScheduler.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/StrictJSON.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/AppRunningCheck.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/PathGuard.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/PermissionBroker.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanSession.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/WorkScheduler.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/StrictJSON.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile StrictJSON.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/AppRunningCheck.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile AppRunningCheck.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/PathGuard.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PathGuard.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Safety/PermissionBroker.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PermissionBroker.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile BoundedTraversal.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanIndex.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanInvalidation.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanSession.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanSession.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/WorkScheduler.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile WorkScheduler.swift
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift:379:40: warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+377 |         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+378 |             queue.async {
+379 |                 FSEventStreamFlushSync(streamRef)
+    |                                        `- warning: capture of 'streamRef' with non-Sendable type 'FSEventStreamRef' (aka 'OpaquePointer') in a '@Sendable' closure [#SendableClosureCaptures]
+380 |                 continuation.resume()
+381 |             }
+
+Swift.OpaquePointer:1:23: note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+1 | @frozen public struct OpaquePointer {
+  |                       `- note: struct 'OpaquePointer' does not conform to the 'Sendable' protocol
+2 | }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+SwiftDriverJobDiscovery normal arm64 Emitting module for TidyCore (in target 'TidyCore' from project 'TidyCore')
+
+SwiftDriver\ Compilation\ Requirements TidyCore normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name TidyCore -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name tidycore -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_const_extract_protocols.json -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Compiling ChromiumCookieCleaner.swift, CookieDomainSuggester.swift, CleanCatalog+Android.swift, CleanCatalog+Browsers.swift, CleanCatalog+DependencyCaches.swift, CleanCatalog+Extras.swift, CleanCatalog+Git.swift, CleanCatalog+Helpers.swift, CleanCatalog+Memory.swift, CleanCatalog+SafeCaches.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ CleanCatalog+System.swift,\ CleanCatalog+Xcode.swift,\ CleanCatalog.swift,\ ContainerSpaceInfo.swift,\ GitRepoScanner.swift,\ GitRootDiscovery.swift,\ LargestItemsScanner.swift,\ LaunchAgentsSurvey.swift,\ ProcessSurvey.swift,\ RestartReclaimSurvey.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+System.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Xcode.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ContainerSpaceInfo.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/GitRepoScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/GitRootDiscovery.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/LargestItemsScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/LaunchAgentsSurvey.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ProcessSurvey.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/RestartReclaimSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+System.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+System.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog+Xcode.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog+Xcode.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Catalog/CleanCatalog.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCatalog.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ContainerSpaceInfo.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ContainerSpaceInfo.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/GitRepoScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile GitRepoScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/GitRootDiscovery.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile GitRootDiscovery.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/LargestItemsScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile LargestItemsScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/LaunchAgentsSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile LaunchAgentsSurvey.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ProcessSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ProcessSurvey.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/RestartReclaimSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile RestartReclaimSurvey.swift
+
+SwiftMergeGeneratedHeaders /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/GeneratedModuleMaps/TidyCore-Swift.h /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-Swift.h (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-swiftHeaderTool -arch arm64 /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-Swift.h -o /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/GeneratedModuleMaps/TidyCore-Swift.h
+
+SwiftDriverJobDiscovery normal arm64 Compiling CleanCatalog+System.swift, CleanCatalog+Xcode.swift, CleanCatalog.swift, ContainerSpaceInfo.swift, GitRepoScanner.swift, GitRootDiscovery.swift, LargestItemsScanner.swift, LaunchAgentsSurvey.swift, ProcessSurvey.swift, RestartReclaimSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.swiftmodule /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.swiftmodule
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.swiftdoc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftdoc (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftdoc /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.swiftdoc
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.abi.json /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.abi.json (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.abi.json /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/arm64-apple-macos.abi.json
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftsourceinfo (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftsourceinfo /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo
+
+SwiftCompile normal arm64 Compiling\ SimctlClient.swift,\ SnapshotLister.swift,\ StaleNodeModulesScanner.swift,\ ToolchainDetector.swift,\ TranscriptPruneScanner.swift,\ UnclaimedSpaceScanner.swift,\ CleanEngine.swift,\ DefaultCustomActionExecutors.swift,\ GitHousekeeper.swift,\ MemoryReclaimer.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/SimctlClient.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/SnapshotLister.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ToolchainDetector.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/UnclaimedSpaceScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/CleanEngine.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/DefaultCustomActionExecutors.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/GitHousekeeper.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/MemoryReclaimer.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/SimctlClient.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SimctlClient.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/SnapshotLister.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SnapshotLister.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile StaleNodeModulesScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/ToolchainDetector.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ToolchainDetector.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile TranscriptPruneScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Detect/UnclaimedSpaceScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile UnclaimedSpaceScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/CleanEngine.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanEngine.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/DefaultCustomActionExecutors.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile DefaultCustomActionExecutors.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/GitHousekeeper.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile GitHousekeeper.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/MemoryReclaimer.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile MemoryReclaimer.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling SimctlClient.swift, SnapshotLister.swift, StaleNodeModulesScanner.swift, ToolchainDetector.swift, TranscriptPruneScanner.swift, UnclaimedSpaceScanner.swift, CleanEngine.swift, DefaultCustomActionExecutors.swift, GitHousekeeper.swift, MemoryReclaimer.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ TidyConfig.swift,\ Tier.swift,\ ToolchainID.swift,\ SignalHistory.swift,\ SystemMonitor.swift,\ SystemSnapshot.swift,\ CleanupSettings.swift,\ ExperienceSettings.swift,\ FeatureSettings.swift,\ PolicyDefaults.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/TidyConfig.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/Tier.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ToolchainID.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SignalHistory.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemSnapshot.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/CleanupSettings.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/ExperienceSettings.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/FeatureSettings.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyDefaults.swift (in target 'TidyCore' from project 'TidyCore')
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift:255:62: warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+253 |                 scheduling: MonitorScheduling = SystemClockScheduling(),
+254 |                 instrumentation: MonitorInstrumentation = NoOpMonitorInstrumentation(),
+255 |                 clock: @escaping @Sendable () -> Date = Date.init) {
+    |                                                              `- warning: converting non-Sendable function value to '@Sendable () -> Date' may introduce data races
+256 |         self.configuration = configuration
+257 |         self.volumes = volumes
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/TidyConfig.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile TidyConfig.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/Tier.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile Tier.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ToolchainID.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ToolchainID.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SignalHistory.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SignalHistory.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SystemMonitor.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Monitoring/SystemSnapshot.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SystemSnapshot.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/CleanupSettings.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanupSettings.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/ExperienceSettings.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ExperienceSettings.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/FeatureSettings.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile FeatureSettings.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyDefaults.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PolicyDefaults.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling TidyConfig.swift, Tier.swift, ToolchainID.swift, SignalHistory.swift, SystemMonitor.swift, SystemSnapshot.swift, CleanupSettings.swift, ExperienceSettings.swift, FeatureSettings.swift, PolicyDefaults.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ PolicyResolver.swift,\ PolicyValidator.swift,\ ScanSettings.swift,\ SessionProfile.swift,\ SettingsEnvelope.swift,\ SettingsPresentation.swift,\ SettingsPublication.swift,\ SettingsStore.swift,\ SettingsTransfer.swift,\ SettingsWorkflow.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyResolver.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyValidator.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/ScanSettings.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SessionProfile.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsEnvelope.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsPresentation.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsStore.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsTransfer.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsWorkflow.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyResolver.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PolicyResolver.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/PolicyValidator.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PolicyValidator.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/ScanSettings.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanSettings.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SessionProfile.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SessionProfile.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsEnvelope.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsEnvelope.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsPresentation.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsPresentation.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsPublication.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsStore.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsStore.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsTransfer.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsTransfer.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Policy/SettingsWorkflow.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SettingsWorkflow.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling StrictJSON.swift, AppRunningCheck.swift, PathGuard.swift, PermissionBroker.swift, BoundedTraversal.swift, ScanIndex.swift, ScanInvalidation.swift, ScanSession.swift, WorkScheduler.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ CleanAction.swift,\ CleanCategory.swift,\ CleanEnvironment.swift,\ CleanItem.swift,\ CleanPlan.swift,\ PlanSelection.swift,\ ResourceIdentity.swift,\ RunReport.swift,\ ScanReport.swift,\ TargetPath.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanAction.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanCategory.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanEnvironment.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanItem.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanPlan.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/PlanSelection.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ResourceIdentity.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/RunReport.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ScanReport.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/TargetPath.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanAction.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanAction.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanCategory.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanCategory.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanEnvironment.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanEnvironment.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanItem.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanItem.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/CleanPlan.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanPlan.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/PlanSelection.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PlanSelection.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ResourceIdentity.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ResourceIdentity.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/RunReport.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile RunReport.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ScanReport.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanReport.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/TargetPath.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile TargetPath.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling CleanAction.swift, CleanCategory.swift, CleanEnvironment.swift, CleanItem.swift, CleanPlan.swift, PlanSelection.swift, ResourceIdentity.swift, RunReport.swift, ScanReport.swift, TargetPath.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ ResourcePreflight.swift,\ RunJournal.swift,\ ByteFormat.swift,\ DiskStats.swift,\ HomeSurvey.swift,\ MemoryStats.swift,\ PathDisplay.swift,\ SizeScanner.swift,\ SwapStats.swift,\ ActionDescriptor.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ResourcePreflight.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/RunJournal.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/ByteFormat.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/DiskStats.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/HomeSurvey.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/MemoryStats.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/PathDisplay.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/SizeScanner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/SwapStats.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ActionDescriptor.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ResourcePreflight.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ResourcePreflight.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/RunJournal.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile RunJournal.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/ByteFormat.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ByteFormat.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/DiskStats.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile DiskStats.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/HomeSurvey.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile HomeSurvey.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/MemoryStats.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile MemoryStats.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/PathDisplay.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PathDisplay.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/SizeScanner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SizeScanner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Measure/SwapStats.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SwapStats.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Model/ActionDescriptor.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ActionDescriptor.swift
+
+SwiftCompile normal arm64 Compiling\ CapabilityRegistry.swift,\ ConfirmedPlan.swift,\ DerivedDataEffectAdapter.swift,\ ExecutionCoordinator.swift,\ ExecutionPolicyBridge.swift,\ GuardedFileDeleter.swift,\ JournalPOSIXIO.swift,\ JournalStorage.swift,\ MutationAdmissionStore.swift,\ PolicyInvalidationBarrier.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/CapabilityRegistry.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ConfirmedPlan.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/DerivedDataEffectAdapter.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ExecutionCoordinator.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ExecutionPolicyBridge.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/JournalPOSIXIO.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/JournalStorage.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/MutationAdmissionStore.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/PolicyInvalidationBarrier.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/CapabilityRegistry.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CapabilityRegistry.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ConfirmedPlan.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ConfirmedPlan.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/DerivedDataEffectAdapter.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile DerivedDataEffectAdapter.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ExecutionCoordinator.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ExecutionCoordinator.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/ExecutionPolicyBridge.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ExecutionPolicyBridge.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile GuardedFileDeleter.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/JournalPOSIXIO.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile JournalPOSIXIO.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/JournalStorage.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile JournalStorage.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/MutationAdmissionStore.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile MutationAdmissionStore.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Execution/PolicyInvalidationBarrier.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile PolicyInvalidationBarrier.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling ResourcePreflight.swift, RunJournal.swift, ByteFormat.swift, DiskStats.swift, HomeSurvey.swift, MemoryStats.swift, PathDisplay.swift, SizeScanner.swift, SwapStats.swift, ActionDescriptor.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 Compiling\ RunLog.swift,\ ScanEngine.swift,\ SimulatorPruner.swift,\ SnapshotDeleter.swift,\ CleanupCommandRunner.swift,\ ProcessIdentity.swift,\ ProcessJobGate.swift,\ ProcessRunner.swift,\ ProcessSession.swift,\ ToolLocator.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/RunLog.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/ScanEngine.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/SimulatorPruner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/SnapshotDeleter.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/CleanupCommandRunner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessJobGate.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessRunner.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessSession.swift /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ToolLocator.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/RunLog.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile RunLog.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/ScanEngine.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ScanEngine.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/SimulatorPruner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SimulatorPruner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Engine/SnapshotDeleter.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile SnapshotDeleter.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/CleanupCommandRunner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile CleanupCommandRunner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ProcessIdentity.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessJobGate.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ProcessJobGate.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessRunner.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ProcessRunner.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ProcessSession.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ProcessSession.swift
+
+SwiftCompile normal arm64 /private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Sources/TidyCore/Exec/ToolLocator.swift (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-SwiftPerFileCompile ToolLocator.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling PolicyResolver.swift, PolicyValidator.swift, ScanSettings.swift, SessionProfile.swift, SettingsEnvelope.swift, SettingsPresentation.swift, SettingsPublication.swift, SettingsStore.swift, SettingsTransfer.swift, SettingsWorkflow.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftDriverJobDiscovery normal arm64 Compiling RunLog.swift, ScanEngine.swift, SimulatorPruner.swift, SnapshotDeleter.swift, CleanupCommandRunner.swift, ProcessIdentity.swift, ProcessJobGate.swift, ProcessRunner.swift, ProcessSession.swift, ToolLocator.swift (in target 'TidyCore' from project 'TidyCore')
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/unthinned (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/unthinned
+
+MkDir /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/thinned (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /bin/mkdir -p /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/thinned
+
+GenerateAssetSymbols /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Assets.xcassets (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/usr/bin/actool /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Assets.xcassets --compile /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources --output-format human-readable-text --notices --warnings --export-dependency-info /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_dependencies --output-partial-info-plist /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist --app-icon AppIcon --accent-color AccentColor --enable-on-demand-resources NO --development-region en --target-device mac --minimum-deployment-target 14.0 --platform macosx --bundle-identifier io.github.ajraba04.Tidy.AuditFixture --generate-swift-asset-symbol-extensions NO --generate-swift-asset-symbols /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.swift --generate-objc-asset-symbols /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/* com.apple.actool.compilation-results */
+/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.h
+/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.swift
+
+
+CompileAssetCatalogVariant thinned /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Assets.xcassets (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/usr/bin/actool /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Assets.xcassets --compile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_dependencies_thinned --output-partial-info-plist /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist_thinned --app-icon AppIcon --accent-color AccentColor --enable-on-demand-resources NO --development-region en --target-device mac --minimum-deployment-target 14.0 --platform macosx
+/* com.apple.actool.compilation-results */
+/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist_thinned
+
+
+LinkAssetCatalog /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Assets.xcassets (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-linkAssetCatalog --thinned /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/thinned --thinned-dependencies /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_dependencies_thinned --thinned-info-plist-content /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist_thinned --unthinned /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_output/unthinned --unthinned-dependencies /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_dependencies_unthinned --unthinned-info-plist-content /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist_unthinned --output /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources --plist-output /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist
+
+SwiftDriver Tidy normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Tidy -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-generated-files.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-own-target-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy-225c4760e9d8c809b578f3917460ff6d-VFS/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-project-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SwiftShims-E5ETFEM0OW2YMZWYFUP51FW0U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_AvailabilityInternal-DSQ659GAHBQEK9C7DYOHAS3CY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_float-EGHNRL0HXYIMISOLGG3BMFD7W.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-1C94KML9GPPLDH48SZAXO9VKZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DeveloperToolsSupport-A5TAI93475PYDCL9T3DTKZ08L.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdbool-3IG3JWBY1ERAMUUDCGWGMB70F.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stddef-69E1THX12TOC3LN53LWOMTDHY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdarg-5MMDBGHAH9YG9JMNRJKFJE1E8.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ptrcheck-68IMNPYDY9A260GW5SWXL28UV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ptrauth-8HJJDZIBWOH9EWT0TO3F9O5L5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation1-4C555P1BQOU2TYYARFEXM8SBV.pcm
+
+SwiftDriverJobDiscovery normal arm64 Compiling CapabilityRegistry.swift, ConfirmedPlan.swift, DerivedDataEffectAdapter.swift, ExecutionCoordinator.swift, ExecutionPolicyBridge.swift, GuardedFileDeleter.swift, JournalPOSIXIO.swift, JournalStorage.swift, MutationAdmissionStore.swift, PolicyInvalidationBarrier.swift (in target 'TidyCore' from project 'TidyCore')
+
+SwiftDriver\ Compilation TidyCore normal arm64 com.apple.xcode.tools.swift.compiler (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name TidyCore -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name tidycore -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_const_extract_protocols.json -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.o normal (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -r -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -F/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -filelist /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.LinkFileList -nostdlib -Xlinker -object_path_lto -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_lto.o -Xlinker -no_deduplicate -Xlinker -dependency_info -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.swiftmodule -o /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.o
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SQLite3-3JBW3QR74OK45DA4UP0ROP6N3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation2-2PPJHURZXHCOQRK0ABBWSKK3I.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_limits-ATEERZ5W0CYQ93M8DP1ZN7QSF.pcm
+
+ExtractAppIntentsMetadata (in target 'TidyCore' from project 'TidyCore')
+    cd /tmp/tidy-audit-9e1a500-fixtures/TidyCore
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name TidyCore --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --xcode-version 27A266a --platform-family macOS --deployment-target 14.0 --bundle-identifier io.github.ajraba04.Tidy.AuditFixture --output /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.appintents --target-triple arm64-apple-macos14.0 --binary-file /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/TidyCore.o --dependency-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore_dependency_info.dat --stringsdata-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftFileList --metadata-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyMetadataFileList --static-metadata-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/TidyCore.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/TidyCore.build/Debug/TidyCore-t.build/Objects-normal/arm64/TidyCore.SwiftConstValuesFileList --force --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-09-17 19:38:02.727 appintentsmetadataprocessor[20329:2018736] Starting appintentsmetadataprocessor export
+2026-09-17 19:38:02.852 appintentsmetadataprocessor[20329:2018736] Extracted no relevant App Intents symbols, skipping writing output
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_tgmath-8A7GO1NIAYUDCP4ZYO9KBCGJ2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdint-4PUSJ2Z1BYMF699EV7OPH8D9O.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/sys_types-35WJMS8QIMR5FMP4WJNDMB0RJ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/string_h-3OS459U0MI62D66HQMNESLC78.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_intrinsics-CLRINBWSXZYIUQZC0VTZOKWVX.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_DarwinFoundation3-1WIPUP2UKCZK70C2GNKC8L2L0.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/libDER-1MJT2PU36QBY1SVZZU9KE6L8L.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_inttypes-6KUI5JEE9JW1TZUCYKL8V61CM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/_Builtin_stdatomic-9M6GS73758ZFELP3NT8F0MHWQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Darwin-4Y8U91LTXJGX69Y36K7L5C9Q5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/simd-7SPG9X8BVXDF6Y7F4LIUJKQFK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Spatial-90LWJJJBYJUCDWAE4WD5Q863G.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/MachO-1UXH16RG02G3HXPPGIOQGLEAL.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/libkern-2876L5MC1TQ66AAQII1MFLNJC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CUPS-6U3734YHFFTA7FRWHOYES9NA0.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ObjectiveC-D7PNZXNM1X7BPBUQM8YKQMX5J.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/launch-8QL25Y97R7ZEJ7QWTGJ1CH93Y.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os_object-8B1EPQPMB0M6F6Q50T5ICUTW0.pcm
+
+ProcessInfoPlistFile /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Info.plist /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/empty-Tidy.plist (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-infoPlistUtility /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/empty-Tidy.plist -producttype com.apple.product-type.application -genpkginfo /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/PkgInfo -expandbuildsettings -platform macosx -additionalcontentfile /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/assetcatalog_generated_info.plist -o /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Info.plist
+
+Ld /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/__preview.dylib normal (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -install_name @rpath/Tidy.debug.dylib -rdynamic -Xlinker -no_deduplicate -Xlinker -dependency_info -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_dependency_info.dat -o /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/__preview.dylib
+
+CopyPlistFile /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources/PrivacyInfo.xcprivacy /tmp/tidy-audit-9e1a500-fixtures/Tidy/PrivacyInfo.xcprivacy (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copyPlist --outdir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources -- /tmp/tidy-audit-9e1a500-fixtures/Tidy/PrivacyInfo.xcprivacy
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os_workgroup-5MXJ09R2X6QWBMMKJG2FO2RLJ.pcm
+
+CompileXCStrings /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/ /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Localizable.xcstrings (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcstringstool compile --output-directory /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build /tmp/tidy-audit-9e1a500-fixtures/Tidy/Resources/Localizable.xcstrings
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Dispatch-5CBJTRIQU9FP0M9R60FCG2M2V.pcm
+
+CopyStringsFile /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources/en.lproj/Localizable.strings /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/en.lproj/Localizable.strings (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copyStrings --validate --outputencoding UTF-16 --outfilename Localizable.strings --outdir /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources/en.lproj -- /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/en.lproj/Localizable.strings
+/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/en.lproj/Localizable.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'Tidy' from project 'Tidy')
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/XPC-7LF3PDNYX3P244VIP9BHDRM4I.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreFoundation-75PVQFYESN4JNPJPKBTVZGFDY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/os-5ECEJZKLBV5RBQRV2WJXJWPGI.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Security-4Q181VGXYSRSXAYJR2W3MW0PK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreAudioTypes-BFV2RRMNXIH4I18A4PM1S5R0J.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/IOKit-1SQ18OCZGW21B8M2WA3NH5GGB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CFNetwork-6K1RCVS6M4FGG2CBB91GYBIZ2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ColorSync-5YLKZ4G9OTQ5TK42MLI0PGBWS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreGraphics-F1FOE4X7QKO66XVTMRDYSQZKT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DiskArbitration-BLSDEJCDEM6NVA9HDC5OU0UN7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreServices-DHZZQH0ULP400964WZ986LNEP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreText-709GCDY3U9M3LI5ZCW0GZVD0M.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ImageIO-ARA1XBMD3CHEFAPONE7SR2WZ8.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Foundation-8Y2UD33U3S1CJARLTNI763UX4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/LocalAuthentication-7UX8VEDS9BERVYQTEMQQ7I4P4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/ApplicationServices-JMXL88OFESG305QLUAJ0BHGY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-2HR5ZLA3ML5R56EWV7WDRXOI2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Accessibility-DWN4Q3083LG6JI6D8F25XVYUU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Symbols-1QXTBSW0UQFL7KJYM4503770X.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreTransferable-3JR17YB708394R5JHSEGFVU3S.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreAudio-4F2QIG78RA0ANFK04BGOR1TG6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreData-6113ULG6DRMR5LX3K7KASJ32A.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/OSLog-FPNDS4WPVNEKEE338UMJ3ER5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/IOSurface-55GKG3FOMHX4Q8LA3VXRXSF2M.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/DataDetection-9L5UJZ4U94UU3YP1KMD4B8JGV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/Metal-Z6LDC5YVQFI3G5QUAUUN40QD.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/OpenGL-6B4FI7Z7CAL6BPSGI5DCOCPO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreVideo-BK3NU885IX44YOWSV240MGSXE.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreMedia-4PNJN43Q0CNHNAM4K6V5ZTD7Z.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/CoreImage-F3OAQIG33D0IQ94XFYHHN8218.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/QuartzCore-6MDDF8JHOAPUNT4PHUAPOCF55.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SwiftUICore-7U5TWR8KURVNQRW7AX2RQIO33.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/AppKit-6NX82B2GG0YQB1OI5D3UE2FUT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules/SwiftUI-AX64NTQ6RC2S6B8MUTZ3I5NAG.pcm
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Tidy (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    
+
+/tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsRefresher.swift:24:5: warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+22 |     // main-actor property cannot be referenced; Task handles are Sendable and
+23 |     // cancel() is thread-safe, so the unsafe opt-out is sound here.
+24 |     nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+   |     `- warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+25 | 
+26 |     init(monitor: SystemMonitor) {
+
+/tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomViewModel.swift:24:5: warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+ 22 |     // main-actor property cannot be referenced; Task handles are Sendable and
+ 23 |     // cancel() is thread-safe, so the unsafe opt-out is sound here.
+ 24 |     nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    |     `- warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+ 25 | 
+ 26 |     init(monitor: SystemMonitor, cardOrder: [String]) {
+SwiftCompile normal arm64 Compiling\ CleanResultsView.swift,\ CleanView.swift,\ CleanViewModel.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanResultsView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanViewModel.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanResultsView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CleanResultsView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CleanView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanViewModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CleanViewModel.swift
+
+SwiftCompile normal arm64 Compiling\ CustomPlanView.swift,\ CustomView.swift,\ CustomViewModel.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomPlanView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomViewModel.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomPlanView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CustomPlanView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CustomView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Custom/CustomViewModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CustomViewModel.swift
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for Tidy (in target 'Tidy' from project 'Tidy')
+
+SwiftDriver\ Compilation\ Requirements Tidy normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Tidy -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-generated-files.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-own-target-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy-225c4760e9d8c809b578f3917460ff6d-VFS/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-project-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Compiling CleanResultsView.swift, CleanView.swift, CleanViewModel.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ OnboardingViewModel.swift,\ PlanReviewRow.swift,\ PlanSelectionModel.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Onboarding/OnboardingViewModel.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/PlanReviewRow.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/PlanSelectionModel.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Onboarding/OnboardingViewModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile OnboardingViewModel.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/PlanReviewRow.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile PlanReviewRow.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/PlanSelectionModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile PlanSelectionModel.swift
+
+SwiftMergeGeneratedHeaders /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/Tidy-Swift.h /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-Swift.h (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-swiftHeaderTool -arch arm64 /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-Swift.h -o /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/Tidy-Swift.h
+
+SwiftDriverJobDiscovery normal arm64 Compiling CustomPlanView.swift, CustomView.swift, CustomViewModel.swift (in target 'Tidy' from project 'Tidy')
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.swiftmodule /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.swiftmodule
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.swiftdoc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftdoc (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftdoc /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.swiftdoc
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.abi.json /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.abi.json (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.abi.json /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/arm64-apple-macos.abi.json
+
+Copy /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftsourceinfo (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftsourceinfo /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo
+
+SwiftCompile normal arm64 Compiling\ HeadroomViewModel.swift,\ GeneratedAssetSymbols.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomViewModel.swift /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Tidy' from project 'Tidy')
+/tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomViewModel.swift:24:5: warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+ 22 |     // main-actor property cannot be referenced; Task handles are Sendable and
+ 23 |     // cancel() is thread-safe, so the unsafe opt-out is sound here.
+ 24 |     nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    |     `- warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+ 25 | 
+ 26 |     init(monitor: SystemMonitor, cardOrder: [String]) {
+
+/tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomViewModel.swift:103:95: warning: main actor-isolated static property 'defaultCardOrder' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+ 49 |     }
+ 50 | 
+ 51 |     static let defaultCardOrder = ["disk", "memoryPressure", "swap", "thermal", "power"]
+    |                `- note: static property declared here
+ 52 | 
+ 53 |     func onAppear(policy: EffectivePolicy?) {
+    :
+ 99 | }
+100 | 
+101 | func resolvedUICardOrder(_ policy: EffectivePolicy?) -> [String] {
+    |      `- note: add '@MainActor' to make global function 'resolvedUICardOrder' part of global actor 'MainActor'
+102 |     guard let policy, case .stored(.strings(let values))? =
+103 |         policy.fields[SettingID(rawValue: "ui.cards")]?.value else { return HeadroomViewModel.defaultCardOrder }
+    |                                                                                               `- warning: main actor-isolated static property 'defaultCardOrder' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+104 |     return values
+105 | }
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomViewModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile HeadroomViewModel.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile GeneratedAssetSymbols.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling HeadroomViewModel.swift, GeneratedAssetSymbols.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ RunReportPresentation.swift,\ ScanReportView.swift,\ ScanSectionViews.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/RunReportPresentation.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanReportView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanSectionViews.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/RunReportPresentation.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile RunReportPresentation.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanReportView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile ScanReportView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanSectionViews.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile ScanSectionViews.swift
+
+SwiftCompile normal arm64 Compiling\ AppConfigStore.swift,\ AppExecutionServices.swift,\ CleanPlanView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Settings/AppConfigStore.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Execution/AppExecutionServices.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanPlanView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Settings/AppConfigStore.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile AppConfigStore.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Execution/AppExecutionServices.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile AppExecutionServices.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Clean/CleanPlanView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile CleanPlanView.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling OnboardingViewModel.swift, PlanReviewRow.swift, PlanSelectionModel.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ TidyApp.swift,\ HeadroomView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/TidyApp.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/TidyApp.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile TidyApp.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Headroom/HeadroomView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile HeadroomView.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling RunReportPresentation.swift, ScanReportView.swift, ScanSectionViews.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ ScanView.swift,\ ScanViewModel.swift,\ SettingsView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanViewModel.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Settings/SettingsView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile ScanView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Scan/ScanViewModel.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile ScanViewModel.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Settings/SettingsView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile SettingsView.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling AppConfigStore.swift, AppExecutionServices.swift, CleanPlanView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ StatsGaugeRow.swift,\ StatsRefresher.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsGaugeRow.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsRefresher.swift (in target 'Tidy' from project 'Tidy')
+/tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsRefresher.swift:24:5: warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+22 |     // main-actor property cannot be referenced; Task handles are Sendable and
+23 |     // cancel() is thread-safe, so the unsafe opt-out is sound here.
+24 |     nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+   |     `- warning: 'nonisolated(unsafe)' has no effect on property 'observationTask', consider using 'nonisolated'
+25 | 
+26 |     init(monitor: SystemMonitor) {
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsGaugeRow.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile StatsGaugeRow.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/StatsRefresher.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile StatsRefresher.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling TidyApp.swift, HeadroomView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 Compiling\ MenuBarContentView.swift,\ ModeButton.swift,\ OnboardingView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/MenuBarContentView.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/ModeButton.swift /tmp/tidy-audit-9e1a500-fixtures/Tidy/Onboarding/OnboardingView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/MenuBarContentView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile MenuBarContentView.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/MenuBar/ModeButton.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile ModeButton.swift
+
+SwiftCompile normal arm64 /tmp/tidy-audit-9e1a500-fixtures/Tidy/Onboarding/OnboardingView.swift (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-SwiftPerFileCompile OnboardingView.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling StatsGaugeRow.swift, StatsRefresher.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftDriverJobDiscovery normal arm64 Compiling MenuBarContentView.swift, ModeButton.swift, OnboardingView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftDriverJobDiscovery normal arm64 Compiling ScanView.swift, ScanViewModel.swift, SettingsView.swift (in target 'Tidy' from project 'Tidy')
+
+SwiftDriver\ Compilation Tidy normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Tidy -Onone @/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/tidy-audit-9e1a500-production-ui/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/tidy-audit-9e1a500-production-ui/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex -sdk-module-cache-path /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/tidy-audit-9e1a500-production-ui/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-generated-files.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-own-target-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy-225c4760e9d8c809b578f3917460ff6d-VFS/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-project-headers.hmap -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/include -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources-normal/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources/arm64 -Xcc -I/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy-Swift.h -working-directory /tmp/tidy-audit-9e1a500-fixtures -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy.debug.dylib normal (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -L/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F/tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -filelist /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.LinkFileList -install_name @rpath/Tidy.debug.dylib -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -Xlinker -rpath -Xlinker @executable_path/../Frameworks -Xlinker -object_path_lto -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -dependency_info -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.swiftmodule -lsqlite3 -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -o /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy.debug.dylib
+
+ConstructStubExecutorLinkFileList /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-ExecutorLinkFileList-normal-arm64.txt (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    construct-stub-executor-link-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'Tidy' from project 'Tidy')
+
+Ld /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy normal (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -F/tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/PackageFrameworks -Xlinker -rpath -Xlinker @executable_path/../Frameworks -rdynamic -Xlinker -no_deduplicate -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy-ExecutorLinkFileList-normal-arm64.txt /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy.debug.dylib -o /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy
+
+ExtractAppIntentsMetadata (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Tidy --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --xcode-version 27A266a --platform-family macOS --deployment-target 14.0 --bundle-identifier io.github.ajraba04.Tidy.AuditFixture --output /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Resources --target-triple arm64-apple-macos14.0 --binary-file /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy --dependency-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy_dependency_info.dat --stringsdata-file /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftFileList --metadata-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyMetadataFileList --static-metadata-file-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Tidy.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/Objects-normal/arm64/Tidy.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-09-17 19:38:22.926 appintentsmetadataprocessor[20655:2019846] Starting appintentsmetadataprocessor export
+2026-09-17 19:38:22.933 appintentsmetadataprocessor[20655:2019846] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+CopySwiftLibs /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy.debug.dylib --scan-folder /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Frameworks --scan-folder /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/PlugIns --scan-folder /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Library/SystemExtensions --scan-folder /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Extensions --platform macosx --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app/Contents/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/Tidy.build/Debug/Tidy.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+Ignoring --strip-bitcode because --sign was not passed
+
+RegisterExecutionPolicyException /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-RegisterExecutionPolicyException /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app
+
+Validate /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-validationUtility /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app -no-validate-extension -infoplist-subpath Contents/Info.plist
+
+Touch /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    /usr/bin/touch -c /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app
+
+RegisterWithLaunchServices /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app (in target 'Tidy' from project 'Tidy')
+    cd /tmp/tidy-audit-9e1a500-fixtures
+    builtin-lsregisterurl --record-path /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/XCBuildData/registered-launchservices.txt -- /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f -R -trusted /tmp/tidy-audit-9e1a500-production-ui/Build/Products/Debug/Tidy.app
+
+PruneExplicitPrecompiledModules /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/tidy-audit-9e1a500-production-ui/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/tidy-audit-9e1a500-production-ui/SDKExplicitPrecompiledModules
+
+note: Disabling hardened runtime with ad-hoc codesigning. (in target 'Tidy' from project 'Tidy')
+** BUILD SUCCEEDED **
+

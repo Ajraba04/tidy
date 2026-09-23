@@ -1,0 +1,31 @@
+arm64-debug
+arm64
+Executable=/private/tmp/tidy-audit-9e1a500-app/Build/Products/Debug/Tidy.app/Contents/MacOS/Tidy
+Identifier=Tidy
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=413 flags=0x20002(adhoc,linker-signed) hashes=10+0 location=embedded
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements=none
+{"BuildMachineOSBuild": "26A428", "CFBundleDevelopmentRegion": "en", "CFBundleExecutable": "Tidy", "CFBundleIdentifier": "io.github.ajraba04.Tidy", "CFBundleInfoDictionaryVersion": "6.0", "CFBundleName": "Tidy", "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.5.0", "CFBundleSupportedPlatforms": ["MacOSX"], "CFBundleVersion": "1", "DTCompiler": "com.apple.compilers.llvm.clang.1_0", "DTPlatformBuild": "26A425", "DTPlatformName": "macosx", "DTPlatformVersion": "27.0", "DTSDKBuild": "26A425", "DTSDKName": "macosx27.0", "DTXcode": "2700", "DTXcodeBuild": "27A266a", "LSMinimumSystemVersion": "14.0", "LSUIElement": true}
+Privacy: True
+arm64-release
+arm64
+Executable=/private/tmp/tidy-audit-9e1a500-app/Build/Products/Release/Tidy.app/Contents/MacOS/Tidy
+Identifier=Tidy
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=58877 flags=0x20002(adhoc,linker-signed) hashes=1837+0 location=embedded
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements=none
+{"BuildMachineOSBuild": "26A428", "CFBundleDevelopmentRegion": "en", "CFBundleExecutable": "Tidy", "CFBundleIdentifier": "io.github.ajraba04.Tidy", "CFBundleInfoDictionaryVersion": "6.0", "CFBundleName": "Tidy", "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.5.0", "CFBundleSupportedPlatforms": ["MacOSX"], "CFBundleVersion": "1", "DTCompiler": "com.apple.compilers.llvm.clang.1_0", "DTPlatformBuild": "26A425", "DTPlatformName": "macosx", "DTPlatformVersion": "27.0", "DTSDKBuild": "26A425", "DTSDKName": "macosx27.0", "DTXcode": "2700", "DTXcodeBuild": "27A266a", "LSMinimumSystemVersion": "14.0", "LSUIElement": true}
+Privacy: True
+x86_64-release
+x86_64
+/private/tmp/tidy-audit-9e1a500-intel/Build/Products/Release/Tidy.app: code object is not signed at all
+{"BuildMachineOSBuild": "26A428", "CFBundleDevelopmentRegion": "en", "CFBundleExecutable": "Tidy", "CFBundleIdentifier": "io.github.ajraba04.Tidy", "CFBundleInfoDictionaryVersion": "6.0", "CFBundleName": "Tidy", "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.5.0", "CFBundleSupportedPlatforms": ["MacOSX"], "CFBundleVersion": "1", "DTCompiler": "com.apple.compilers.llvm.clang.1_0", "DTPlatformBuild": "26A425", "DTPlatformName": "macosx", "DTPlatformVersion": "27.0", "DTSDKBuild": "26A425", "DTSDKName": "macosx27.0", "DTXcode": "2700", "DTXcodeBuild": "27A266a", "LSMinimumSystemVersion": "14.0", "LSUIElement": true}
+Privacy: True

@@ -1,0 +1,26 @@
+{
+  "command": [
+    "xcodebuild",
+    "-project",
+    "Tidy.xcodeproj",
+    "-scheme",
+    "TidyAppModelTests",
+    "-configuration",
+    "Debug",
+    "-derivedDataPath",
+    "/private/tmp/tidy-audit-9e1a500-app",
+    "-resultBundlePath",
+    "/private/tmp/tidy-audit-9e1a500-app-model.xcresult",
+    "-jobs",
+    "2",
+    "-parallel-testing-enabled",
+    "NO",
+    "test",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:26:30.657796+00:00",
+  "ended_utc": "2026-09-17T15:27:46.022745+00:00",
+  "seconds": 75.365,
+  "exit_code": 0
+}

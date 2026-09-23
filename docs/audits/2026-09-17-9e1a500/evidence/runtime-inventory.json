@@ -1,0 +1,10 @@
+{
+  "command": [
+    "/private/tmp/tidy-audit-9e1a500-inventory"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:49:21.823901+00:00",
+  "ended_utc": "2026-09-17T15:49:22.399659+00:00",
+  "seconds": 0.576,
+  "exit_code": 0
+}

@@ -1,0 +1,23 @@
+{
+  "command": [
+    "xcodebuild",
+    "-project",
+    "/private/tmp/tidy-audit-9e1a500-fixtures/Tidy.xcodeproj",
+    "-scheme",
+    "Tidy",
+    "-configuration",
+    "Debug",
+    "-derivedDataPath",
+    "/private/tmp/tidy-audit-9e1a500-production-ui",
+    "-jobs",
+    "2",
+    "build",
+    "CODE_SIGNING_ALLOWED=NO",
+    "PRODUCT_BUNDLE_IDENTIFIER=io.github.ajraba04.Tidy.AuditFixture"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:37:20.601491+00:00",
+  "ended_utc": "2026-09-17T15:38:23.125326+00:00",
+  "seconds": 62.524,
+  "exit_code": 0
+}

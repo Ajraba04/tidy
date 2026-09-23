@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import pathlib,re; old=pathlib.Path("Tidy.xcodeproj/project.pbxproj").read_text(); new=pathlib.Path("/private/tmp/tidy-audit-9e1a500-generated/Tidy.xcodeproj/project.pbxproj").read_text(); print("Missing source/resource build memberships:"); a=set(re.findall(r"/\* ([^*]+ in (?:Sources|Resources)) \*/ = ",old));b=set(re.findall(r"/\* ([^*]+ in (?:Sources|Resources)) \*/ = ",new)); print("\\n".join(sorted(a-b))); print("Added:",sorted(b-a));print("old_headroom_tests",old.count("HeadroomViewModelTests.swift in Sources"),"new",new.count("HeadroomViewModelTests.swift in Sources"));print("old_scan_wiring_tests",old.count("ScanOrchestrationWiringTests.swift in Sources"),"new",new.count("ScanOrchestrationWiringTests.swift in Sources"))
+                                                                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/tidy-audit-9e1a500-generated/Tidy.xcodeproj/project.pbxproj'

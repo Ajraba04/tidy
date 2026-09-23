@@ -1,0 +1,15 @@
+{
+  "command": [
+    "xcodegen",
+    "generate",
+    "--spec",
+    "project.yml",
+    "--project",
+    "/private/tmp/tidy-audit-9e1a500-generated"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:45:05.541499+00:00",
+  "ended_utc": "2026-09-17T15:45:05.599500+00:00",
+  "seconds": 0.058,
+  "exit_code": 0
+}

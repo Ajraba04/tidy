@@ -1,0 +1,44 @@
+Building for debugging...
+[Provisioning 5 / 5]
+[Planning 113 / 125]
+[Planning deferred tasks]
+[4 / 23] TidyCore_TidyCoreTests
+[5 / 23]
+[7 / 17] TidyCoreTests-product
+[8 / 17] TidyCoreTests-product
+[10 / 19] TidyCoreTests-product
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:233:45: warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+231 |             .init(scope: .global, profileID: nil, id: "item.models.erase-unknown.identities",
+232 |                   value: nil, valueKind: .strings,
+233 |                   valueDigest: try #require(gr.valueDigest), redacted: true),
+    |                                             `- warning: '#require(_:_:)' is redundant because 'gr.valueDigest' never equals 'nil' (from macro 'require')
+234 |             .init(scope: .profile, profileID: importedID,
+235 |                   id: "item.models.erase-profile.enabled", value: .bool(true),
+
+/private/tmp/tidy-audit-9e1a500-fixtures/TidyCore/Tests/TidyCoreTests/HostileProductionRegressionTests.swift:239:66: warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+237 |             .init(scope: .profile, profileID: importedID,
+238 |                   id: "item.models.erase-profile.identities", value: nil,
+239 |                   valueKind: .strings, valueDigest: try #require(pr.valueDigest), redacted: true)
+    |                                                                  `- warning: '#require(_:_:)' is redundant because 'pr.valueDigest' never equals 'nil' (from macro 'require')
+240 |         ]
+241 |         #expect(analysis.importedInert == inert)
+[16 / 18] TidyCoreTests-product
+[18 / 18] TidyCoreTests-product
+Build complete! (8.04 sec)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Audit policy regressions" started.
+◇ Test "fresh durable-store defaults permit an explicit scan session" started.
+✘ Test "fresh durable-store defaults permit an explicit scan session" recorded an issue at PolicyAuditRegressionTests.swift:29:9: Expectation failed: await bridge.explicitSessions.snapshot().availability == .available
+↳ await bridge.explicitSessions.snapshot().availability == .available → <not evaluated>
+✘ Test "fresh durable-store defaults permit an explicit scan session" failed after 0.020 seconds with 1 issue.
+◇ Test "selectedProjects with no selected roots does not traverse unrelated Documents" started.
+✘ Test "selectedProjects with no selected roots does not traverse unrelated Documents" recorded an issue at PolicyAuditRegressionTests.swift:67:9: Expectation failed: !result.report.topLevelHomeRanking.contains { $0.path == docs.path }
+↳ !result.report.topLevelHomeRanking.contains { $0.path == docs.path } → <not evaluated>
+↳   result.report.topLevelHomeRanking.contains { $0.path == docs.path } → <not evaluated>
+✘ Test "selectedProjects with no selected roots does not traverse unrelated Documents" failed after 0.172 seconds with 1 issue.
+✘ Suite "Audit policy regressions" failed after 0.193 seconds with 2 issues.
+✘ Test run with 2 tests in 1 suite failed after 0.193 seconds with 2 issues.
+Note: Some test targets reported failures:
+  - TidyCoreTests (Swift Testing)

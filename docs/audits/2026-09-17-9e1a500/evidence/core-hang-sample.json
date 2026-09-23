@@ -1,0 +1,15 @@
+{
+  "command": [
+    "sample",
+    "88068",
+    "2",
+    "10",
+    "-file",
+    "/private/tmp/tidy-audit-9e1a500-core-sample.txt"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:25:55.972280+00:00",
+  "ended_utc": "2026-09-17T15:25:56.014020+00:00",
+  "seconds": 0.042,
+  "exit_code": 255
+}

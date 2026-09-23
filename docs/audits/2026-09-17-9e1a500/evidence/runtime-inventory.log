@@ -1,0 +1,628 @@
+{
+  "catalog" : [
+    {
+      "id" : "safe.cache.puccinialin",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/puccinialin"
+    },
+    {
+      "id" : "safe.cache.swiftpm-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/org.swift.swiftpm"
+    },
+    {
+      "id" : "safe.cache.pip-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/pip"
+    },
+    {
+      "id" : "safe.cache.node-gyp",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/node-gyp"
+    },
+    {
+      "id" : "safe.cache.deno-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/deno"
+    },
+    {
+      "id" : "safe.cache.playwright-mcp-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/ms-playwright-mcp"
+    },
+    {
+      "id" : "safe.cache.homebrew-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/Homebrew"
+    },
+    {
+      "id" : "safe.cache.xcode-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/com.apple.dt.Xcode"
+    },
+    {
+      "id" : "safe.cache.itmstransporter-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/com.apple.amp.itmstransporter"
+    },
+    {
+      "id" : "safe.cache.typescript-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/typescript"
+    },
+    {
+      "id" : "safe.cache.electron-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/electron"
+    },
+    {
+      "id" : "safe.cache.electron-builder-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/electron-builder"
+    },
+    {
+      "id" : "safe.cache.yarn-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/Yarn"
+    },
+    {
+      "id" : "safe.cache.go-build-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/go-build"
+    },
+    {
+      "id" : "safe.cache.jetbrains-cache",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/JetBrains"
+    },
+    {
+      "id" : "safe.cache.swiftpm-clones",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/org.swift.swiftpm (SwiftPM clones)"
+    },
+    {
+      "id" : "safe.cache.helpd",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Caches\/com.apple.helpd"
+    },
+    {
+      "id" : "safe.cache.perplexity",
+      "mutationDenied" : true,
+      "title" : "Perplexity cache"
+    },
+    {
+      "id" : "safe.cache.claude-desktop-cache",
+      "mutationDenied" : true,
+      "title" : "Claude Desktop\/Cache"
+    },
+    {
+      "id" : "safe.cache.claude-desktop-code-cache",
+      "mutationDenied" : true,
+      "title" : "Claude Desktop\/Code Cache"
+    },
+    {
+      "id" : "safe.cache.claude-desktop-gpu-cache",
+      "mutationDenied" : true,
+      "title" : "Claude Desktop\/GPUCache"
+    },
+    {
+      "id" : "safe.cache.npm-cacache",
+      "mutationDenied" : true,
+      "title" : "~\/.npm\/_cacache"
+    },
+    {
+      "id" : "safe.cache.uv-dir",
+      "mutationDenied" : true,
+      "title" : "~\/.cache\/uv"
+    },
+    {
+      "id" : "safe.cache.puppeteer",
+      "mutationDenied" : true,
+      "title" : "~\/.cache\/puppeteer"
+    },
+    {
+      "id" : "safe.cache.bun-install-cache",
+      "mutationDenied" : true,
+      "title" : "~\/.bun install cache"
+    },
+    {
+      "id" : "safe.cache.mcp-repos",
+      "mutationDenied" : true,
+      "title" : "~\/.claude\/mcp-repos (re-cloned on demand)"
+    },
+    {
+      "id" : "safe.logs.claude",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/Claude"
+    },
+    {
+      "id" : "safe.logs.core-simulator",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/CoreSimulator"
+    },
+    {
+      "id" : "safe.logs.google",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/Google"
+    },
+    {
+      "id" : "safe.logs.diagnostic-reports",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/DiagnosticReports"
+    },
+    {
+      "id" : "safe.logs.creative-cloud",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/CreativeCloud"
+    },
+    {
+      "id" : "safe.logs.ngl",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/NGL"
+    },
+    {
+      "id" : "safe.logs.content-delivery",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/Logs\/ContentDelivery"
+    },
+    {
+      "id" : "safe.tool.npm-cache-clean",
+      "mutationDenied" : true,
+      "title" : "npm cache clean --force"
+    },
+    {
+      "id" : "safe.tool.brew-cleanup",
+      "mutationDenied" : true,
+      "title" : "brew cleanup --prune=all"
+    },
+    {
+      "id" : "safe.tool.brew-autoremove",
+      "mutationDenied" : true,
+      "title" : "brew autoremove"
+    },
+    {
+      "id" : "safe.tool.pod-cache-clean",
+      "mutationDenied" : true,
+      "title" : "pod cache clean --all"
+    },
+    {
+      "id" : "safe.tool.uv-cache-prune",
+      "mutationDenied" : true,
+      "title" : "uv cache prune"
+    },
+    {
+      "id" : "safe.tool.pnpm-store-prune",
+      "mutationDenied" : true,
+      "title" : "pnpm store prune"
+    },
+    {
+      "id" : "safe.tool.deno-clean",
+      "mutationDenied" : true,
+      "title" : "deno clean"
+    },
+    {
+      "id" : "safe.tool.pip3-cache-purge",
+      "mutationDenied" : true,
+      "title" : "pip3 cache purge"
+    },
+    {
+      "id" : "safe.gradle.build-cache",
+      "mutationDenied" : true,
+      "title" : "~\/.gradle\/caches (build-cache, transforms, jars, journal)"
+    },
+    {
+      "id" : "safe.gradle.daemon-logs",
+      "mutationDenied" : true,
+      "title" : "~\/.gradle\/daemon (logs)"
+    },
+    {
+      "id" : "safe.system.quicklook-thumbnails",
+      "mutationDenied" : true,
+      "title" : "QuickLook thumbnail cache"
+    },
+    {
+      "id" : "safe.system.cloudkit-cache",
+      "mutationDenied" : true,
+      "title" : "CloudKit cache"
+    },
+    {
+      "id" : "safe.system.qlmanage-reset",
+      "mutationDenied" : true,
+      "title" : "Reset QuickLook cache (qlmanage -r cache)"
+    },
+    {
+      "id" : "normal.chrome.http-cache",
+      "mutationDenied" : true,
+      "title" : "Chrome HTTP cache"
+    },
+    {
+      "id" : "normal.chrome.profile-caches",
+      "mutationDenied" : true,
+      "title" : "Chrome per-profile caches"
+    },
+    {
+      "id" : "normal.chrome.cookies",
+      "mutationDenied" : true,
+      "title" : "Chrome cookies (keeps your configured domains)"
+    },
+    {
+      "id" : "normal.safari.cache",
+      "mutationDenied" : true,
+      "title" : "Safari cache"
+    },
+    {
+      "id" : "normal.safari.webkit-cache",
+      "mutationDenied" : true,
+      "title" : "Safari WebKit cache"
+    },
+    {
+      "id" : "normal.safari.legacy-cache",
+      "mutationDenied" : true,
+      "title" : "Safari cache (legacy path)"
+    },
+    {
+      "id" : "normal.safari.webkit-global",
+      "mutationDenied" : true,
+      "title" : "~\/Library\/WebKit"
+    },
+    {
+      "id" : "normal.safari.favicon-cache",
+      "mutationDenied" : true,
+      "title" : "Safari favicon cache"
+    },
+    {
+      "id" : "normal.safari.touch-icons",
+      "mutationDenied" : true,
+      "title" : "Safari touch-icon cache"
+    },
+    {
+      "id" : "safe.xcode.derived-data",
+      "mutationDenied" : false,
+      "title" : "Xcode DerivedData"
+    },
+    {
+      "id" : "safe.xcode.documentation-cache",
+      "mutationDenied" : true,
+      "title" : "Xcode DocumentationCache"
+    },
+    {
+      "id" : "safe.xcode.ios-device-support",
+      "mutationDenied" : true,
+      "title" : "Xcode iOS DeviceSupport"
+    },
+    {
+      "id" : "safe.xcode.watchos-device-support",
+      "mutationDenied" : true,
+      "title" : "Xcode watchOS DeviceSupport"
+    },
+    {
+      "id" : "safe.xcode.products",
+      "mutationDenied" : true,
+      "title" : "Xcode Products"
+    },
+    {
+      "id" : "safe.xcode.coding-assistant",
+      "mutationDenied" : true,
+      "title" : "Xcode CodingAssistant index"
+    },
+    {
+      "id" : "safe.simulator.core-simulator-caches",
+      "mutationDenied" : true,
+      "title" : "CoreSimulator\/Caches"
+    },
+    {
+      "id" : "safe.simulator.core-simulator-temp",
+      "mutationDenied" : true,
+      "title" : "CoreSimulator\/Temp"
+    },
+    {
+      "id" : "safe.simulator.playground-devices",
+      "mutationDenied" : true,
+      "title" : "Playground devices (XCPGDevices)"
+    },
+    {
+      "id" : "safe.simulator.xctest-devices",
+      "mutationDenied" : true,
+      "title" : "XCTest devices"
+    },
+    {
+      "id" : "safe.simulator.delete-unavailable",
+      "mutationDenied" : true,
+      "title" : "Delete unavailable simulator devices"
+    },
+    {
+      "id" : "deep.xcode.archives",
+      "mutationDenied" : true,
+      "title" : "Xcode Archives"
+    },
+    {
+      "id" : "deep.simulator.erase-all",
+      "mutationDenied" : true,
+      "title" : "Erase all simulator app data and settings"
+    },
+    {
+      "id" : "deep.simulator.delete-approved",
+      "mutationDenied" : true,
+      "title" : "Delete simulator devices you've approved for removal"
+    },
+    {
+      "id" : "normal.git.housekeeping",
+      "mutationDenied" : true,
+      "title" : "Git housekeeping (gc, remote prune, conservative reflog expiry)"
+    },
+    {
+      "id" : "deep.git.reflog-expire-all",
+      "mutationDenied" : true,
+      "title" : "Expire ALL git reflogs now"
+    },
+    {
+      "id" : "normal.trash.empty",
+      "mutationDenied" : true,
+      "title" : "Empty Trash"
+    },
+    {
+      "id" : "normal.extras.build-outputs",
+      "mutationDenied" : true,
+      "title" : "Build output directories in your project roots"
+    },
+    {
+      "id" : "normal.extras.stale-node-modules",
+      "mutationDenied" : true,
+      "title" : "Stale node_modules (untouched 60+ days)"
+    },
+    {
+      "id" : "normal.extras.old-transcripts",
+      "mutationDenied" : true,
+      "title" : "Old Claude Code session transcripts (memory\/ is never touched)"
+    },
+    {
+      "id" : "deep.android.avds",
+      "mutationDenied" : true,
+      "title" : "Android AVDs"
+    },
+    {
+      "id" : "deep.android.cache",
+      "mutationDenied" : true,
+      "title" : "~\/.android\/cache"
+    },
+    {
+      "id" : "deep.android.system-images",
+      "mutationDenied" : true,
+      "title" : "Android SDK system-images"
+    },
+    {
+      "id" : "deep.android.ndk",
+      "mutationDenied" : true,
+      "title" : "Android NDK"
+    },
+    {
+      "id" : "deep.android.sdk-temp",
+      "mutationDenied" : true,
+      "title" : "Android SDK temp"
+    },
+    {
+      "id" : "deep.deps.gradle-caches-full",
+      "mutationDenied" : true,
+      "title" : "~\/.gradle\/caches (full)"
+    },
+    {
+      "id" : "deep.deps.gradle-wrapper",
+      "mutationDenied" : true,
+      "title" : "~\/.gradle\/wrapper (Gradle distributions)"
+    },
+    {
+      "id" : "deep.deps.npm-npx",
+      "mutationDenied" : true,
+      "title" : "~\/.npm\/_npx"
+    },
+    {
+      "id" : "deep.deps.maven-repository",
+      "mutationDenied" : true,
+      "title" : "~\/.m2\/repository (Maven)"
+    },
+    {
+      "id" : "deep.deps.pub-cache",
+      "mutationDenied" : true,
+      "title" : "~\/.pub-cache (Dart)"
+    },
+    {
+      "id" : "deep.deps.dart-server",
+      "mutationDenied" : true,
+      "title" : "~\/.dartServer"
+    },
+    {
+      "id" : "deep.deps.bubblewrap",
+      "mutationDenied" : true,
+      "title" : "~\/.bubblewrap"
+    },
+    {
+      "id" : "deep.deps.cocoapods-repos",
+      "mutationDenied" : true,
+      "title" : "~\/.cocoapods\/repos"
+    },
+    {
+      "id" : "deep.deps.go-clean-modcache",
+      "mutationDenied" : true,
+      "title" : "go clean -modcache"
+    },
+    {
+      "id" : "safe.flutter.tool-state",
+      "mutationDenied" : true,
+      "title" : "~\/.flutter_tool_state"
+    },
+    {
+      "id" : "deep.flutter.sdk-cache",
+      "mutationDenied" : true,
+      "title" : "Flutter SDK bin\/cache (engine artifacts)"
+    },
+    {
+      "id" : "deep.system.apfs-snapshots",
+      "mutationDenied" : true,
+      "title" : "Delete APFS local snapshots"
+    },
+    {
+      "id" : "deep.system.claude-vm-bundles",
+      "mutationDenied" : true,
+      "title" : "Claude Desktop vm_bundles"
+    },
+    {
+      "id" : "deep.system.claude-code-vm",
+      "mutationDenied" : true,
+      "title" : "Claude Desktop claude-code-vm"
+    },
+    {
+      "id" : "deep.memory.purge-inactive",
+      "mutationDenied" : true,
+      "title" : "Purge inactive memory"
+    },
+    {
+      "id" : "deep.memory.quit-approved-apps",
+      "mutationDenied" : true,
+      "title" : "Quit applications you've approved for quitting"
+    },
+    {
+      "id" : "deep.memory.restart-for-swap",
+      "mutationDenied" : true,
+      "title" : "Restart to reclaim swap"
+    }
+  ],
+  "hardLimits" : {
+    "automaticGiB" : 5,
+    "automaticItems" : 20,
+    "commandJobs" : 2,
+    "manualGiB" : 100,
+    "manualItems" : 100,
+    "rawHistoryMiB" : 5,
+    "walkWorkers" : 4
+  },
+  "registry" : [
+    "feature.headroom",
+    "feature.buildPrep",
+    "feature.projects",
+    "feature.rescue",
+    "feature.ecosystems",
+    "feature.budgets",
+    "feature.history",
+    "feature.maintenance",
+    "ecosystem.apple.inventory",
+    "ecosystem.apple.manualActions",
+    "ecosystem.android.inventory",
+    "ecosystem.android.manualActions",
+    "ecosystem.node.inventory",
+    "ecosystem.node.manualActions",
+    "ecosystem.languages.inventory",
+    "ecosystem.languages.manualActions",
+    "ecosystem.homebrew.inventory",
+    "ecosystem.homebrew.manualActions",
+    "ecosystem.docker.inventory",
+    "ecosystem.docker.manualActions",
+    "ecosystem.ides.inventory",
+    "ecosystem.ides.manualActions",
+    "ecosystem.models.inventory",
+    "ecosystem.models.manualActions",
+    "ecosystem.git.inventory",
+    "ecosystem.git.manualActions",
+    "ecosystem.data.inventory",
+    "ecosystem.data.manualActions",
+    "scope.projectRoots",
+    "scope.externalVolumes",
+    "browsers.keepCookieDomains",
+    "simulators.approvedDeletionUDIDs",
+    "tools.approvedExecutables",
+    "docker.approvedEndpoints",
+    "scope.excludedRoots",
+    "scope.pinnedProjects",
+    "scope.currentProject",
+    "cleanup.inactiveDays",
+    "cleanup.transcriptDays",
+    "cleanup.recentProtectionDays",
+    "cleanup.warmProjectCount",
+    "cleanup.minimumCandidateMiB",
+    "cleanup.minimumItemMiB",
+    "cleanup.retainRecentArtifacts",
+    "cleanup.costCeiling",
+    "cleanup.requestedBatchGiB",
+    "cleanup.requestedBatchItems",
+    "cleanup.hardBatchGiB",
+    "cleanup.hardBatchItems",
+    "cleanup.manualInactiveAcknowledgementMinutes",
+    "headroom.targetGiB",
+    "headroom.warningGiB",
+    "headroom.clearGiB",
+    "scan.preset",
+    "scan.requestedWorkers",
+    "scan.readOnlyProcesses",
+    "scan.defaultScope",
+    "scan.sliceSeconds",
+    "scan.uiBatchesPerSecond",
+    "scan.onLowPower",
+    "scan.onSeriousThermal",
+    "scan.resumeAfterCriticalSeconds",
+    "scan.cacheEnabled",
+    "scan.cacheMiB",
+    "scan.cacheExpiryHours",
+    "monitor.backgroundEnabled",
+    "monitor.visibleIntervalSeconds",
+    "monitor.hiddenIntervalSeconds",
+    "monitor.rawHistoryEnabled",
+    "monitor.rawHistoryHours",
+    "monitor.suppressHiddenSampling",
+    "rescue.approvedApplications",
+    "rescue.showAdvancedMemoryActions",
+    "rescue.quitTimeoutSeconds",
+    "budget.apple-derived-data.enabled",
+    "budget.apple-simulators.enabled",
+    "budget.android.enabled",
+    "budget.docker.enabled",
+    "budget.package-caches.enabled",
+    "budget.models.enabled",
+    "budget.ides.enabled",
+    "budget.git.enabled",
+    "budget.data.enabled",
+    "budget.other.enabled",
+    "budget.apple-derived-data.highGiB",
+    "budget.apple-simulators.highGiB",
+    "budget.android.highGiB",
+    "budget.docker.highGiB",
+    "budget.package-caches.highGiB",
+    "budget.models.highGiB",
+    "budget.ides.highGiB",
+    "budget.git.highGiB",
+    "budget.data.highGiB",
+    "budget.other.highGiB",
+    "budget.apple-derived-data.lowGiB",
+    "budget.apple-simulators.lowGiB",
+    "budget.android.lowGiB",
+    "budget.docker.lowGiB",
+    "budget.package-caches.lowGiB",
+    "budget.models.lowGiB",
+    "budget.ides.lowGiB",
+    "budget.git.lowGiB",
+    "budget.data.lowGiB",
+    "budget.other.lowGiB",
+    "notifications.enabled",
+    "notifications.pressureSustainSeconds",
+    "notifications.recoverySeconds",
+    "notifications.cooldownMinutes",
+    "notifications.quietHoursEnabled",
+    "notifications.quietStart",
+    "notifications.quietEnd",
+    "maintenance.mode",
+    "maintenance.maxGiB",
+    "maintenance.maxItems",
+    "maintenance.deadlineSeconds",
+    "maintenance.minimumAgeDays",
+    "maintenance.minimumIntervalHours",
+    "app.launchAtLogin",
+    "history.enabled",
+    "history.retentionDays",
+    "history.maxMiB",
+    "ui.density",
+    "ui.units",
+    "ui.cards",
+    "ui.ecosystemOrder",
+    "ui.showBadges",
+    "ui.advancedSettings",
+    "export.redactDiagnostics"
+  ]
+}

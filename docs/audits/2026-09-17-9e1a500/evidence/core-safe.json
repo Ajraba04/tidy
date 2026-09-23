@@ -1,0 +1,18 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--scratch-path",
+    "/private/tmp/tidy-audit-9e1a500-core",
+    "--jobs",
+    "2",
+    "--no-parallel",
+    "--skip",
+    "SimctlClientTests|SimulatorPrunerTests.realDevicesNeverEligibleWithoutRealApproval"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy/TidyCore",
+  "started_utc": "2026-09-17T15:08:46.680912+00:00",
+  "ended_utc": "2026-09-17T15:14:21.420777+00:00",
+  "seconds": 202.709,
+  "exit_code": 1
+}

@@ -1,0 +1,11 @@
+{
+  "command": [
+    "python3",
+    "docs/audits/2026-09-17-9e1a500/evidence/validate-audit.py"
+  ],
+  "cwd": "<HOME>/Desktop/AJR/tidy",
+  "started_utc": "2026-09-17T15:50:47.758958+00:00",
+  "ended_utc": "2026-09-17T15:50:48.534055+00:00",
+  "seconds": 0.774,
+  "exit_code": 0
+}
