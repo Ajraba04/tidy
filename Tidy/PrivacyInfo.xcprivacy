@@ -23,7 +23,8 @@
 			</array>
 		</dict>
 			<!-- ProcessInfo.systemUptime drives scheduler observation epochs and
-			one-run scan-consent expiry: elapsed-time/timer reason 35F9.1.
+			one-run scan-consent expiry and settings-import read deadlines:
+			elapsed-time/timer reason 35F9.1.
 			The separate kern.boottime and kern.bootsessionuuid identity uses are
 			inventoried as unresolved rows in privacy-api-inventory.md. -->
 		<dict>

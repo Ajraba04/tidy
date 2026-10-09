@@ -6,6 +6,9 @@ Tidy is a native macOS menu bar developer headroom utility for inspecting disk a
 
 The [acceptance record](docs/verification/headroom-acceptance.md) separates implemented changes, test evidence, missing production contracts and runtime/hardware gates. There is no newly approved release from this remediation.
 
+The [10 October local handover](docs/verification/local-handover-2026-10-10.md)
+records the audit checkpoint reconciled onto current main and its pending native verification.
+
 ## Scope and modes
 
 | Surface | Intended scope | Current boundary |

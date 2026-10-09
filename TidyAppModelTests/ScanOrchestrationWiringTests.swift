@@ -438,6 +438,21 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         await services.disposeScanResourcesForTesting()
     }
 
+    func testLivePowerAndThermalSignalsRemainIndependent() {
+        let lowPower = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil, swapUnavailableReason: nil,
+            pageOutRatePerSecond: nil, memoryPressureLevel: .normal, thermalState: .nominal,
+            isLowPowerModeEnabled: true)
+        XCTAssertEqual(schedulerLiveObservation(from: lowPower),
+            .signals(lowPower: true, seriousThermal: false))
+        let thermal = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil, swapUnavailableReason: nil,
+            pageOutRatePerSecond: nil, memoryPressureLevel: .normal, thermalState: .serious,
+            isLowPowerModeEnabled: false)
+        XCTAssertEqual(schedulerLiveObservation(from: thermal),
+            .signals(lowPower: false, seriousThermal: true))
+    }
+
     func testMissingLiveSignalCannotReopenNominalSchedulerAdmission() {
         let partial = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
             memory: nil, memoryUnavailableReason: "missing", swap: nil,

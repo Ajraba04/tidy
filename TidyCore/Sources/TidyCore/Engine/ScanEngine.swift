@@ -726,6 +726,7 @@ internal extension ScanEngine {
             for root in environment.gitRoots {
                 guard let page = await StaleNodeModulesScanner.findBounded(root: root,
                     olderThanDays: environment.staleNodeModulesThresholdDays,
+                    protectedRoots: environment.protectedRoots,
                     sessions: context.sessions, session: context.session,
                     sessionID: context.sessionID, generation: context.generation,
                     limits: context.traversalLimits) else { continue }

@@ -394,6 +394,7 @@ public actor SystemMonitor {
     }
 
     private func apply(_ newConfiguration: Configuration) {
+        let previous = configuration
         configuration = newConfiguration
         if !newConfiguration.featureEnabled {
             let snapshot = featureDisabledSnapshot()
@@ -403,10 +404,11 @@ public actor SystemMonitor {
         }
         if !newConfiguration.historyEnabled {
             history = SignalHistory(maxEntries: 0, maxAgeSeconds: 0)
-        } else {
+        } else if !previous.historyEnabled || previous.historyHours != newConfiguration.historyHours {
             history = SignalHistory(maxEntries: SystemMonitor.historyCapacity(forHours: newConfiguration.historyHours),
                 maxAgeSeconds: Double(newConfiguration.historyHours) * 3_600)
         }
+        // Even unchanged settings must recheck independently revocable local authority.
         reschedule()
     }
 
@@ -555,6 +557,8 @@ public actor SystemMonitor {
         pressureSubscription?.cancel()
         pressureSubscription = nil
         pressureSubscriptionGeneration &+= 1
+        latestPressureLevel = nil
+        lastPageOutCounter = nil
         for continuation in subscribers.values {
             continuation.finish()
         }
@@ -601,6 +605,8 @@ public actor SystemMonitor {
             pressureSubscription?.cancel()
             pressureSubscription = nil
             pressureSubscriptionGeneration &+= 1
+            latestPressureLevel = nil
+            lastPageOutCounter = nil
             return
         }
 

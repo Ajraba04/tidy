@@ -25,6 +25,13 @@ python3 scripts/verification/privacy-api-inventory.py \
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
 python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
+  --require-case 'bounded catalog discovery never enters mandatory cloud roots' \
+  --require-case 'bounded stale scan honors caller exclusions before descending into projects' \
+  --require-case 'a candidate containing a protected descendant is refused even inside its declared root' \
+  --require-case 'overdeep anchor paths are rejected before acquiring ancestor descriptors' \
+  --require-case 'acknowledging settings preserves raw history unless its retention policy changes' \
+  --require-case 'ending the last sampling lease invalidates pressure for the next measurement' \
+  --require-case 'live power and thermal inputs apply only their matching pause rule' \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
   --require-case 'artifactAliasesDoNotConsumeRetentionSlotsOrBypassProtection' \
@@ -76,6 +83,8 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 146 \
+  --require-case 'testImportFileReaderRejectsFIFOAndSymlinkWithoutBlocking' \
+  --require-case 'testLivePowerAndThermalSignalsRemainIndependent' \
   --require-case 'testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending' \
   --require-case 'testDiagnosticExportSnapshotDefaultsRedactionOnWhenAcknowledgedPolicyUnavailable' \
   --require-case 'testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan' \

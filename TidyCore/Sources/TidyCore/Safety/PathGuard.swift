@@ -47,7 +47,7 @@ public enum PathGuardError: Error, Equatable, Sendable, CustomStringConvertible 
         case .isSystemRoot(let path):
             return "refusing system path: \(path)"
         case .insideProtectedRoot(let path, let root):
-            return "refusing protected path: \(path) (under \(root))"
+            return "refusing path overlapping protected root: \(path) (protected: \(root))"
         case .outsideDeclaredRoot(let path, let root):
             return "refusing path outside its declared root: \(path) (expected under \(root))"
         }
@@ -145,7 +145,7 @@ public struct PathGuard: Sendable {
         }
 
         for root in protectedRoots {
-            if Self.isEqualOrDescendant(path, of: root) {
+            if Self.isEqualOrDescendant(path, of: root) || Self.isEqualOrDescendant(root, of: path) {
                 throw PathGuardError.insideProtectedRoot(path: path, root: root)
             }
         }

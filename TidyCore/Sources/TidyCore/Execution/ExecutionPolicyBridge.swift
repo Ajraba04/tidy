@@ -1136,6 +1136,7 @@ public final class ExecutionPolicyBridge {
         case .nominal: raw = .nominal
         case .constrained: raw = .constrained
         case .critical: raw = .critical
+        case .signals(let power, let heat): raw = .signals(lowPower: power, seriousThermal: heat)
         }
         let effective: SchedulerObservation
         if raw == .critical {

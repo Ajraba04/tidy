@@ -75,6 +75,7 @@ final class DirectoryAnchor {
     static func open(path: String) throws -> DirectoryAnchor {
         guard path.hasPrefix("/"), path != "/" else { throw GuardedFileError.unsafeRoot }
         let names = try relativeComponents(String(path.dropFirst()))
+        guard names.count <= 64 else { throw GuardedFileError.manifestLimit }
         var fds: [Int32] = []
         do {
             let first = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
