@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 import SwiftUI
@@ -441,24 +442,31 @@ enum SettingsImportFileReader {
     static let maximumByteCount = 1_048_576
 
     static func read(_ url: URL) throws -> Data {
-        let handle: FileHandle
-        do { handle = try FileHandle(forReadingFrom: url) }
-        catch { throw SettingsImportFileReaderError.unavailable }
-        defer { try? handle.close() }
-        do {
-            guard try handle.seekToEnd() <= UInt64(maximumByteCount) else {
-                throw SettingsImportFileReaderError.tooLarge
-            }
-            try handle.seek(toOffset: 0)
-            guard let data = try handle.read(upToCount: 1_048_577),
-                  data.count <= maximumByteCount else {
-                throw SettingsImportFileReaderError.tooLarge
-            }
-            return data
-        } catch let error as SettingsImportFileReaderError {
-            throw error
-        } catch {
+        guard url.isFileURL else { throw SettingsImportFileReaderError.unavailable }
+        let fd = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw SettingsImportFileReaderError.unavailable }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size >= 0 else {
             throw SettingsImportFileReaderError.unavailable
+        }
+        guard info.st_size <= maximumByteCount else { throw SettingsImportFileReaderError.tooLarge }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        while true {
+            try Task.checkCancellation()
+            guard ProcessInfo.processInfo.systemUptime < deadline else {
+                throw SettingsImportFileReaderError.unavailable
+            }
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count == 0 { return data }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw SettingsImportFileReaderError.unavailable
+            }
+            guard count <= maximumByteCount - data.count else { throw SettingsImportFileReaderError.tooLarge }
+            data.append(contentsOf: buffer.prefix(count))
         }
     }
 }
@@ -1051,6 +1059,8 @@ struct SettingsWorkflowSurface: View {
     @State private var controller: SettingsWorkflowController
     @State private var selectedTab: SettingsWorkflowTab
     @State private var showsImporter = false
+    @State private var importReadID = UUID()
+    @State private var isReadingImport = false
     @State private var showsExporter = false
     @State private var exportDocument: PortableSettingsDocument?
     @State private var resetGlobalIDs = Set<SettingID>()
@@ -1088,14 +1098,32 @@ struct SettingsWorkflowSurface: View {
         }
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? SettingsImportFileReader.read(url) else {
-                workflowMessage = SettingsCopy.resolve("settings.import.failure", bundle: bundle)
-                return
+            let requestID = UUID()
+            importReadID = requestID
+            isReadingImport = true
+            Task {
+                let result = await Task.detached(priority: .userInitiated) {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    return Result { try SettingsImportFileReader.read(url) }
+                }.value
+                guard importReadID == requestID else { return }
+                isReadingImport = false
+                switch result {
+                case .success(let data): controller.beginImportSelection(bytes: data)
+                case .failure: workflowMessage = SettingsCopy.resolve("settings.import.failure", bundle: bundle)
+                }
             }
-            controller.beginImportSelection(bytes: data)
         }
+        .overlay(alignment: .bottom) {
+            if isReadingImport {
+                HStack {
+                    ProgressView("Reading settings…")
+                    Button("Cancel") { importReadID = UUID(); isReadingImport = false }
+                }.padding().background(.regularMaterial)
+            }
+        }
+        .onDisappear { importReadID = UUID(); isReadingImport = false }
         .fileExporter(isPresented: $showsExporter, document: exportDocument,
                       contentType: .json, defaultFilename: "tidy-settings") { result in
             if case .failure = result {

@@ -31,6 +31,15 @@ struct ScanView: View {
                 }
                 .padding()
                 .accessibilityIdentifier("scan.phase.running")
+            case .runningPartial(let result):
+                VStack {
+                    HStack {
+                        ProgressView("Scanning…")
+                        Button("Cancel") { Task { await model.cancelScan() } }
+                    }.padding()
+                    ScanReportView(report: result.report)
+                }
+                .accessibilityIdentifier("scan.phase.runningPartial")
             case .partial(let result):
                 VStack(alignment: .leading, spacing: 0) {
                     partialBanner(result)
@@ -92,7 +101,7 @@ struct ScanView: View {
     private var isRescannable: Bool {
         switch model.phase {
         case .complete, .partial, .cancelled, .failed: return true
-        case .idle, .running, .paused: return false
+        case .idle, .running, .runningPartial, .paused: return false
         }
     }
 

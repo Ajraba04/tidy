@@ -68,7 +68,10 @@ public actor CleanEngine {
         for item in relevantItems {
             let declaredRoot = item.declaredRoot(environment)
             let discovery: ActionDiscovery
-            if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
+            if let policy = environment.effectivePolicy,
+               policy.fields[SettingID(rawValue: "item.\(item.id).enabled")]?.value == .stored(.bool(false)) {
+                discovery = ActionDiscovery(status: .blocked, reason: "Disabled by effective policy.", targets: [])
+            } else if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
                 discovery = ActionDiscovery(status: .unavailable, reason: "Required toolchain is not available.", targets: [])
             } else if case .unavailable(let reason) = item.action {
                 discovery = ActionDiscovery(status: .unavailable, reason: reason, targets: [])
@@ -89,7 +92,7 @@ public actor CleanEngine {
             if rejectedTarget {
                 status = .blocked; reason = "One or more targets failed path protection checks."
             } else if discovery.status == .available, CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil {
-                status = .unavailable; reason = CapabilityRegistry.quarantineReason
+                status = .unavailable; reason = CapabilityRegistry.denialReason(for: item.action, itemID: item.id) ?? CapabilityRegistry.quarantineReason
             } else {
                 status = discovery.status; reason = discovery.reason
             }
@@ -132,7 +135,10 @@ public actor CleanEngine {
         for item in relevantItems {
             let declaredRoot = item.declaredRoot(environment)
             var discovery: ActionDiscovery
-            if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
+            if let policy = environment.effectivePolicy,
+               policy.fields[SettingID(rawValue: "item.\(item.id).enabled")]?.value == .stored(.bool(false)) {
+                discovery = ActionDiscovery(status: .blocked, reason: "Disabled by effective policy.", targets: [])
+            } else if let requiredTool = item.requires, !environment.hasTool(requiredTool) {
                 discovery = ActionDiscovery(status: .unavailable,
                     reason: "Required toolchain is not available.", targets: [])
             } else if case .unavailable(let reason) = item.action {
@@ -200,7 +206,7 @@ public actor CleanEngine {
             } else if discovery.status == .available,
                       CapabilityRegistry.denialReason(for: item.action, itemID: item.id) != nil {
                 status = .unavailable
-                reason = CapabilityRegistry.quarantineReason
+                reason = CapabilityRegistry.denialReason(for: item.action, itemID: item.id) ?? CapabilityRegistry.quarantineReason
             } else {
                 status = discovery.status
                 reason = discovery.reason

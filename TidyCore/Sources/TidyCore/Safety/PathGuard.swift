@@ -145,7 +145,7 @@ public struct PathGuard: Sendable {
         }
 
         for root in protectedRoots {
-            if Self.isEqualOrDescendant(path, of: root) {
+            if Self.isEqualOrDescendant(path, of: root) || Self.isEqualOrDescendant(root, of: path) {
                 throw PathGuardError.insideProtectedRoot(path: path, root: root)
             }
         }

@@ -6,6 +6,7 @@ import Foundation
 public struct ScanReport: Sendable {
     public let generatedAt: Date
     public let detectedTools: Set<ToolchainID>
+    public let projectInventory: ProjectInventoryReport?
 
     public let diskStats: DiskStats?
     public let memoryStats: MemoryStats
@@ -45,8 +46,10 @@ public struct ScanReport: Sendable {
         launchAgents: [String],
         topMemoryConsumers: [ProcessUsage],
         restartOnlyReclaim: RestartReclaimSurvey = RestartReclaimSurvey(components: [], pagedOutBytes: nil),
-        unclaimedBySize: [RankedItem] = []
+        unclaimedBySize: [RankedItem] = [],
+        projectInventory: ProjectInventoryReport? = nil
     ) {
+        self.projectInventory = projectInventory
         self.generatedAt = generatedAt
         self.detectedTools = detectedTools
         self.diskStats = diskStats

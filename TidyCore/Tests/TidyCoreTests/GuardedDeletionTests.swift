@@ -603,3 +603,31 @@ private func withNestedManifest(_ body: (ReviewedTree) throws -> Void) throws {
         }
     }
 }
+
+@Suite("Audit manifest limits")
+struct AuditManifestLimitTests {
+    @Test func totalLimitsApplyAcrossBatches() throws {
+        try inScratch { scratch in
+            _ = try scratch.file("one")
+            _ = try scratch.file("two")
+            let anchor = try DirectoryAnchor.open(path: scratch.selected.path)
+            #expect(throws: GuardedFileError.manifestLimit) {
+                _ = try ReviewedTree.capture(anchor: anchor, excluding: [], maxNodesPerBatch: 1, maxNodes: 1)
+            }
+            #expect(throws: GuardedFileError.manifestLimit) {
+                _ = try ReviewedTree.capture(anchor: anchor, excluding: [], maxTotalBytes: 1)
+            }
+        }
+    }
+    @Test func newDescendantsInvalidateReview() throws {
+        try inScratch { scratch in
+            _ = try scratch.file("original")
+            let anchor = try DirectoryAnchor.open(path: scratch.selected.path)
+            let tree = try ReviewedTree.capture(anchor: anchor, excluding: [])
+            _ = try scratch.file("new-child")
+            #expect(throws: GuardedFileError.identityChanged) {
+                try tree.validateCurrentContents(anchor: anchor)
+            }
+        }
+    }
+}

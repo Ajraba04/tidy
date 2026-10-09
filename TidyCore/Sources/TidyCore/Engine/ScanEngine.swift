@@ -261,6 +261,7 @@ private struct CoreScanAccumulator: Sendable {
     var localSnapshots: [LocalSnapshot] = []
     var idleSimulatorRuntimes: [SimulatorRuntime] = []
     var staleNodeModules: [TargetPath] = []
+    var projectInventory: ProjectInventoryReport?
     var launchAgents: [String] = []
     var topMemoryConsumers: [ProcessUsage] = []
     var restartOnlyReclaim = RestartReclaimSurvey(components: [], pagedOutBytes: nil,
@@ -292,7 +293,7 @@ private struct CoreScanAccumulator: Sendable {
             localSnapshots: localSnapshots, idleSimulatorRuntimes: idleSimulatorRuntimes,
             staleNodeModules: staleNodeModules, launchAgents: launchAgents,
             topMemoryConsumers: topMemoryConsumers, restartOnlyReclaim: restartOnlyReclaim,
-            unclaimedBySize: unclaimedBySize)
+            unclaimedBySize: unclaimedBySize, projectInventory: projectInventory)
     }
 
     func sessionSnapshot() -> ScanSessionSnapshot {
@@ -552,12 +553,44 @@ internal extension ScanEngine {
                 indexContext: libraryIndexContext, coordinator: indexCoordinator)
         }
 
+        if environment.effectivePolicy?.allowedFeatures.contains("projects") == true {
+            var projects: [String: ProjectInventoryRecord] = [:]
+            var projectReasons: Set<TraversalCoverageReason> = []
+            let projectDeadline = ProcessInfo.processInfo.systemUptime + Double(min(context.sliceSeconds, 300))
+            if environment.gitRoots.count > 64 { projectReasons.insert(.resultLimit) }
+            for root in environment.gitRoots.prefix(64) {
+                guard ProcessInfo.processInfo.systemUptime < projectDeadline else {
+                    projectReasons.insert(.sliceExpired); break
+                }
+                guard projects.count < ProjectInventory.maximumProjects else {
+                    projectReasons.insert(.resultLimit); break
+                }
+                guard !Task.isCancelled, (try? await context.checkCurrent()) != nil,
+                      !(await reporter.isCancelled()) else {
+                    return await cancelledCompletion(accumulator, store: store)
+                }
+                let inventory = await ProjectInventory.scan(root: root, context: context, environment: environment)
+                projectReasons.formUnion(inventory.coverage.reasons)
+                for project in inventory.records {
+                    if projects[project.id] == nil && projects.count == ProjectInventory.maximumProjects {
+                        projectReasons.insert(.resultLimit); break
+                    }
+                    projects[project.id] = project
+                }
+            }
+            accumulator.projectInventory = ProjectInventoryReport(records: projects.values.sorted { $0.path < $1.path },
+                coverage: .init(isComplete: projectReasons.isEmpty, reasons: projectReasons),
+                approvedRootCount: environment.gitRoots.count)
+            accumulator.reasons.formUnion(projectReasons)
+        }
+
         if environment.gitRoots.count > 64 {
             accumulator.reasons.insert(.resultLimit)
         } else {
             for root in environment.gitRoots {
                 guard let page = await StaleNodeModulesScanner.findBounded(root: root,
                     olderThanDays: environment.staleNodeModulesThresholdDays,
+                    protectedRoots: environment.protectedRoots,
                     sessions: context.sessions, session: context.session,
                     sessionID: context.sessionID, generation: context.generation,
                     limits: context.traversalLimits) else { continue }
@@ -717,7 +750,7 @@ internal extension ScanEngine {
         let traversal = BoundedTraversal(sessions: context.sessions, limits: limits)
         let result = await traversal.start(root: path, session: context.session,
             sessionID: context.sessionID, generation: context.generation,
-            options: TraversalOptions(recordSelection: .all))
+            options: TraversalOptions(protectedRoots: environment.protectedRoots, recordSelection: .all))
         return BoundedTraversalPage(traversal: traversal, result: result)
     }
 
@@ -731,6 +764,8 @@ internal extension ScanEngine {
         var progressReasons = accumulator.reasons
         progressReasons.insert(.sliceExpired)
         let coverage = TraversalCoverage(isComplete: false, reasons: progressReasons)
+        await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
+            continuationAvailable: false))
         var snapshot = accumulator.sessionSnapshot()
         do {
             try await reporter.recordBatch(coverage: coverage, snapshot: snapshot)
@@ -742,8 +777,6 @@ internal extension ScanEngine {
         } catch {
             return false
         }
-        await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false))
         return true
     }
 

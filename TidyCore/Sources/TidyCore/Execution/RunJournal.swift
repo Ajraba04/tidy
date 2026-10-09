@@ -7,7 +7,7 @@ public enum RecoveryDecision: Equatable, Sendable {
         quiescenceProven ? .requireFreshReview : .blockMutations
     }
 }
-enum JournalPhase: String, Codable, Sendable { case planned, confirmed, started, itemTerminal, finished }
+enum JournalPhase: String, Codable, Sendable { case planned, confirmed, started, itemTerminal, finished, abandoned }
 struct JournalEvent: Codable, Equatable, Sendable {
     let runID: UUID
     let sequence: UInt64
@@ -99,6 +99,11 @@ final class RunJournal {
         try checkLock()
         let previous = try load(runID: event.runID)
         let intents = try store.unfinishedIntentsWhileLocked()
+        if event.phase == .started {
+            guard intents.contains(where: { $0.runID == event.runID && $0.operationID == event.operationID }) else {
+                throw JournalError.invalidTransition
+            }
+        }
         try Self.validate(event, previous: previous, intents: intents)
         let payload = try JSONEncoder().encode(event)
         guard payload.count <= 65_536 else { throw JournalError.capacity }
@@ -115,14 +120,14 @@ final class RunJournal {
             try requireOptionalCapacity(summaries)
         }
         try publish(original + record, runID: event.runID)
-        if event.phase == .finished { try retain(now: Date()) }
+        if event.phase == .finished || event.phase == .abandoned { try retain(now: Date()) }
     }
 
     func persistIntent(_ intent: PendingEffectIntent) throws {
         try checkLock()
         let previous = try load(runID: intent.runID)
         guard previous.contains(where: { $0.phase == .confirmed }),
-              previous.last?.phase != .finished else { throw JournalError.invalidTransition }
+              previous.last?.phase != .finished, previous.last?.phase != .abandoned else { throw JournalError.invalidTransition }
         let summaries = try scan()
         guard summaries.filter({ !$0.finished }).count <= 8 else { throw JournalError.capacity }
         try requireOptionalCapacity(summaries)
@@ -142,6 +147,52 @@ final class RunJournal {
         let previous = try load(runID: runID)
         try append(JournalEvent(runID: runID, sequence: JournalSequence.next(after: previous.last?.sequence ?? 0),
             phase: .finished, operationID: nil, status: nil, reason: nil))
+    }
+    func completeFilesystemEffect(_ effect: DerivedDataEffectAdapter.Effect,
+                                  runID: UUID, sequence: UInt64) throws {
+        try append(JournalEvent(runID: runID, sequence: sequence, phase: .itemTerminal,
+            operationID: effect.operationID, status: EffectAccounting.aggregateStatus(effect.outcomes),
+            reason: "Synchronous filesystem effect returned; no child process was submitted."))
+        // Ordering matters: a crash between publication and release stays blocked.
+        try store.completeFilesystemIntent(effect, runID: runID)
+    }
+    /// One bounded launch/retry pass. Never resumes effects or reconciles a child process.
+    func reconcileSynchronousFilesystemEffects() throws {
+        let summaries = try scan()
+        let intents = try store.unfinishedIntentsWhileLocked()
+        guard intents.count <= 8 else { throw JournalError.capacity }
+        for intent in intents where intent.adapterID == DerivedDataEffectAdapter.acceptedItemID
+            && intent.executablePath.isEmpty && intent.childPID == nil && intent.phase == .prepared {
+            var events = try load(runID: intent.runID)
+            if !events.contains(where: { $0.phase == .started && $0.operationID == intent.operationID }) {
+                try append(JournalEvent(runID: intent.runID,
+                    sequence: JournalSequence.next(after: events.last?.sequence ?? 0), phase: .started,
+                    operationID: intent.operationID, status: nil, reason: "Interrupted filesystem submission."))
+                events = try load(runID: intent.runID)
+            }
+            if !events.contains(where: { $0.phase == .itemTerminal && $0.operationID == intent.operationID }) {
+                try append(JournalEvent(runID: intent.runID,
+                    sequence: JournalSequence.next(after: events.last?.sequence ?? 0), phase: .itemTerminal,
+                    operationID: intent.operationID, status: .uncertain,
+                    reason: "Previous synchronous caller is quiescent. Removed leaves are unknown; fresh review required."))
+            }
+            try store.reconcileQuiescentFilesystemIntent(intent)
+        }
+        let remaining = try store.unfinishedIntentsWhileLocked()
+        for summary in summaries where !summary.finished && !remaining.contains(where: { $0.runID == summary.runID }) {
+            let events = try load(runID: summary.runID)
+            if events.last?.phase == .planned {
+                try append(JournalEvent(runID: summary.runID, sequence: 2, phase: .abandoned,
+                    operationID: nil, status: nil, reason: "Plan was never confirmed."))
+                continue
+            }
+            let started = Set(events.filter { $0.phase == .started }.compactMap(\.operationID))
+            let terminal = Set(events.filter { $0.phase == .itemTerminal }.compactMap(\.operationID))
+            guard started == terminal else { continue }
+            try append(JournalEvent(runID: summary.runID,
+                sequence: JournalSequence.next(after: events.last?.sequence ?? 0), phase: .finished,
+                operationID: nil, status: nil, reason: "Closed interrupted record. Unrecorded legacy effects remain unknown."))
+        }
     }
     func applyHistoryLimits(days: Int, bytes: Int, now: Date) throws {
         try applyHistoryLimits(enabled: true, days: days, bytes: bytes, now: now)
@@ -172,7 +223,8 @@ final class RunJournal {
         let bytes = try storage.read(name: entry.name)
         guard bytes.count == entry.byteCount else { throw JournalError.unavailable }
         let events = try Self.parse(bytes, runID: runID, intents: intents)
-        let finished = events.last?.phase == .finished && !intents.contains(where: { $0.runID == runID })
+        let finished = (events.last?.phase == .finished || events.last?.phase == .abandoned)
+            && !intents.contains(where: { $0.runID == runID })
         return Summary(entry: entry, runID: runID, finished: finished)
     }
     private func scan() throws -> [Summary] {
@@ -214,17 +266,20 @@ final class RunJournal {
     private static func validate(_ event: JournalEvent, previous: [JournalEvent],
                                  intents: [PendingEffectIntent]) throws {
         guard event.sequence == (try JournalSequence.next(after: previous.last?.sequence ?? 0)),
-              previous.last?.phase != .finished else { throw JournalError.invalidTransition }
+              previous.last?.phase != .finished, previous.last?.phase != .abandoned else { throw JournalError.invalidTransition }
         switch event.phase {
         case .planned:
             guard previous.isEmpty, event.operationID == nil, event.status == nil else { throw JournalError.invalidTransition }
+        case .abandoned:
+            guard previous.count == 1, previous.first?.phase == .planned,
+                  event.operationID == nil, event.status == nil,
+                  !intents.contains(where: { $0.runID == event.runID }) else { throw JournalError.invalidTransition }
         case .confirmed:
             guard previous.count == 1, previous.first?.phase == .planned,
                   event.operationID == nil, event.status == nil else { throw JournalError.invalidTransition }
         case .started:
             guard previous.contains(where: { $0.phase == .confirmed }), let operation = event.operationID,
                   event.status == nil,
-                  intents.contains(where: { $0.runID == event.runID && $0.operationID == operation }),
                   !previous.contains(where: { $0.operationID == operation }) else { throw JournalError.invalidTransition }
         case .itemTerminal:
             guard let operation = event.operationID, event.status != nil,
@@ -233,8 +288,10 @@ final class RunJournal {
                 throw JournalError.invalidTransition
             }
         case .finished:
-            guard previous.last?.phase == .confirmed, event.operationID == nil, event.status == nil,
-                  !previous.contains(where: { $0.phase == .started }),
+            let started = Set(previous.filter { $0.phase == .started }.compactMap(\.operationID))
+            let terminal = Set(previous.filter { $0.phase == .itemTerminal }.compactMap(\.operationID))
+            guard previous.contains(where: { $0.phase == .confirmed }), event.operationID == nil, event.status == nil,
+                  started == terminal,
                   !intents.contains(where: { $0.runID == event.runID }) else { throw JournalError.invalidTransition }
         }
     }
@@ -268,6 +325,12 @@ final class RunJournal {
             catch { throw JournalError.corrupt }
             result.append(event)
             offset = end + 32
+        }
+        for event in result where event.phase == .started {
+            guard result.contains(where: { $0.phase == .itemTerminal && $0.operationID == event.operationID })
+                || intents.contains(where: { $0.runID == runID && $0.operationID == event.operationID }) else {
+                throw JournalError.corrupt
+            }
         }
         return result
     }

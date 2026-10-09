@@ -24,6 +24,7 @@ internal struct SchedulerResolutionInputs: Equatable, Sendable {
 
 internal enum SchedulerObservation: Equatable, Sendable {
     case unknown, nominal, constrained, critical
+    case signals(lowPower: Bool, seriousThermal: Bool, critical: Bool)
 }
 
 public struct WorkSchedulerLimits: Equatable, Sendable {
@@ -825,9 +826,11 @@ internal actor SchedulerPolicyController {
         if let profile { layers[.profile] = profile.values }
         let low: Bool; let thermal: Bool; let critical: Bool
         switch observation {
-        case .nominal, .unknown: low = false; thermal = false; critical = false
+        case .nominal: low = false; thermal = false; critical = false
+        case .unknown: low = true; thermal = true; critical = false
         case .constrained: low = true; thermal = true; critical = false
         case .critical: low = true; thermal = true; critical = true
+        case .signals(let power, let heat, let pressure): low = power; thermal = heat; critical = pressure
         }
         let policy: EffectivePolicy
         do {

@@ -35,6 +35,35 @@ struct ScanReportView: View {
                     RankedItemsList(items: report.filesOver1GB, emptyText: "No single file is over 1 GB.")
                 }
 
+                ReportSection(title: "Projects — read-only inventory") {
+                    if let inventory = report.projectInventory {
+                        if inventory.approvedRootCount == 0 {
+                            Text("No project roots have been approved.")
+                        } else if inventory.records.isEmpty {
+                            Text(inventory.coverage.isComplete ? "No project markers found." : "No projects identified in this partial scan.")
+                        }
+                        if !inventory.coverage.isComplete {
+                            Text("Partial project coverage: " + inventory.coverage.reasons.map(\.rawValue).sorted().joined(separator: ", "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        ForEach(inventory.records) { project in
+                            DisclosureGroup(PathDisplay.tilde(project.path)) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Markers: " + project.markers.joined(separator: ", "))
+                                    Text(project.reason)
+                                    if project.gitLayout == .indirection {
+                                        Text("Git indirection observed. Common directory and worktree state are unresolved.")
+                                    }
+                                    Text("Observed " + project.observedAt.formatted(date: .abbreviated, time: .standard))
+                                }.font(.caption).foregroundStyle(.secondary)
+                            }
+                            .accessibilityIdentifier("project.inventory." + project.id)
+                        }
+                    } else {
+                        Text("Project inventory was not collected in this scan.")
+                    }
+                }
+
                 ReportSection(title: "Stale node_modules") {
                     SimpleTextList(
                         lines: report.staleNodeModules.map { PathDisplay.tilde($0.path) },

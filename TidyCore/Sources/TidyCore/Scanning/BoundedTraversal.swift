@@ -87,14 +87,14 @@ public struct TraversalLimits: Equatable, Sendable {
         self.sliceSeconds = sliceSeconds
     }
 
-    internal func replacing(maxDepth: Int? = nil, topN: Int? = nil) -> TraversalLimits {
+    internal func replacing(maxDepth: Int? = nil, topN: Int? = nil, sliceSeconds: Int? = nil) -> TraversalLimits {
         TraversalLimits(validatedBatchEntries: batchEntries, queuedPaths: queuedPaths,
             maxDepth: maxDepth ?? self.maxDepth, openDescriptors: openDescriptors,
             hardLinkIdentities: hardLinkIdentities, childAggregates: childAggregates,
             resultRecords: resultRecords, topN: topN ?? self.topN,
             maxBreadth: maxBreadth, maxPathBytes: maxPathBytes, cursorCount: cursorCount,
             cursorTombstones: cursorTombstones, protectedRoots: protectedRoots,
-            sliceSeconds: sliceSeconds)
+            sliceSeconds: min(self.sliceSeconds, max(30, sliceSeconds ?? self.sliceSeconds)))
     }
 
     private init(validatedBatchEntries batchEntries: Int, queuedPaths: Int, maxDepth: Int,
@@ -127,6 +127,7 @@ public enum TraversalRecordSelection: Equatable, Sendable {
     case none
     case all
     case directory(named: String, modifiedBefore: Date)
+    case projectMarkers
 }
 
 public struct TraversalOptions: Equatable, Sendable {
@@ -1079,7 +1080,7 @@ private extension TraversalMetrics {
 private extension TraversalRecordSelection {
     func retainedStringsFit(maxBytes: Int) -> Bool {
         switch self {
-        case .none, .all: return true
+        case .none, .all, .projectMarkers: return true
         case .directory(let name, _): return name.utf8.count <= maxBytes
         }
     }
@@ -1088,6 +1089,7 @@ private extension TraversalRecordSelection {
         switch self {
         case .none: return false
         case .all: return true
+        case .projectMarkers: return ProjectInventory.selects(record)
         case .directory(let name, let modifiedBefore):
             return record.kind == .directory
                 && (record.path as NSString).lastPathComponent == name

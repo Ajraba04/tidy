@@ -15,8 +15,9 @@ final class HeadroomViewModel {
     /// `ui.cards` order from the effective policy, resolved once at
     /// construction; a settings change is picked up the next time the
     /// window opens, the same cadence `StatsRefresher` uses for policy.
-    let cardOrder: [String]
+    private(set) var cardOrder: [String]
 
+    private let visibilityID = UUID()
     private let monitor: SystemMonitor
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
@@ -46,16 +47,25 @@ final class HeadroomViewModel {
 
     deinit {
         observationTask?.cancel()
+        let monitor = monitor
+        let id = visibilityID
+        Task { await monitor.setWindowVisible(false, consumer: id) }
     }
 
     static let defaultCardOrder = ["disk", "memoryPressure", "swap", "thermal", "power"]
 
+    func applyPolicy(_ policy: EffectivePolicy?) {
+        cardOrder = resolvedUICardOrder(policy)
+    }
+
     func onAppear(policy: EffectivePolicy?) {
+        applyPolicy(policy)
         let monitor = monitor
         let configuration = SystemMonitor.Configuration.resolve(policy)
+        let visibilityID = visibilityID
         Task {
             await monitor.applyConfiguration(configuration)
-            await monitor.setWindowVisible(true)
+            await monitor.setWindowVisible(true, consumer: visibilityID)
             await monitor.requestSnapshot()
         }
     }
@@ -64,7 +74,8 @@ final class HeadroomViewModel {
     /// entirely unless `monitor.backgroundEnabled` is explicitly on.
     func onDisappear() {
         let monitor = monitor
-        Task { await monitor.setWindowVisible(false) }
+        let visibilityID = visibilityID
+        Task { await monitor.setWindowVisible(false, consumer: visibilityID) }
     }
 
     /// One explicit re-read, for a manual refresh control -- never on a

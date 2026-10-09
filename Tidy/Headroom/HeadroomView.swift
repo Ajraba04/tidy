@@ -38,6 +38,7 @@ struct HeadroomView: View {
         .frame(minWidth: 380, minHeight: 440)
         .onAppear { model.onAppear(policy: configStore.effectivePolicy) }
         .onDisappear { model.onDisappear() }
+        .onChange(of: configStore.effectivePolicy) { _, policy in model.applyPolicy(policy) }
     }
 
     private var header: some View {
@@ -177,7 +178,7 @@ struct HeadroomView: View {
                 Text("\(ByteFormat.human(shortfall)) short of target.")
                     .font(.callout)
             case .unavailable:
-                Text(targetBytes == nil ? "No headroom target set." : "Available space could not be measured.")
+                Text(targetBytes == nil ? "Headroom target is unavailable until the volume and its capacity can be resolved." : "Available space could not be measured.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

@@ -25,9 +25,19 @@ final class AppConfigStore {
     var activeProfileID: UUID? { displayed.activeProfileID }
     var inertImports: [InertPortableSetting] { displayed.inertImports }
     var settingsRevision: UInt64 { displayed.revision }
+    var acknowledgedRevision: UInt64 { acknowledged.revision }
     var profiles: [SavedProfile] { preferences.profiles }
     var hasPendingSettingsWrites: Bool { !pendingOrder.isEmpty }
+    var didAcknowledge: (() -> Void)?
+    var selectedVolumeID: UUID?
+    var selectedVolumeCapacity: Int64?
+    var latestSystemSnapshot: SystemSnapshot?
+    var acknowledgedPreferences: PolicyPreferences {
+        PolicyPreferences.project(legacy: acknowledged.config, saved: acknowledged.preferences)
+    }
     var effectivePolicy: EffectivePolicy? {
+        let preferences = acknowledgedPreferences
+        let activeProfileID = acknowledged.activeProfileID
         var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
         if let activeProfileID {
             guard preferences.profiles.filter({ $0.id == activeProfileID }).count == 1,
@@ -35,12 +45,28 @@ final class AppConfigStore {
             else { return nil }
             layers[.profile] = profile.values
         }
-        let inputs = PolicyInputs(layers: layers, selectedVolumeID: nil,
-            approvedVolumeIDs: [], capacityBytes: nil,
+        let inputs = PolicyInputs(layers: layers, selectedVolumeID: selectedVolumeID,
+            approvedVolumeIDs: Set([selectedVolumeID].compactMap { $0 }), capacityBytes: selectedVolumeCapacity,
             logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
-            lowPower: false, seriousThermal: false, critical: false,
+            lowPower: latestSystemSnapshot?.isLowPowerModeEnabled ?? true,
+            seriousThermal: latestSystemSnapshot?.thermalState == .serious,
+            critical: latestSystemSnapshot?.memoryPressureLevel == .critical || latestSystemSnapshot?.thermalState == .critical,
             mandatoryExclusions: [])
         return try? PolicyResolver.resolve(inputs)
+    }
+
+    /// Pressing Scan acknowledges ordinary defaults, never grants optional authority.
+    func prepareExplicitScan() async {
+        await bridge.drain()
+        if acknowledged.revision == 0, !hasPendingSettingsWrites {
+            let current = config
+            config = current
+            await bridge.drain()
+        }
+    }
+
+    func scanEnvironment(homeDirectory: String, detectedTools: Set<ToolchainID>) throws -> CleanEnvironment {
+        try acknowledged.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: detectedTools)
     }
 
     private let bridge: ExecutionPolicyBridge
@@ -165,6 +191,7 @@ final class AppConfigStore {
             pendingOrder.removeAll { $0 == id }
         }
         replayVisibleState()
+        if case .saved = outcome { didAcknowledge?() }
     }
 
     private func replayVisibleState() {

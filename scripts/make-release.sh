@@ -20,9 +20,8 @@ fi
 
 echo "Building Tidy $VERSION (Release)…"
 
-if command -v xcodegen >/dev/null 2>&1; then
-  xcodegen generate
-fi
+# Use the reviewed, committed project, exactly as CI and release.yml do.
+# Regeneration is a separate explicit development operation.
 
 xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Release \
   -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO

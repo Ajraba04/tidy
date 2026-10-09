@@ -1281,6 +1281,20 @@ extension SharedSettingsWiringTests {
         XCTAssertTrue(source.contains("describe(change.effect)"))
     }
 
+    func testImportFileReaderRejectsFIFOAndSymlinkWithoutBlocking() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("import-special-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fifo = directory.appendingPathComponent("selected.json")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+        XCTAssertThrowsError(try SettingsImportFileReader.read(fifo))
+        let regular = directory.appendingPathComponent("regular.json")
+        try Data("{}".utf8).write(to: regular)
+        let link = directory.appendingPathComponent("link.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: regular)
+        XCTAssertThrowsError(try SettingsImportFileReader.read(link))
+    }
+
     func testImportFileReaderRejectsOversizeBeforeReadingPayload() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "tidy-import-reader-" + UUID().uuidString, isDirectory: true)

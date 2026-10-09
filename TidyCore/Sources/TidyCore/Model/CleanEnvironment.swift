@@ -9,6 +9,7 @@ import Foundation
 /// TidyCore and SwiftUI, and `Environment` would collide with SwiftUI's own
 /// `@Environment` property wrapper type in every file that does.
 public struct CleanEnvironment: Sendable {
+    public var effectivePolicy: EffectivePolicy?
     public var homeDirectory: String
     public var detectedTools: Set<ToolchainID>
     public var gitRoots: [String]
@@ -43,12 +44,16 @@ public struct CleanEnvironment: Sendable {
         staleNodeModulesThresholdDays: Int = 60,
         transcriptAgeThresholdDays: Int = 45,
         appsApprovedForQuit: [String] = [],
-        allowRestartToReclaimSwap: Bool = false
+        allowRestartToReclaimSwap: Bool = false,
+        effectivePolicy: EffectivePolicy? = nil
     ) {
+        self.effectivePolicy = effectivePolicy
         self.homeDirectory = homeDirectory
         self.detectedTools = detectedTools
         self.gitRoots = gitRoots
-        self.protectedRoots = protectedRoots
+        self.protectedRoots = Array(Set(protectedRoots)
+            .union(Self.defaultProtectedRoots(homeDirectory: homeDirectory))
+            .union(effectivePolicy?.exclusions ?? []))
         self.keepCookieDomains = keepCookieDomains
         self.simulatorsApprovedForDeletion = simulatorsApprovedForDeletion
         self.staleNodeModulesThresholdDays = staleNodeModulesThresholdDays

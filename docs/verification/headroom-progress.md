@@ -2,6 +2,116 @@
 
 Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-developer-headroom-execution-plan.md) and its binding design/registry. This ledger distinguishes implementation from tests, UI evidence and physical-device acceptance. Missing evidence means incomplete, not passed.
 
+
+## Audit remediation working tree — 2026-10-09
+
+This entry supersedes older completion claims for the current working tree. The
+starting commit was `9e1a50094b73e3c2a9bf136d9ed7e58ea8dc9c4a` in `/workspace/tidy`.
+The user authorized implementation after the static audit. Their Linux restriction
+on builds, app execution, dependency installation, generators, and tests remains in
+force. **No Swift compilation, app launch, tests, project generation, packaging,
+or release was performed for these changes.** Earlier passing test counts below
+do not validate this patch. On 2026-10-10 the user authorized committing and pushing
+this checkpoint for local continuation; see the
+[local handover](local-handover-2026-10-10.md).
+
+The publication check found `origin/main` at `9da3196`, 67 commits ahead of this
+checkpoint's base, with overlapping remediation and additional product features.
+The gaps below describe this branch only. Reconcile against current main before
+using them as the repository's current backlog; this checkpoint does not supersede
+the newer implementation or its evidence.
+
+### Implemented source changes, awaiting native verification
+
+| Finding | Current source change | Closure still required |
+| --- | --- | --- |
+| F01 | Bootstrap discovery supplies one tool set to onboarding, policy, and scanning. First explicit Scan saves ordinary defaults through the existing bridge. | Fresh-install and migrated-config macOS flows. Detection remains inventory evidence. |
+| F02 | Reviews retain bounded manifests and identities; confirmation checks identities; effects compare current scope with the retained manifest. | Root/ancestor replacement and concurrent-writer tests. Production DerivedData is quarantined because no producer lease exists. |
+| F03 | Intent/start/terminal/finish records, returned-effect completion proof, and a bounded reconciliation pass for known synchronous effects. Legacy incomplete records close with unknown outcomes, never replay. Process intents remain blocked. | Run/relaunch/crash/disk-full matrix. Recovery does not reconstruct per-leaf outcomes lost during a crash; those remain uncertain. |
+| F04 | Capture bounds total entries, encoded bytes, depth, ancestor descriptors, and elapsed time. Effects check cancellation, policy changes, and deadline between leaves. | Actual memory/FD/latency measurements and interruption fixtures. A kernel syscall is not forcibly interrupted. |
+| F05 | Mandatory cloud roots are unioned into environments, effective exclusions reach production environments, project traversal receives exclusions, and destructive parent-of-protected scopes are rejected. | All traversal/protection fixtures on macOS, including approved roots and filesystem aliases. |
+| F06 | Shared observations reach the scheduler, power and thermal inputs remain distinct, critical state is held conservatively, and unknown observations retain restricted admission. | Pressure/power recovery, policy-handoff races, and real idle sampling checks. |
+| F07 | Single-flight scan startup, separate running-partial presentation, service-owned cancellation, per-session result retention, and close/reopen subscription repair. Results publish before progress notifications. | Concurrent windows/rescan/cancel and terminal-delivery races. Retention is bounded to eight scan handles. |
+| F08 | Monitor visibility belongs to individual consumers and is removed independently. | Real popover/window overlap and teardown. |
+| F09 | Subscribe to normal pressure events; reject callbacks from stopped subscriptions; clear stale pressure when sampling stops. | Live normal-warning-critical-normal transitions. |
+| F10 | Import uses no-follow, nonblocking descriptor open, regular-file validation, bounded reads off the UI actor, and stale-result cancellation with visible progress. | FIFO/symlink/provider tests. Cancellation cannot interrupt a kernel read already blocked on a regular file; it prevents applying the result. |
+| F11 | Explicit test sources/resources reconciled in project.yml; CI includes app-model tests, the isolated process-cap test, both app architectures, and a semantic project-membership check. Local release no longer conditionally regenerates the project. | Execute the new CI gate, native targets, and deterministic regeneration comparison on macOS. |
+| F12 | Optional history is bounded, path/message-redacted, serialized off the UI actor, and governed by acknowledged enable/retention/size settings. Mandatory recovery remains separate. | Retention/opt-out/relaunch/write-failure tests. Optional history rewriting is not crash-atomic and may lose optional records after interrupted writes. |
+| F13 | README, onboarding, mode descriptions, and result accounting describe current inventory-only capabilities and measurement uncertainty. | Product/accessibility review and minimum-toolchain verification. |
+
+Additional integrations: the aggregate index is constructed for explicit scans,
+starts its event watch before traversal, and stops after terminal work. Monitoring
+receives acknowledged settings changes; unchanged settings preserve raw history.
+Headroom resolves the observed home volume and capacity, and distinguishes an
+unavailable target from an unset preference. Bootstrap recovery offers retry and
+revealing the settings directory without deleting damaged state.
+
+Production mutation remains default-deny, including DerivedData. Internal fixture
+coverage of the guarded adapter is not production acceptance and supplies no
+runtime bypass. New tests cover ten completed journaled fixture runs, stale root
+rejection, total manifest limits, multi-consumer visibility, history opt-out and
+retention, FIFO/symlink imports, and first explicit scan configuration. They are
+**written but unrun**.
+
+Static checks performed: changed-call-path inspection, `git diff --check`, existence
+of every `project.yml` path, and Python AST parsing of
+`scripts/check-project-sources.py`. The membership checker itself invokes macOS
+`plutil` and was not executed here. None of these checks establishes Swift
+compilation or runtime correctness.
+
+### Continuation: project inventory and scheduling stability
+
+Read-only project marker inventory now runs within explicit Scan sessions when the
+projects feature is enabled. It considers only approved roots, preserves mandatory
+exclusions, caps retained projects at 256, and prunes recognized dependency/metadata
+directories from recursive descent. Each root has a 30-second slice; the project
+phase stops starting additional roots after its overall deadline or result cap.
+Markers are metadata, not evaluated manifests. Git indirection files are displayed
+as unresolved and are not followed. Nested projects, pins/current-project
+protection, partial coverage, and observation time are visible in Scan.
+
+`ActivityResolver` now expresses the complete-owner, five-second runtime evidence,
+24-hour association, exact-resource/policy, held-lease, pin/running/recency rules.
+It grants no execution authority. Production marker inventory always remains
+unknown or pinned: it has no producer lease and cannot use a missing process as
+positive proof. Git dirty/untracked/common-directory resolution, the complete
+Projects workflow, and per-adapter evidence producers remain open T11 work.
+
+The monitoring bridge also serializes and deduplicates applied observations, so an
+unchanged sample does not advance the scheduler epoch and invalidate an active
+scan. Regression cases for that boundary and project/ownership evidence were added
+but **not run**. These additions do not change the native-verification limitation.
+
+### Remaining program gates — do not mark complete
+
+1. Run the foundation's core, app-model, isolated process, and app build gates on
+   macOS, then resolve every failure before expanding mutation authority. Verify
+   existing tests affected by changed scan ownership and default-deny capabilities.
+2. T07.3d/T22.3: finish confirmed history/index clearing, local reassociation, and
+   immediate privacy preference effects for every persisted store. Recovery retry
+   currently preserves damaged settings; it does not automatically repair them.
+3. T11–T13: finish project inventory beyond marker evidence and complete ownership/activity evidence, deterministic
+   eligibility/ranking/overlap accounting, and the reviewed per-volume Build Prep UI
+   and execution contract. Pins/recentness/cost/project controls still need their
+   complete consumers; typed settings alone do not implement these workflows.
+4. T14: instance-bound, explicitly confirmed graceful Pressure Rescue with refusal,
+   timeout, and PID-reuse handling. Existing legacy termination remains denied.
+5. T15–T20: independently accepted inventory and mutation/denial units for Apple,
+   Android/Gradle/Flutter/Node, language managers/Homebrew, Docker/Colima, IDE/models/
+   data, and Git/LFS/worktrees. No adapter receives blanket approval from this patch.
+6. T21–T22: budgets, quiet notifications, independent standing maintenance authority,
+   revocation, and exact bounded scheduling. Unattended mutation allowlist stays empty.
+7. Privacy: substantiate FileTimestamp required-reason declarations against current
+   platform guidance, verify exported diagnostics and backup behavior, and instrument
+   local-only workflows. No new declaration was guessed during this Linux pass.
+8. T23–T24: automated native UI coverage and manual keyboard/VoiceOver/contrast/text
+   scaling checks; macOS 14 and current stable OS; Intel and Apple Silicon; physical
+   8 GiB-device performance; fault injection; signed/unsigned packaging, signing,
+   notarization, and release metadata. The cask checksum template is still unpublished.
+
+The full program and the user's request to execute it fully remain incomplete.
+This working tree is an unverified remediation candidate, not a release-ready app.
+
 ## Workspace and baseline
 
 - Base application revision: `db4707f` (v1.5.0).

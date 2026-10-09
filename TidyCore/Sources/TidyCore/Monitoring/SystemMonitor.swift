@@ -92,7 +92,7 @@ public struct LiveMemoryPressureObserving: MemoryPressureObserving {
 
     public func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void) -> MemoryPressureSubscription {
         let source = DispatchSource.makeMemoryPressureSource(
-            eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility))
+            eventMask: [.normal, .warning, .critical], queue: DispatchQueue.global(qos: .utility))
         source.setEventHandler { [weak source] in
             guard let event = source?.data else { return }
             if event.contains(.critical) { onChange(.critical) }
@@ -239,9 +239,12 @@ public actor SystemMonitor {
     private let instrumentation: MonitorInstrumentation
     private let clock: @Sendable () -> Date
 
-    private var isWindowVisible = false
+    private var visibleConsumers: Set<UUID> = []
+    private let legacyVisibilityID = UUID()
+    private var isWindowVisible: Bool { !visibleConsumers.isEmpty }
     private var timerTask: Task<Void, Never>?
     private var pressureSubscription: MemoryPressureSubscription?
+    private var pressureGeneration: UUID?
     private(set) var history: SignalHistory
     private var lastPageOutCounter: (boot: BootIdentity, count: UInt64, pageSizeBytes: UInt64, at: Date)?
     private var latestPressureLevel: MemoryPressureLevel?
@@ -279,10 +282,12 @@ public actor SystemMonitor {
     /// Applies a freshly-resolved `EffectivePolicy` (or `.disabled`). Safe
     /// to call repeatedly, including every time settings change.
     public func applyConfiguration(_ newConfiguration: Configuration) {
+        guard configuration != newConfiguration else { return }
+        let previous = configuration
         configuration = newConfiguration
         if !newConfiguration.historyEnabled {
             history = SignalHistory(maxEntries: 0, maxAgeSeconds: 0)
-        } else {
+        } else if !previous.historyEnabled || previous.historyHours != newConfiguration.historyHours {
             history = SignalHistory(maxEntries: SystemMonitor.historyCapacity(forHours: newConfiguration.historyHours),
                 maxAgeSeconds: Double(newConfiguration.historyHours) * 3_600)
         }
@@ -297,9 +302,14 @@ public actor SystemMonitor {
     /// caller's own -- this is the one signal that flips between the
     /// visible and hidden sampling cadence.
     public func setWindowVisible(_ visible: Bool) {
-        guard isWindowVisible != visible else { return }
-        isWindowVisible = visible
-        reschedule()
+        setWindowVisible(visible, consumer: legacyVisibilityID)
+    }
+
+    public func setWindowVisible(_ visible: Bool, consumer: UUID) {
+        let wasVisible = isWindowVisible
+        if visible { visibleConsumers.insert(consumer) }
+        else { visibleConsumers.remove(consumer) }
+        if wasVisible != isWindowVisible { reschedule() }
     }
 
     /// An explicit, one-shot measurement. Always allowed regardless of the
@@ -408,13 +418,18 @@ public actor SystemMonitor {
             }
             pressureSubscription?.cancel()
             pressureSubscription = nil
+            pressureGeneration = nil
+            latestPressureLevel = nil
+            lastPageOutCounter = nil
             return
         }
 
         if pressureSubscription == nil {
+            let generation = UUID()
+            pressureGeneration = generation
             pressureSubscription = pressureObserving.start { [weak self] level in
                 guard let self else { return }
-                Task { await self.updatePressureLevel(level) }
+                Task { await self.updatePressureLevel(level, generation: generation) }
             }
         }
 
@@ -429,15 +444,18 @@ public actor SystemMonitor {
         timerTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                try? await self.scheduling.sleep(seconds: interval)
+                do { try await self.scheduling.sleep(seconds: interval) }
+                catch { break }
                 guard !Task.isCancelled else { break }
                 _ = await self.requestSnapshot()
             }
         }
     }
 
-    private func updatePressureLevel(_ level: MemoryPressureLevel) {
+    private func updatePressureLevel(_ level: MemoryPressureLevel, generation: UUID) async {
+        guard pressureGeneration == generation else { return }
         latestPressureLevel = level
+        _ = await requestSnapshot()
     }
 
     private func measure() async -> SystemSnapshot {

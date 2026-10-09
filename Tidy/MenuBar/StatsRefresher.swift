@@ -17,6 +17,7 @@ import TidyCore
 final class StatsRefresher {
     private(set) var snapshot: SystemSnapshot?
 
+    private let visibilityID = UUID()
     private let monitor: SystemMonitor
     // Written once in init and read in the nonisolated deinit, where a
     // main-actor property cannot be referenced; Task handles are Sendable and
@@ -47,14 +48,18 @@ final class StatsRefresher {
 
     deinit {
         observationTask?.cancel()
+        let monitor = monitor
+        let id = visibilityID
+        Task { await monitor.setWindowVisible(false, consumer: id) }
     }
 
     /// The popover became visible: switch to the visible sampling cadence
     /// and take one immediate reading.
     func onPopoverAppear() {
         let monitor = monitor
+        let visibilityID = visibilityID
         Task {
-            await monitor.setWindowVisible(true)
+            await monitor.setWindowVisible(true, consumer: visibilityID)
             await monitor.requestSnapshot()
         }
     }
@@ -65,7 +70,8 @@ final class StatsRefresher {
     /// slows it.
     func onPopoverDisappear() {
         let monitor = monitor
-        Task { await monitor.setWindowVisible(false) }
+        let visibilityID = visibilityID
+        Task { await monitor.setWindowVisible(false, consumer: visibilityID) }
     }
 
     /// Re-reads the effective policy's monitoring settings. Cheap and

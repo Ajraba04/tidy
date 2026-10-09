@@ -64,19 +64,19 @@ struct MenuBarContentView: View {
                     open(WindowID.headroom)
                 }
 
-                ModeButton(title: "Safe Clean", subtitle: "Regeneratable caches only") {
+                ModeButton(title: "Safe Clean", subtitle: "Cache inventory; cleanup unavailable") {
                     open(WindowID.clean, value: Tier.safe)
                 }
 
-                ModeButton(title: "Normal Clean", subtitle: "+ browsers, Trash, build outputs") {
+                ModeButton(title: "Normal Clean", subtitle: "Broader inventory; cleanup unavailable") {
                     open(WindowID.clean, value: Tier.normal)
                 }
 
-                ModeButton(title: "Deep Clean", subtitle: "Everything, including re-downloads") {
+                ModeButton(title: "Deep Clean", subtitle: "Extended inventory; cleanup unavailable") {
                     open(WindowID.clean, value: Tier.deep)
                 }
 
-                ModeButton(title: "Custom…", subtitle: "Pick individual items, save presets") {
+                ModeButton(title: "Custom…", subtitle: "Review catalog items and saved presets") {
                     open(WindowID.custom)
                 }
             }

@@ -5,6 +5,7 @@ public actor ExecutionCoordinator {
     private struct Registration {
         let review: RegisteredReview
         let identities: [String: [ResourceIdentity]]
+        let trees: [String: ReviewedTree]
         let unavailableIdentityIDs: Set<String>
     }
     private enum State { case idle, running(runID: UUID) }
@@ -19,6 +20,7 @@ public actor ExecutionCoordinator {
     private var tokens: [UUID: ReviewBinding] = [:]
     private var rejections: [UUID: Rejection] = [:]
     private var rejectionOrder: [UUID] = []
+    private var reconciledAtLaunch = false
 
     public init(environment: CleanEnvironment, journalDirectory: URL) {
         let id = UUID()
@@ -31,30 +33,22 @@ public actor ExecutionCoordinator {
 
     public func prepareReview(engine: CleanEngine, tier: Tier, selectDefaults: Bool) async throws -> RegisteredReview {
         try requireAdmission()
+        guard reviews.count < 8 else { throw ConfirmationError.busy }
         guard case .ready(let revision) = barrier.snapshot() else { throw ConfirmationError.stalePolicy }
         let snapshot = try barrier.withCurrentPolicy(revision: revision) { environment }
         let plan = await engine.makePlan(items: CleanCatalog.allItems, tier: tier, environment: snapshot)
         guard Set(plan.reviewItems.map(\.id)).count == plan.reviewItems.count else {
             throw ConfirmationError.unavailableSelection
         }
-        var identities: [String: [ResourceIdentity]] = [:]
-        var unavailable: Set<String> = []
-        for row in plan.reviewItems {
-            var captured: [ResourceIdentity] = []
-            for target in row.targets {
-                if target.isFilesystemPath, let identity = try? ResourcePreflight.captureFile(at: target.path) {
-                    captured.append(.filesystem(identity))
-                } else { unavailable.insert(row.id) }
-            }
-            identities[row.id] = captured
-        }
+        let (identities, trees, unavailable) = captureReviewEvidence(plan)
         try requireAdmission()
         return try barrier.withCurrentPolicy(revision: revision) {
+            guard reviews.count < 8 else { throw ConfirmationError.busy }
             let selection = PlanSelection(plan: plan, selectDefaults: selectDefaults)
             guard unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
             let binding = ReviewBinding(planID: UUID(), planRevision: 1, policyRevision: revision, selectedIDs: selection.selectedIDs)
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
-            reviews[binding.planID] = Registration(review: review, identities: identities, unavailableIdentityIDs: unavailable)
+            reviews[binding.planID] = Registration(review: review, identities: identities, trees: trees, unavailableIdentityIDs: unavailable)
             return review
         }
     }
@@ -65,15 +59,12 @@ public actor ExecutionCoordinator {
     /// planning succeeds or fails. No scheduler, session, or process authority is created here
     /// beyond that one bounded, finished-before-return session.
     ///
-    /// A revision-zero/fresh-install envelope deliberately leaves the scheduler façade
-    /// `.unavailable` until a real settings save completes (T08.1b). That is not treated as a
-    /// review failure: every catalog row must still be visible with an honest status, so this
-    /// falls back to the pre-orchestration planning shape in that case — the exact same
-    /// "unavailable, here is why" rows the legacy path has always produced. This is a truthful
-    /// degrade, not a silent one: no row is ever claimed discovered or measured that wasn't.
+    /// Valid defaults support read-only discovery from first launch. Recovery-mode
+    /// policy remains unavailable and yields only explicitly unavailable catalog rows.
     public func prepareReview(engine: CleanEngine, tier: Tier, selectDefaults: Bool,
                               sessions: BridgeExplicitSessions) async throws -> RegisteredReview {
         try requireAdmission()
+        guard reviews.count < 8 else { throw ConfirmationError.busy }
         guard case .ready(let revision) = barrier.snapshot() else { throw ConfirmationError.stalePolicy }
         let snapshot = try barrier.withCurrentPolicy(revision: revision) { environment }
         await sessions.awaitInitialInstall()
@@ -91,24 +82,15 @@ public actor ExecutionCoordinator {
         guard Set(plan.reviewItems.map(\.id)).count == plan.reviewItems.count else {
             throw ConfirmationError.unavailableSelection
         }
-        var identities: [String: [ResourceIdentity]] = [:]
-        var unavailable: Set<String> = []
-        for row in plan.reviewItems {
-            var captured: [ResourceIdentity] = []
-            for target in row.targets {
-                if target.isFilesystemPath, let identity = try? ResourcePreflight.captureFile(at: target.path) {
-                    captured.append(.filesystem(identity))
-                } else { unavailable.insert(row.id) }
-            }
-            identities[row.id] = captured
-        }
+        let (identities, trees, unavailable) = captureReviewEvidence(plan)
         try requireAdmission()
         return try barrier.withCurrentPolicy(revision: revision) {
+            guard reviews.count < 8 else { throw ConfirmationError.busy }
             let selection = PlanSelection(plan: plan, selectDefaults: selectDefaults)
             guard unavailable.isDisjoint(with: selection.selectedIDs) else { throw ConfirmationError.unavailableSelection }
             let binding = ReviewBinding(planID: UUID(), planRevision: 1, policyRevision: revision, selectedIDs: selection.selectedIDs)
             let review = RegisteredReview(binding: binding, plan: plan, selection: selection)
-            reviews[binding.planID] = Registration(review: review, identities: identities, unavailableIdentityIDs: unavailable)
+            reviews[binding.planID] = Registration(review: review, identities: identities, trees: trees, unavailableIdentityIDs: unavailable)
             return review
         }
     }
@@ -130,7 +112,7 @@ public actor ExecutionCoordinator {
                                         policyRevision: old.binding.policyRevision, selectedIDs: selectedIDs)
             let next = RegisteredReview(binding: binding, plan: old.plan, selection: selection)
             invalidateTokens(planID: planID, reason: .staleReview)
-            reviews[planID] = Registration(review: next, identities: registration.identities,
+            reviews[planID] = Registration(review: next, identities: registration.identities, trees: registration.trees,
                                            unavailableIdentityIDs: registration.unavailableIdentityIDs)
             return next
         }
@@ -172,6 +154,7 @@ public actor ExecutionCoordinator {
         }
         if let rejection { return report(rejection.disposition) }
         guard let binding, let registered = reviews[binding.planID] else { return report(.invalidToken) }
+        reviews.removeValue(forKey: binding.planID)
         let tier = registered.review.plan.tier
         let selected: [PlannedItem]
         do {
@@ -195,7 +178,7 @@ public actor ExecutionCoordinator {
         } catch { return report(.unavailableSelection, tier: tier) }
 
         guard !selected.isEmpty else { return report(.noWork, tier: tier) }
-        return await performAcceptedEffects(selected, tier: tier)
+        return await performAcceptedEffects(selected, trees: registered.trees, tier: tier, policyRevision: binding.policyRevision)
     }
 
     /// The only call site that dispatches a real mutation. Every item here
@@ -203,13 +186,16 @@ public actor ExecutionCoordinator {
     /// accepted it, while the synchronous policy barrier was held. Each
     /// item is independently re-checked against the one sealed adapter
     /// before it is touched: this function grants no authority of its own.
-    private func performAcceptedEffects(_ items: [PlannedItem], tier: Tier) async -> RunReport {
+    private func performAcceptedEffects(_ items: [PlannedItem], trees: [String: ReviewedTree], tier: Tier, policyRevision: UInt64) async -> RunReport {
         let startedAt = Date()
         guard let admissionStore else { return report(.storageUnavailable, tier: tier) }
         let journal: RunJournal
         do {
             let storage = try DurableJournalStorage(directory: journalDirectory)
             journal = try RunJournal(store: admissionStore, storage: storage)
+            let history = RunHistoryPolicy.resolve(environment.effectivePolicy)
+            try journal.applyHistoryLimits(enabled: history.enabled, days: history.days,
+                bytes: history.maximumBytes, now: Date())
         } catch { return report(.storageUnavailable, tier: tier) }
 
         let runID = UUID()
@@ -219,22 +205,6 @@ public actor ExecutionCoordinator {
             return (try? journal.append(JournalEvent(runID: runID, sequence: sequence, phase: phase,
                 operationID: nil, status: nil, reason: nil))) != nil
         }
-        // `RunJournal.append(.started)` requires a matching `PendingEffectIntent`
-        // already durably persisted in the single mandatory admission ledger,
-        // and there is no accepted API anywhere in this package that later
-        // removes a persisted intent (RunRecoveryTests.diagnosticSucceededNeverSuppliesTerminalProof
-        // proves `.itemTerminal(.succeeded)` does not reconcile one either).
-        // Persisting one here would make every future mutation across the
-        // whole app permanently `.uncertainAndPossiblyRunning` after the
-        // very first real cleanup, which is a strictly worse outcome than a
-        // narrower journal record. Until a reviewed reconciliation primitive
-        // lands in `MutationAdmissionStore`, this coordinator only records
-        // the confirmed intent to run (`.planned`/`.confirmed`), never a
-        // per-operation `.started`/`.itemTerminal`/`.finished` sequence for a
-        // real effect. Journal failures below latch the mandatory admission
-        // store unavailable on their own (`RunJournal.observed`); this run
-        // simply stops making progress rather than report a success it
-        // cannot durably record.
         guard appendEvent(.planned) else { return report(.storageUnavailable, tier: tier) }
         guard appendEvent(.confirmed) else { return report(.storageUnavailable, tier: tier) }
 
@@ -254,7 +224,19 @@ public actor ExecutionCoordinator {
                 continue
             }
             do {
-                let effect = try DerivedDataEffectAdapter.execute(itemID: item.id, action: item.action, target: target)
+                guard let tree = trees[item.id] else { throw ConfirmationError.unavailableSelection }
+                let operationID = UUID()
+                let effect = try DerivedDataEffectAdapter.execute(itemID: item.id, action: item.action,
+                    target: target, reviewedTree: tree, operationID: operationID,
+                    shouldContinue: { self.barrier.snapshot() == .ready(revision: policyRevision) }) {
+                    try journal.persistIntent(PendingEffectIntent(runID: runID, operationID: operationID,
+                        adapterID: DerivedDataEffectAdapter.acceptedItemID, bootID: UUID(),
+                        executablePath: "", executableDevice: 0, executableInode: 0,
+                        childPID: nil, childStartSeconds: nil, childStartMicroseconds: nil, phase: .prepared))
+                    try journal.append(JournalEvent(runID: runID, sequence: sequence, phase: .started,
+                        operationID: operationID, status: nil, reason: nil))
+                    sequence += 1
+                }
                 if !capturedFirstMeasurement, let before = effect.freeSpaceBeforeBytes {
                     freeSpaceBeforeBytes = before
                     capturedFirstMeasurement = true
@@ -266,13 +248,24 @@ public actor ExecutionCoordinator {
                 results.append(ItemResult(id: item.id, title: item.title, freedBytes: freed.bytes ?? 0,
                     succeeded: status == .succeeded, message: nil,
                     targetOutcomes: effect.outcomes, effectStatus: status))
+                try journal.completeFilesystemEffect(effect, runID: runID, sequence: sequence)
+                sequence += 1
             } catch {
                 measurementsAvailable = false
-                results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
-                    message: "\(error)", targetOutcomes: nil, effectStatus: .failed))
+                if results.last?.id != item.id {
+                    results.append(ItemResult(id: item.id, title: item.title, freedBytes: 0, succeeded: false,
+                        message: "\(error)", targetOutcomes: nil, effectStatus: .failed))
+                }
+                if admissionStore.readAdmissionWhileLocked() != .ready { break }
             }
         }
 
+        do { try journal.finish(runID: runID) }
+        catch {
+            return RunReport(tier: tier, results: results, startedAt: startedAt, finishedAt: Date(),
+                freeSpaceBeforeBytes: freeSpaceBeforeBytes, freeSpaceAfterBytes: freeSpaceAfterBytes,
+                disposition: .recoveryBlocked, coordinatorMeasurementsAvailable: false)
+        }
         return RunReport(tier: tier, results: results, startedAt: startedAt, finishedAt: Date(),
             freeSpaceBeforeBytes: freeSpaceBeforeBytes, freeSpaceAfterBytes: freeSpaceAfterBytes,
             disposition: .completed,
@@ -305,7 +298,23 @@ public actor ExecutionCoordinator {
         if case .running = state { return .busy }
         guard let admissionStore else { return .storageUnavailable }
         defer { admissionStore.release() }
-        return admissionStore.acquire()
+        let admission = admissionStore.acquire()
+        if !reconciledAtLaunch, admission == .ready || admission == .uncertainAndPossiblyRunning {
+            reconciledAtLaunch = true
+            do {
+                let journal = try RunJournal(store: admissionStore,
+                    storage: DurableJournalStorage(directory: journalDirectory))
+                try journal.reconcileSynchronousFilesystemEffects()
+                return admissionStore.readAdmissionWhileLocked()
+            } catch { return .storageUnavailable }
+        }
+        return admission
+    }
+
+    public func retryRecovery() -> MutationAdmission {
+        guard case .idle = state else { return .busy }
+        reconciledAtLaunch = false
+        return mutationAdmission()
     }
 
     private func requireAdmission() throws {
@@ -317,11 +326,55 @@ public actor ExecutionCoordinator {
         }
     }
 
+    private func captureReviewEvidence(_ plan: CleanPlan) ->
+        ([String: [ResourceIdentity]], [String: ReviewedTree], Set<String>) {
+        var identities: [String: [ResourceIdentity]] = [:]
+        var trees: [String: ReviewedTree] = [:]
+        var unavailable = Set<String>()
+        for row in plan.reviewItems where row.review.isSelectable {
+            do {
+                guard row.targets.count == 1, let target = row.targets.first, target.isFilesystemPath,
+                      PathGuard(protectedRoots: environment.protectedRoots).isSafe(target.path,
+                        mustBeUnder: row.declaredRoot, home: environment.homeDirectory) else {
+                    throw ConfirmationError.unavailableSelection
+                }
+                let identity = try ResourcePreflight.captureFile(at: target.path)
+                let tree = try ReviewedTree.capture(anchor: DirectoryAnchor.open(path: target.path), excluding: [])
+                guard ResourcePreflight.unchanged(identity) else { throw ConfirmationError.unavailableSelection }
+                identities[row.id] = [.filesystem(identity)]
+                trees[row.id] = tree
+            } catch { unavailable.insert(row.id) }
+        }
+        return (identities, trees, unavailable)
+    }
+
     private func validateSelection(_ registration: Registration) throws {
+        let selected = registration.review.selection.selectedItems
+        guard selected.count <= (environment.effectivePolicy?.manualBatchItems ?? 100) else {
+            throw ConfirmationError.unavailableSelection
+        }
+        var bytes: Int64 = 0
+        for tree in selected.compactMap({ registration.trees[$0.id] }) {
+            for leaf in tree.batches.lazy.flatMap(\.entries) {
+                guard let allocated = leaf.snapshot.allocatedBytes, allocated >= 0 else {
+                    throw ConfirmationError.unavailableSelection
+                }
+                let (sum, overflow) = bytes.addingReportingOverflow(allocated)
+                guard !overflow, sum <= (environment.effectivePolicy?.manualBatchBytes ?? 107_374_182_400) else {
+                    throw ConfirmationError.unavailableSelection
+                }
+                bytes = sum
+            }
+        }
         for row in registration.review.selection.selectedItems {
             guard row.review.isSelectable,
                   CapabilityRegistry.denialReason(for: row.action, itemID: row.id) == nil,
-                  !registration.unavailableIdentityIDs.contains(row.id) else {
+                  !registration.unavailableIdentityIDs.contains(row.id),
+                  let identities = registration.identities[row.id], identities.count == row.targets.count,
+                  identities.allSatisfy({ identity in
+                      if case .filesystem(let file) = identity { return ResourcePreflight.unchanged(file) }
+                      return false
+                  }), registration.trees[row.id] != nil else {
                 throw ConfirmationError.unavailableSelection
             }
         }
