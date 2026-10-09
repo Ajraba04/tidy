@@ -43,6 +43,8 @@ targets:
       - path: Tidy/Clean/PlanReviewRow.swift
       - path: Tidy/Clean/PlanSelectionModel.swift
       - path: Tidy/Custom/CustomPlanView.swift
+      - path: Tidy/Settings/SettingsView.swift
+      - path: Tidy/Resources/Localizable.xcstrings
     dependencies:
       - package: TidyCore
     settings:
@@ -61,12 +63,19 @@ targets:
       - path: TidyAppModelTests/ConfirmationLifecycleTests.swift
       - path: TidyAppModelTests/SharedSettingsWiringTests.swift
       - path: TidyAppModelTests/RunReportPresentationTests.swift
+      - path: TidyAppModelTests/ScanOrchestrationWiringTests.swift
+      - path: TidyAppModelTests/HeadroomViewModelTests.swift
       - path: Tidy/Clean/PlanSelectionModel.swift
       - path: Tidy/Clean/CleanViewModel.swift
       - path: Tidy/Custom/CustomViewModel.swift
       - path: Tidy/Execution/AppExecutionServices.swift
       - path: Tidy/Settings/AppConfigStore.swift
       - path: Tidy/Clean/RunReportPresentation.swift
+      - path: Tidy/Settings/SettingsView.swift
+      - path: Tidy/Scan/ScanViewModel.swift
+      - path: Tidy/Headroom/HeadroomViewModel.swift
+      - path: Tidy/MenuBar/StatsRefresher.swift
+      - path: Tidy/Resources/Localizable.xcstrings
     dependencies:
       - package: TidyCore
     settings:

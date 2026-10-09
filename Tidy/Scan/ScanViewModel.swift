@@ -8,6 +8,7 @@ final class ScanViewModel {
     enum Phase {
         case idle
         case running
+        case runningPartial(CoreScanResult)
         case partial(CoreScanResult)
         case paused
         case cancelled
@@ -32,7 +33,7 @@ final class ScanViewModel {
     /// a second window opened against the same session converge on identical terminal state
     /// instead of launching a duplicate walk.
     func attachToActiveScanIfNeeded() {
-        guard sessionID == nil, let activeID = services.activeScanSessionID else { return }
+        guard streamTask == nil, let activeID = services.activeScanSessionID ?? sessionID else { return }
         phase = .running
         attach(sessionID: activeID)
     }
@@ -40,15 +41,13 @@ final class ScanViewModel {
     func runScan() async {
         detachSubscription()
         phase = .running
-        let environment = services.configStore.config.makePolicyEnvironment(
-            homeDirectory: services.paths.home.path, detectedTools: [])
         do {
-            let handle = try await services.beginScan(environment: environment)
+            let handle = try await services.beginScan()
             attach(sessionID: handle.sessionID)
         } catch CoreOrchestrationError.policyPaused {
             phase = .paused
         } catch ScanAvailabilityError.policyNotInstalled {
-            phase = .failed("Tidy needs settings saved once before it can scan. Open Settings, save, then try again.")
+            phase = .failed("Settings are not available for scanning. Complete onboarding or resolve the settings recovery message, then try again.")
         } catch {
             phase = .failed(String(describing: error))
         }
@@ -74,18 +73,20 @@ final class ScanViewModel {
     private func attach(sessionID: UUID) {
         self.sessionID = sessionID
         streamTask = Task { [weak self] in
-            guard let self else { return }
+            guard let registry = self?.services.scanRegistry else { return }
             do {
-                let subscription = try await self.services.scanRegistry.subscribe(sessionID: sessionID)
-                guard self.sessionID == sessionID else { await subscription.cancel(); return }
-                self.subscription = subscription
+                let subscription = try await registry.subscribe(sessionID: sessionID)
+                guard !Task.isCancelled, self?.sessionID == sessionID else { await subscription.cancel(); return }
+                self?.subscription = subscription
                 for await event in subscription.stream {
-                    guard self.sessionID == sessionID, event.sessionID == sessionID else { break }
+                    guard !Task.isCancelled, let self, self.sessionID == sessionID,
+                          event.sessionID == sessionID else { break }
                     await self.apply(event, sessionID: sessionID)
                 }
+                await subscription.cancel()
             } catch {
-                guard self.sessionID == sessionID else { return }
-                self.phase = .failed(String(describing: error))
+                guard self?.sessionID == sessionID else { return }
+                self?.phase = .failed(String(describing: error))
             }
         }
     }
@@ -94,7 +95,8 @@ final class ScanViewModel {
         switch event.kind {
         case .progress:
             if let result = await services.latestScanResult(sessionID: sessionID) {
-                phase = .partial(result)
+                guard self.sessionID == sessionID else { return }
+                phase = .runningPartial(result)
             }
         case .terminal(let terminal):
             switch terminal {

@@ -26,6 +26,7 @@ enum DerivedDataEffectAdapter {
     }
 
     struct Effect {
+        let operationID: UUID
         let outcomes: [TargetEffectOutcome]
         /// Bytes statfs reported free on the containing volume immediately
         /// before the first removal in this target's manifest, or nil if
@@ -34,24 +35,38 @@ enum DerivedDataEffectAdapter {
         /// The equivalent measurement after the last removal attempted for
         /// this target (including any batches withheld by the preflight).
         let freeSpaceAfterBytes: Int64?
+
+        fileprivate init(operationID: UUID, outcomes: [TargetEffectOutcome],
+                         freeSpaceBeforeBytes: Int64?, freeSpaceAfterBytes: Int64?) {
+            self.operationID = operationID
+            self.outcomes = outcomes
+            self.freeSpaceBeforeBytes = freeSpaceBeforeBytes
+            self.freeSpaceAfterBytes = freeSpaceAfterBytes
+        }
     }
 
     /// Runs the guarded deletion for one already-reviewed, already
     /// capability-checked target. Never called with a target this adapter
     /// did not itself validate: the two identity checks below are a second,
     /// independent gate behind `CapabilityRegistry`, not a substitute for it.
-    static func execute(itemID: String, action: CleanAction, target: TargetPath) throws -> Effect {
+    static func execute(itemID: String, action: CleanAction, target: TargetPath,
+                        reviewedTree tree: ReviewedTree, operationID: UUID,
+                        shouldContinue: () -> Bool = { true },
+                        beforeEffects: () throws -> Void) throws -> Effect {
         guard itemID == acceptedItemID else { throw AdapterError.wrongItem }
         guard case .deleteContents = action else { throw AdapterError.wrongItem }
         guard target.isFilesystemPath else { throw AdapterError.notAFilesystemTarget }
         guard target.path.hasSuffix(acceptedRelativeSuffix) else { throw AdapterError.wrongTarget }
 
         let anchor = try DirectoryAnchor.open(path: target.path)
-        let tree = try ReviewedTree.capture(anchor: anchor, excluding: [])
+        guard tree.header.canonicalRootPath == target.path else { throw AdapterError.wrongTarget }
+        try tree.validateCurrentContents(anchor: anchor)
 
+        try beforeEffects()
         var outcomes: [TargetEffectOutcome] = []
         let before = Self.freeBytes(atDirectory: target.path)
         var volumeUnreadable = false
+        let deadline = ProcessInfo.processInfo.systemUptime + 30
 
         // Batches preserve the manifest's global preorder (parents before
         // children) across their boundaries, so replaying batches in
@@ -67,13 +82,21 @@ enum DerivedDataEffectAdapter {
                 continue
             }
             for entry in batch.entries.reversed() {
+                guard !Task.isCancelled, shouldContinue(), ProcessInfo.processInfo.systemUptime < deadline else {
+                    outcomes.append(TargetEffectOutcome(relativePath: entry.relativePath, status: .skipped,
+                        reason: "Stopped at a cancellation, policy change, or execution deadline boundary.", completedRemovals: 0,
+                        removedApparentBytes: ByteObservation(bytes: 0, explanation: nil),
+                        removedAllocatedBytes: ByteObservation(bytes: 0, explanation: nil),
+                        provenReclaimedBytes: ByteObservation(bytes: nil, explanation: "Not measured")))
+                    continue
+                }
                 outcomes.append(AnchoredFileOperations.unlinkReviewedLeaf(
-                    anchor: anchor, reviewed: entry, excludedRelativePaths: []))
+                    anchor: anchor, reviewed: entry, excludedRelativePaths: Set(tree.excludedRelativePaths)))
             }
         }
 
         let after = Self.freeBytes(atDirectory: target.path)
-        return Effect(outcomes: outcomes, freeSpaceBeforeBytes: before, freeSpaceAfterBytes: after)
+        return Effect(operationID: operationID, outcomes: outcomes, freeSpaceBeforeBytes: before, freeSpaceAfterBytes: after)
     }
 
     private static func withheldOutcome(_ entry: ReviewedLeaf) -> TargetEffectOutcome {

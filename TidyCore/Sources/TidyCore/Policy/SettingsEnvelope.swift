@@ -755,3 +755,27 @@ enum SettingsDecoding {
         }
     }
 }
+
+public extension SettingsEnvelope {
+    /// The acknowledged document, including profile restrictions, is the production source.
+    func makePolicyEnvironment(homeDirectory: String, detectedTools: Set<ToolchainID>) throws -> CleanEnvironment {
+        let preferences = PolicyPreferences.project(legacy: config, saved: preferences)
+        var layers: [PolicyLayer: PolicyValues] = [.global: preferences.global]
+        if let activeProfileID {
+            guard preferences.profiles.filter({ $0.id == activeProfileID }).count == 1,
+                  let profile = preferences.profiles.first(where: { $0.id == activeProfileID }) else {
+                throw SettingsStoreError.invalidChange
+            }
+            layers[.profile] = profile.values
+        }
+        let roots = CleanEnvironment.defaultProtectedRoots(homeDirectory: homeDirectory)
+        let policy = try PolicyResolver.resolve(PolicyInputs(layers: layers, selectedVolumeID: nil,
+            approvedVolumeIDs: [], capacityBytes: nil,
+            logicalCPUCount: min(1_024, max(1, ProcessInfo.processInfo.activeProcessorCount)),
+            lowPower: true, seriousThermal: true, critical: false, mandatoryExclusions: Set(roots)))
+        var environment = config.makePolicyEnvironment(homeDirectory: homeDirectory, detectedTools: detectedTools)
+        environment.effectivePolicy = policy
+        environment.protectedRoots = Array(Set(roots).union(policy.exclusions))
+        return environment
+    }
+}

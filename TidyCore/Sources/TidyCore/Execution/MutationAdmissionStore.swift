@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// One installation-wide, fail-closed ledger. No reconciliation/reset API exists here.
+/// One installation-wide, fail-closed ledger. Unknown effects are never reset or replayed.
 final class MutationAdmissionStore {
     private struct Bootstrap: Codable { let schema: Int; let storeID: UUID; let state: String }
     private struct Envelope: Codable { let schema: Int; let storeID: UUID; var unfinished: [PendingEffectIntent] }
@@ -143,6 +143,38 @@ final class MutationAdmissionStore {
         guard let pid = intent.childPID, let seconds = intent.childStartSeconds,
               let micros = intent.childStartMicroseconds else { return false }
         return pid > 0 && seconds >= 0 && (0..<1_000_000).contains(micros)
+    }
+
+    /// Only a returned synchronous filesystem effect can release its own intent.
+    /// A diagnostic success event, a timeout, or a process effect is insufficient.
+    func completeFilesystemIntent(_ effect: DerivedDataEffectAdapter.Effect, runID: UUID) throws {
+        try requireJournalLock()
+        var ledger = try readLedger()
+        guard let index = ledger.unfinished.firstIndex(where: {
+            $0.runID == runID && $0.operationID == effect.operationID
+        }) else { throw JournalError.invalidTransition }
+        let intent = ledger.unfinished[index]
+        guard intent.adapterID == DerivedDataEffectAdapter.acceptedItemID,
+              intent.executablePath.isEmpty, intent.childPID == nil,
+              intent.phase == .prepared else { throw JournalError.invalidTransition }
+        ledger.unfinished.remove(at: index)
+        do { try publish(ledger, name: "unfinished-effects.json") }
+        catch { failed = true; throw JournalError.unavailable }
+    }
+
+    /// Acquiring the installation lock proves that a previous synchronous filesystem
+    /// caller has returned or exited. It does not establish which leaves were removed.
+    func reconcileQuiescentFilesystemIntent(_ intent: PendingEffectIntent) throws {
+        try requireJournalLock()
+        guard intent.adapterID == DerivedDataEffectAdapter.acceptedItemID,
+              intent.executablePath.isEmpty, intent.executableDevice == 0, intent.executableInode == 0,
+              intent.childPID == nil, intent.childStartSeconds == nil, intent.childStartMicroseconds == nil,
+              intent.phase == .prepared else { throw JournalError.invalidTransition }
+        var ledger = try readLedger()
+        guard ledger.unfinished.contains(intent) else { throw JournalError.invalidTransition }
+        ledger.unfinished.removeAll { $0 == intent }
+        do { try publish(ledger, name: "unfinished-effects.json") }
+        catch { failed = true; throw JournalError.unavailable }
     }
 
     private func validateStableLock() throws {

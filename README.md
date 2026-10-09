@@ -1,116 +1,58 @@
 # Tidy
 
-A native macOS menu bar app for reclaiming disk space: regeneratable
-developer tool caches, browser caches, Xcode and simulator data, git object
-cleanup, and more. It's organized into Scan, Safe, Normal, Deep, and Custom
-modes, with a plan you review before anything is deleted.
+A native macOS menu bar app for local disk inventory and timestamped disk,
+memory, swap, thermal, and power observations. Requires macOS 14 (Sonoma)
+or later.
 
-It also has a small, deliberately conservative set of memory and swap
-actions. See [Memory and swap](#memory-and-swap) for what they can and
-cannot do, which is mostly a story about what macOS does not allow.
+## Current capabilities
 
-Requires macOS 14 (Sonoma) or later.
-
-## Why
-
-Developer machines fill up with caches, derived data, simulator artifacts,
-and dependency downloads that are all individually safe to delete and
-collectively enormous. Tidy finds them, shows you what it found and how
-much space it would free, and only deletes after you say so.
-
-## Modes
-
-- **Scan** is read-only. It ranks the largest items in your home directory
-  and `~/Library`, lists files over 1 GB, APFS local snapshots, idle
-  simulator runtimes, stale `node_modules`, LaunchAgents, and top memory
-  consumers. Nothing is deleted.
-- **Safe** covers regeneratable caches only: developer tool and
-  package-manager caches, logs, Xcode DerivedData and simulator caches.
-  Everything here rebuilds itself the next time you use the relevant tool.
-- **Normal** builds on Safe, adding browser caches, Chrome cookies (keeping
-  domains you choose), Trash, build output directories, stale
-  `node_modules`, old Claude Code session transcripts (your `memory/`
-  files are never touched), and conservative git housekeeping.
-- **Deep** builds on Normal, adding everything that costs a real
-  re-download or loses local history: full dependency caches, Android SDK
-  components, Xcode Archives, APFS local snapshot deletion, aggressive git
-  reflog expiry, and simulator deletion. Simulator deletion is opt-in and
-  per device: nothing is ever deleted by default.
-- **Custom** exposes every catalog item, individually checkable, with
-  savable named presets.
-
-Scan also reports two things it will never act on: space only a restart
-can return, and large directories no catalog item covers.
-
-Every mode works the same way: build a plan (locate + measure, zero
-writes) → review it → confirm → execute. There's no code path from a plan
-to a deletion that skips your confirmation.
+- **Scan** performs bounded, read-only discovery with partial-result reporting
+  and global cancellation. Concurrent scan requests share one active session.
+- **Projects in Scan** lists bounded marker evidence under approved project roots,
+  including nested projects and unresolved Git indirections. Unknown ownership and
+  activity remain protected; marker discovery never authorizes cleanup.
+- **Headroom** shows independent observations and a per-volume target when
+  capacity and volume identity are available. A target is not a buildability guarantee.
+- **Safe, Normal, Deep, and Custom** organize catalog inventory and saved
+  selections. These names describe catalog groupings, not proof that a resource
+  is safe to delete.
+- **Cleanup is currently unavailable.** Every production mutator is quarantined.
+  In particular, detecting Xcode does not establish exclusive ownership of its
+  DerivedData. Re-enabling any adapter requires an accepted scope, producer,
+  interruption, and recovery contract with native verification.
+- Complete project ownership workflows, Build Prep, Pressure Rescue, additional ecosystem adapters,
+  budgets/notifications, and unattended maintenance remain roadmap work. Settings
+  for an unfinished consumer do not establish that the feature is operational.
 
 ## Memory and swap
 
-Most "memory cleaners" on macOS are selling something that isn't real. Here
-is exactly what Tidy can do, and what it can't:
+Tidy observes these signals; it currently does not purge memory, quit apps,
+restart the Mac, or delete swap files. Observed system changes cannot establish
+how much memory or physical disk space a particular operation reclaimed.
 
-- **Swap cannot be reclaimed while the Mac is booted.** macOS grows
-  swapfiles on demand and, on every version Tidy has observed, does not
-  return them until boot. Tidy has found no API, supported command, or
-  privilege level that changes this. So the only honest "free swap" action
-  is a restart, and that is literally what the restart item does. It ships
-  disabled and has to be enabled in Settings before it will even appear.
-  Headroom's swap card also reports a live page-out rate as a pressure
-  indicator -- it tells you paging is active right now, not how many bytes
-  a restart will hand back, and a falling rate is never shown as proof
-  swap has been (or can be) cleared without restarting.
-- **Purging inactive memory is real, and usually not a win.** `purge(8)`
-  evicts the file-backed page cache, moving pages from inactive to free.
-  Those pages were caching data the machine was about to want again, so the
-  number in Activity Monitor improves while real performance briefly gets
-  worse. Offered, never on by default, and labelled with that trade-off.
-- **Quitting an application is the one unambiguous win.** Its resident
-  memory returns the moment it exits. Tidy asks apps to quit the way the
-  Quit menu item does; an app with unsaved work can prompt or refuse, and
-  nothing is ever force-killed. Only applications you name in Settings are
-  eligible.
+## Privacy and local data
 
-Memory figures are measured before and after, and are reported separately
-from disk. They are never added into the "freed" total, because disk space
-and RAM are different resources and one combined number would be wrong
-about both.
+The inspected application source has no HTTP client, telemetry service, or
+third-party Swift package dependency. Runtime network verification remains a
+release acceptance check. Tool discovery and inventory must not execute project
+scripts or trigger downloads.
 
-Scan's **"Only a restart can reclaim this"** panel reports what macOS is
-holding in swap and VM files, broken out per component. It has no button:
-those bytes belong to the kernel, and Tidy will not pretend otherwise.
+Mandatory cloud exclusions include `~/Library/CloudStorage` and
+`~/Library/Mobile Documents`. Project traversals receive the same exclusions.
+Browser cookie deletion, Git mutation, simulator deletion, snapshots, and memory
+actions remain unavailable.
 
-## Coverage gaps
+Settings, settings backups, optional history, aggregate scan cache, and mandatory
+execution records live under the app's Application Support directory. Run history
+honors the acknowledged enable/retention/size preferences and omits per-leaf paths
+and diagnostic messages. Disabling optional history does not clear recovery records.
+Raw monitoring history is bounded and held in memory. Aggregate cache watchers run
+only during an explicit scan.
 
-Scan reports **"Big, and not covered by Tidy"**: directories over 500 MB
-that no catalog item touches. Cleanup catalogs drift out of date as the
-tools around them grow new directories, and this makes that drift visible
-instead of silent. It reports only; nothing there can be deleted until
-somebody writes a real catalog item for it.
-
-## Privacy
-
-**Zero network calls, ever.** No analytics, no crash reporting, no update
-checker, no remote dependencies. This isn't a claim you have to take on
-faith: `TidyCore` has no third-party dependencies (see
-[`TidyCore/Package.swift`](TidyCore/Package.swift)) and you can watch its
-network activity yourself in Activity Monitor or any traffic monitor while
-using the app. Updates are manual, via GitHub Releases.
-
-Specifically:
-
-- Cookie keep-domains, project roots, and the simulator delete-approval
-  list all ship **empty**. Nothing is assumed about your machine.
-- Suggestions (cookie domains found in your own browser, project roots
-  found on your own disk) are computed locally and only ever shown to you
-  to confirm. They're never sent anywhere.
-- iCloud-backed folders (`~/Library/CloudStorage`, `~/Library/Mobile
-  Documents`) are never scanned or touched.
-- Safari cookies are never touched, since its `binarycookies` store has no
-  safe per-domain delete. Chrome cookie deletion uses the SQLite3 C API
-  directly against a local database, with a validated backup taken before
-  any write and restored automatically if anything looks wrong afterward.
+These support files may be included in operating-system backups: Tidy does not
+promise that clearing a local file removes external backup copies. Required-reason
+privacy declarations, data-clearing UX, and physical-device behavior still need the
+checks recorded in [the acceptance ledger](docs/verification/headroom-progress.md).
 
 ## Installing
 
@@ -126,7 +68,8 @@ identically either way.
 
 ## Building from source
 
-Requires Xcode 15+.
+Use Xcode 16 or newer for Swift Testing. The minimum toolchain and both supported
+architectures must be confirmed by the macOS acceptance matrix.
 
 ```bash
 git clone https://github.com/ajraba04/tidy.git

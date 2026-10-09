@@ -29,11 +29,25 @@ jobs:
           sudo xcode-select -s "${LATEST_XCODE:-/Applications/Xcode.app}"
           xcodebuild -version
 
+      - name: Check generated project source membership
+        run: python3 scripts/check-project-sources.py
+
       - name: swift test (TidyCore)
         working-directory: TidyCore
         run: swift test
 
+      - name: Isolated process admission tests
+        working-directory: TidyCore
+        env:
+          TIDY_ISOLATED_GATE_TESTS: "1"
+        run: swift test --filter CoreOrchestrationTests
+
+      - name: App model tests
+        run: |
+          xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debug \
+            -destination 'platform=macOS' -derivedDataPath ./DerivedData test CODE_SIGNING_ALLOWED=NO
+
       - name: xcodebuild build (Tidy.app)
         run: |
           xcodebuild -project Tidy.xcodeproj -scheme Tidy -configuration Debug \
-            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath ./DerivedData build CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64"

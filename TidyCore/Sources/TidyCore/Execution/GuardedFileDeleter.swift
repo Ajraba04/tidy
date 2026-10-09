@@ -75,6 +75,7 @@ final class DirectoryAnchor {
     static func open(path: String) throws -> DirectoryAnchor {
         guard path.hasPrefix("/"), path != "/" else { throw GuardedFileError.unsafeRoot }
         let names = try relativeComponents(String(path.dropFirst()))
+        guard names.count <= 64 else { throw GuardedFileError.manifestLimit }
         var fds: [Int32] = []
         do {
             let first = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -238,7 +239,20 @@ struct ReviewedTree: Sendable {
     }
     static func capture(anchor: DirectoryAnchor, excluding: Set<String>,
                         maxNodesPerBatch: Int = 5_000,
-                        maxBytesPerBatch: Int = 8 * 1_024 * 1_024) throws -> ReviewedTree {
+                        maxBytesPerBatch: Int = 8 * 1_024 * 1_024,
+                        maxNodes: Int = 20_000, maxDepth: Int = 32,
+                        maxTotalBytes: Int = 32 * 1_024 * 1_024,
+                        maximumDuration: TimeInterval = 10) throws -> ReviewedTree {
+        guard (1...20_000).contains(maxNodes), (1...32).contains(maxDepth),
+              (1...32 * 1_024 * 1_024).contains(maxTotalBytes),
+              maximumDuration > 0, maximumDuration <= 10 else { throw GuardedFileError.manifestLimit }
+        let deadline = ProcessInfo.processInfo.systemUptime + maximumDuration
+        var visited = 0
+        var totalBytes = 0
+        func checkBudget() throws {
+            try Task.checkCancellation()
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw GuardedFileError.manifestLimit }
+        }
         guard (1...5_000).contains(maxNodesPerBatch), (1...8 * 1_024 * 1_024).contains(maxBytesPerBatch) else {
             throw GuardedFileError.manifestLimit
         }
@@ -253,7 +267,10 @@ struct ReviewedTree: Sendable {
         var batchID = UUID()
         var batchBytes = 24 // UUID bytes plus UInt64 entry count.
         func append(_ entry: ReviewedLeaf) throws {
+            try checkBudget()
             let size = try ManifestEncoding.leaf(entry).count
+            guard size <= maxTotalBytes - totalBytes else { throw GuardedFileError.manifestLimit }
+            totalBytes += size
             guard size <= maxBytesPerBatch - 24 else { throw GuardedFileError.manifestLimit }
             if entries.count == maxNodesPerBatch || size > maxBytesPerBatch - batchBytes {
                 batches.append(ReviewedBatch(id: batchID, entries: entries, encodedBytes: batchBytes))
@@ -263,6 +280,10 @@ struct ReviewedTree: Sendable {
             batchBytes += size
         }
         func walk(_ fd: Int32, prefix: String, parents: [NodeSnapshot]) throws {
+            try checkBudget()
+            guard parents.count - header.rootParentChain.count <= maxDepth else {
+                throw GuardedFileError.manifestLimit
+            }
             let before = try DirectoryAnchor.readSnapshot(fd)
             let enumerationFD = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard enumerationFD >= 0 else { throw GuardedFileError.systemCall(errno) }
@@ -272,6 +293,7 @@ struct ReviewedTree: Sendable {
             defer { closedir(directory) }
             var names: [String] = []
             while true {
+                try checkBudget()
                 errno = 0
                 guard let entry = readdir(directory) else {
                     if errno != 0 { throw GuardedFileError.systemCall(errno) }
@@ -283,6 +305,8 @@ struct ReviewedTree: Sendable {
                 }
                 guard let name else { throw GuardedFileError.invalidComponent }
                 if name == "." || name == ".." { continue }
+                guard visited < maxNodes else { throw GuardedFileError.manifestLimit }
+                visited += 1
                 _ = try DirectoryAnchor.relativeComponents(name)
                 names.append(name)
             }
@@ -311,7 +335,8 @@ struct ReviewedTree: Sendable {
         guard try DirectoryAnchor.readSnapshot(anchor.rootFD) == root else { throw GuardedFileError.identityChanged }
         // Reject a mixed snapshot if an earlier leaf changed while later names
         // were captured. This is read-only review, not an external-writer lease.
-        for entry in batches.flatMap(\.entries) {
+        for entry in batches.lazy.flatMap(\.entries) {
+            try checkBudget()
             try anchor.withParent(relativePath: entry.relativePath) { parent, name, chain in
                 guard chain.count == entry.parentChain.count,
                       zip(chain, entry.parentChain).allSatisfy({ $0.sameIdentity(as: $1) }),
@@ -324,6 +349,15 @@ struct ReviewedTree: Sendable {
         let provisional = ReviewedTree(header: header, batches: batches, excludedRelativePaths: exclusions, digest: Data())
         let digest = try provisional.recomputedDigest()
         return ReviewedTree(header: header, batches: batches, excludedRelativePaths: exclusions, digest: digest)
+    }
+    /// A fresh observation may reject a review, but never enlarge its authority.
+    func validateCurrentContents(anchor: DirectoryAnchor) throws {
+        guard validateDigest(digest) else { throw GuardedFileError.invalidManifest }
+        let current = try Self.capture(anchor: anchor, excluding: Set(excludedRelativePaths))
+        guard current.header == header,
+              current.batches.lazy.flatMap(\.entries).elementsEqual(batches.lazy.flatMap(\.entries)) else {
+            throw GuardedFileError.identityChanged
+        }
     }
     func entry(_ relativePath: String) -> ReviewedLeaf? {
         batches.lazy.flatMap(\.entries).first { $0.relativePath == relativePath }

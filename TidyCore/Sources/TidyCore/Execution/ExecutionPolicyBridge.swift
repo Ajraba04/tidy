@@ -81,6 +81,10 @@ public final class ExecutionPolicyBridge {
     private let settings: SettingsStore
     private let homeDirectory: String
     private let detectedTools: Set<ToolchainID>
+    private var systemObservation: SchedulerObservation = .unknown
+    private var appliedSystemObservation: (revision: UInt64, value: SchedulerObservation)?
+    private var observationUpdateTask: Task<Void, Never>?
+    private var lastCriticalUptime: TimeInterval?
     private let schedulerController: SchedulerPolicyController
     private let scheduler: WorkScheduler
     private let schedulerCapability: SchedulerPolicyControllerCapability
@@ -215,6 +219,43 @@ public final class ExecutionPolicyBridge {
                 await self?.installInitialScheduler(envelope)
             }
         }
+    }
+
+    /// Observations can reduce scheduling capacity, but cannot grant mutation authority.
+    public func updateSystemObservation(_ snapshot: SystemSnapshot) async {
+        let age = Date().timeIntervalSince(snapshot.observedAt)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let critical = snapshot.memoryPressureLevel == .critical || snapshot.thermalState == .critical
+        if critical { lastCriticalUptime = uptime }
+        let heldCritical = lastCriticalUptime.map { uptime - $0 < 5 || snapshot.memoryPressureLevel == nil } ?? false
+        if age < 0 || age > 10 {
+            systemObservation = lastCriticalUptime == nil ? .unknown : .critical
+        } else if snapshot.memoryPressureLevel == nil && !critical && !heldCritical {
+            systemObservation = .unknown
+        } else {
+            systemObservation = .signals(lowPower: snapshot.isLowPowerModeEnabled ?? true,
+                seriousThermal: snapshot.thermalState.map { $0 == .serious || $0 == .critical } ?? true,
+                critical: critical || heldCritical)
+            if !critical && !heldCritical { lastCriticalUptime = nil }
+        }
+        let previous = observationUpdateTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.initialSchedulerInstall?.value
+            guard let envelope = self.acknowledgedEnvelope, !self.policyUpdatePending else { return }
+            let observation = self.systemObservation
+            if let applied = self.appliedSystemObservation,
+               applied.revision == envelope.revision, applied.value == observation { return }
+            let state = await self.scheduler.snapshot()
+            guard state.observationEpoch < UInt64.max else { return }
+            if case .applied = await self.schedulerController.updateObservation(epoch: state.observationEpoch + 1,
+                observation: observation, acknowledgedEnvelope: envelope, using: self.schedulerCapability) {
+                self.appliedSystemObservation = (envelope.revision, observation)
+            }
+        }
+        observationUpdateTask = task
+        await task.value
     }
 
     @discardableResult
@@ -667,7 +708,7 @@ public final class ExecutionPolicyBridge {
             return .saved(id, saved)
         }
         if let ticket {
-            let environment = saved.config.makePolicyEnvironment(
+            let environment = try saved.makePolicyEnvironment(
                 homeDirectory: homeDirectory, detectedTools: detectedTools)
             let commit = try await coordinator.commitPolicyUpdate(ticket, environment: environment)
             if case .applied = commit, pendingPolicyCount == 1,
@@ -735,13 +776,13 @@ public final class ExecutionPolicyBridge {
             await testHook?.receive(.acceptedAfterBarrierBeforePrepareAndSave(id))
             try Task.checkCancellation()
             let result = await schedulerController.prepare(admission, candidate: candidate,
-                observation: .unknown, using: schedulerCapability)
+                observation: systemObservation, using: schedulerCapability)
             guard case .prepared(let prepared, _) = result else { throw SchedulerHandoffError.invalid }
             return .invalidating(prepared)
         }
 
         let result = await schedulerController.preparePresentation(candidate: candidate,
-            observation: .unknown, using: schedulerCapability)
+            observation: systemObservation, using: schedulerCapability)
         guard case .prepared(let prepared, _) = result else { throw SchedulerHandoffError.invalid }
         await testHook?.receive(.acceptedAfterPresentationPrepareBeforeSave(id))
         return .presentation(prepared)
@@ -940,15 +981,15 @@ public final class ExecutionPolicyBridge {
     }
 
     private func installInitialScheduler(_ envelope: SettingsEnvelope) async {
-        // A positive loaded revision is a durable acknowledgement, but it still
-        // enters the scheduler through the same first-install invalidating path.
+        // A durable settings revision enters the same initial scheduler handoff.
+        // First explicit scan saves defaults through the normal bridge before admission.
         // A competing accepted bridge handoff wins; its barrier remains closed.
         guard schedulerAdmissionPendingCount == 0 else { return }
         let admission: SchedulerAdmissionTicket
         do { admission = try schedulerController.beginAdmissionTransition(using: schedulerCapability) }
         catch { return }
         let preparation = await schedulerController.prepare(admission, candidate: envelope,
-            observation: .unknown, using: schedulerCapability)
+            observation: systemObservation, using: schedulerCapability)
         guard case .prepared(let prepared, _) = preparation else { return }
         _ = await schedulerController.commit(prepared, acknowledgedEnvelope: envelope,
             using: schedulerCapability)

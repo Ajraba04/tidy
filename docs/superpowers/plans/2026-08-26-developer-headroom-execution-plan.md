@@ -14,6 +14,13 @@
 **State:** Full execution authorized by the user's follow-up. Implementation is in progress on `CAJ/developer-headroom`; see [current evidence](../../verification/headroom-progress.md). Unchecked acceptance gates remain unproven.
 **Independent review:** Accepted for program adoption after three passes; see [findings and final verdict](2026-08-26-developer-headroom-adversarial-review.md). Per-unit task cards and implementation verification remain mandatory.
 
+**2026-10-09 audit follow-up:** The current Linux working tree contains source
+remediation and regression tests for the audit findings, without native execution.
+DerivedData is now inventory-only pending a producer-quiescence contract. Earlier
+T01–T10 milestone checkboxes are historical evidence, not acceptance of this patch.
+See the current [remediation and remaining-gate ledger](../../verification/headroom-progress.md#audit-remediation-working-tree--2026-10-09).
+T11–T24 and the native acceptance gates remain open.
+
 ## Global Constraints
 
 - Native Swift/SwiftUI, macOS 14+, local TidyCore package, zero third-party runtime dependencies.

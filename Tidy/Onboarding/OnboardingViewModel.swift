@@ -26,10 +26,10 @@ final class OnboardingViewModel {
     }
 
     private(set) var step: Step = .welcome
-    private(set) var detectedTools: Set<ToolchainID> = []
+    let detectedTools: Set<ToolchainID>
 
-    func start() {
-        detectedTools = ToolchainDetector.detect()
+    init(detectedTools: Set<ToolchainID>) {
+        self.detectedTools = detectedTools
     }
 
     func advance() {

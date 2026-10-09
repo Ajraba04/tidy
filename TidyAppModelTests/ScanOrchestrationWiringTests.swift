@@ -287,3 +287,34 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         XCTAssertFalse(report.topLevelHomeRanking.isEmpty)
     }
 }
+
+extension ScanOrchestrationWiringTests {
+    func testFirstExplicitScanInstallsDefaultsWithoutGrantingBackgroundAuthority() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let services = await AppExecutionServices.bootstrap(paths: AppStoragePaths(
+            home: scratch.home, settings: scratch.configURL, journal: scratch.journal))
+        await services.configStore.prepareExplicitScan()
+        await services.explicitSessions.awaitInitialInstall()
+        let snapshot = await services.explicitSessions.snapshot()
+        XCTAssertEqual(snapshot.availability, .available)
+        XCTAssertGreaterThan(services.configStore.settingsRevision, 0)
+        XCTAssertFalse(SystemMonitor.Configuration.resolve(services.configStore.effectivePolicy).backgroundEnabled)
+    }
+}
+
+extension ScanOrchestrationWiringTests {
+    func testUnchangedSystemObservationsDoNotInvalidateScanEpoch() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let services = try await scratch.services()
+        let snapshot = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil, swapUnavailableReason: nil,
+            pageOutRatePerSecond: nil, memoryPressureLevel: .normal,
+            thermalState: .nominal, isLowPowerModeEnabled: false)
+        await services.policyBridge.updateSystemObservation(snapshot)
+        let first = await services.explicitSessions.snapshot()
+        await services.policyBridge.updateSystemObservation(snapshot)
+        let second = await services.explicitSessions.snapshot()
+        XCTAssertEqual(first.observationEpoch, second.observationEpoch)
+        XCTAssertEqual(first.effectiveWorkers, second.effectiveWorkers)
+    }
+}

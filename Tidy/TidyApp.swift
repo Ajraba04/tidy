@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TidyCore
 
@@ -69,6 +70,9 @@ struct TidyApp: App {
                             .foregroundStyle(.red)
                             .padding()
                     }
+                    if let message = services.historyError {
+                        Label(message, systemImage: "exclamationmark.triangle").padding()
+                    }
                     SettingsView()
                         .environment(services.configStore)
                 }
@@ -84,7 +88,7 @@ struct TidyApp: App {
                             .foregroundStyle(.red)
                             .padding()
                     }
-                    OnboardingView()
+                    OnboardingView(detectedTools: services.detectedTools)
                         .environment(services.configStore)
                 }
             }
@@ -127,10 +131,20 @@ struct TidyApp: App {
     }
 
     private var recoveryUnavailable: some View {
-        ContentUnavailableView("Settings Recovery Required", systemImage: "exclamationmark.triangle",
-            description: Text(bootstrap.services?.persistenceError
-                ?? "Tidy could not validate its settings or execution records. Cleanup and settings changes remain disabled."))
-            .frame(minWidth: 320, minHeight: 200)
+        VStack(spacing: 12) {
+            ContentUnavailableView("Recovery Required", systemImage: "exclamationmark.triangle",
+                description: Text(bootstrap.services?.persistenceError
+                    ?? "Tidy could not validate its settings or execution records. Existing data has been preserved."))
+            if let paths = productionPaths {
+                Button("Retry Recovery") { Task { await bootstrap.retry(paths: paths) } }
+                    .accessibilityIdentifier("bootstrap.retryRecovery")
+                Button("Show Settings Folder") {
+                    NSWorkspace.shared.open(paths.settings.deletingLastPathComponent())
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 320, minHeight: 200)
     }
 
     private var storageUnavailable: some View {

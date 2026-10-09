@@ -414,3 +414,36 @@ struct HeadroomSignalsTests {
             historyEnabled: true, historyHours: 1)
     }
 }
+
+@Suite("Audit monitor lifecycle")
+struct AuditMonitorLifecycleTests {
+    @Test func visibilityIsOwnedByEachConsumer() async {
+        let config = SystemMonitor.Configuration(featureEnabled: true, backgroundEnabled: false,
+            suppressHiddenSampling: false, visibleIntervalSeconds: 60, hiddenIntervalSeconds: 60,
+            historyEnabled: false, historyHours: 0)
+        let monitor = SystemMonitor(configuration: config, probe: FakeSystemProbing(),
+            pressureObserving: NoOpPressureObserving())
+        let window = UUID(), popover = UUID()
+        await monitor.setWindowVisible(true, consumer: window)
+        await monitor.setWindowVisible(true, consumer: popover)
+        await monitor.setWindowVisible(false, consumer: popover)
+        #expect(await monitor.isTimerRunningForTesting())
+        await monitor.setWindowVisible(false, consumer: popover)
+        #expect(await monitor.isTimerRunningForTesting())
+        await monitor.setWindowVisible(false, consumer: window)
+        #expect(await monitor.isTimerRunningForTesting() == false)
+    }
+    @Test func unchangedConfigurationPreservesHistoryAndOptOutClearsIt() async {
+        var config = SystemMonitor.Configuration(featureEnabled: true, backgroundEnabled: false,
+            suppressHiddenSampling: false, visibleIntervalSeconds: 60, hiddenIntervalSeconds: 60,
+            historyEnabled: true, historyHours: 1)
+        let monitor = SystemMonitor(configuration: config, probe: FakeSystemProbing(),
+            pressureObserving: NoOpPressureObserving())
+        await monitor.requestSnapshot()
+        await monitor.applyConfiguration(config)
+        #expect(await monitor.recordedHistory().count == 1)
+        config.historyEnabled = false
+        await monitor.applyConfiguration(config)
+        #expect(await monitor.recordedHistory().isEmpty)
+    }
+}

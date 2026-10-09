@@ -4,7 +4,11 @@ import TidyCore
 struct OnboardingView: View {
     @Environment(AppConfigStore.self) private var configStore
     @Environment(\.dismiss) private var dismiss
-    @State private var model = OnboardingViewModel()
+    @State private var model: OnboardingViewModel
+
+    init(detectedTools: Set<ToolchainID>) {
+        _model = State(initialValue: OnboardingViewModel(detectedTools: detectedTools))
+    }
 
     var body: some View {
         @Bindable var configStore = configStore
@@ -55,7 +59,6 @@ struct OnboardingView: View {
             .padding()
         }
         .frame(minWidth: 480, idealWidth: 520, minHeight: 480, idealHeight: 560)
-        .onAppear { model.start() }
     }
 
     private var welcomeStep: some View {
@@ -65,7 +68,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.tint)
             Text("Welcome to Tidy")
                 .font(.title.bold())
-            Text("Tidy reclaims disk space and memory: caches, browser data, Xcode and simulator files, and more. Nothing is ever deleted without a plan you review and confirm first, and Tidy makes zero network calls, ever.")
+            Text("Tidy shows what is using disk space and reports disk, memory, and pressure signals. Cleanup actions remain unavailable until their safety contracts are verified. Tool detection does not grant permission to delete files.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 24)
