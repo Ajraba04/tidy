@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 import TidyCore
@@ -6,6 +7,29 @@ struct AppStoragePaths: Sendable {
     let home: URL
     let settings: URL
     let journal: URL
+}
+
+enum OptionalDataKind: String, CaseIterable, Identifiable {
+    case completedReports, scanIndex
+    var id: Self { self }
+    var title: String { self == .completedReports ? "Completed reports" : "Scan index" }
+}
+
+struct AppDataClearReview: Equatable {
+    let id: UUID
+    let kind: OptionalDataKind
+    let byteCount: Int64
+    let storagePaths: [String]
+    let settingsRevision: UInt64
+}
+
+enum AppDataClearError: Error { case busy, staleReview, unavailable }
+
+private enum AppDataClearSource {
+    case history(OptionalRunHistoryStore, OptionalDataClearPreview)
+    case index(ScanIndexCoordinator, OptionalDataClearPreview)
+    case storedIndex(ScanIndexStore, OptionalDataClearPreview)
+    case absentIndex(URL)
 }
 
 enum AppBootstrapStage: String, Sendable {
@@ -218,6 +242,91 @@ final class AppExecutionServices {
     private var activeScanResources: AppScanGenerationResources?
     private var retainedScanIndex: (cacheMiB: Int64, expiryHours: Int64,
                                     coordinator: ScanIndexCoordinator)?
+    private(set) var isClearingOptionalData = false
+    private var pendingDataClear: (review: AppDataClearReview, source: AppDataClearSource)?
+
+    private var optionalDataWorkIsBusy: Bool {
+        isClearingOptionalData || scanTransition != nil || scanCleanup != nil
+            || activeScanResources != nil || activeScanSessionID != nil
+            || confirmedExecution != nil || policyUpdatePending
+    }
+
+    func cancelOptionalDataReview(_ id: UUID) {
+        if pendingDataClear?.review.id == id { pendingDataClear = nil }
+    }
+
+    func previewOptionalDataClearing(_ kind: OptionalDataKind) async throws -> AppDataClearReview {
+        guard !optionalDataWorkIsBusy else { throw AppDataClearError.busy }
+        isClearingOptionalData = true
+        defer { isClearingOptionalData = false }
+        pendingDataClear = nil
+        let revision = configStore.acknowledgedSettingsRevision
+        let source: AppDataClearSource
+        let preview: OptionalDataClearPreview?
+        let missingURL = paths.journal.deletingLastPathComponent()
+            .appendingPathComponent("scan-index/cache.sqlite")
+        switch kind {
+        case .completedReports:
+            guard let history = optionalRunHistory else { throw AppDataClearError.unavailable }
+            let value = try await history.previewClearing()
+            preview = value; source = .history(history, value)
+        case .scanIndex:
+            if let retainedScanIndex {
+                let value = try await retainedScanIndex.coordinator.previewClearing()
+                preview = value; source = .index(retainedScanIndex.coordinator, value)
+            } else if try Self.indexFamilyIsAbsent(missingURL) {
+                preview = nil; source = .absentIndex(missingURL)
+            } else {
+                let index = try ScanIndexStore.openAppOwned(databaseURL: missingURL)
+                let value = try await index.previewClearing()
+                preview = value; source = .storedIndex(index, value)
+            }
+        }
+        guard revision == configStore.acknowledgedSettingsRevision, !policyUpdatePending else {
+            throw AppDataClearError.staleReview
+        }
+        let review = AppDataClearReview(id: UUID(), kind: kind,
+            byteCount: preview?.byteCount ?? 0,
+            storagePaths: preview?.storagePaths ?? [missingURL.path], settingsRevision: revision)
+        pendingDataClear = (review, source)
+        return review
+    }
+
+    func confirmOptionalDataClearing(_ review: AppDataClearReview) async throws {
+        guard !optionalDataWorkIsBusy else { throw AppDataClearError.busy }
+        let pending = pendingDataClear
+        pendingDataClear = nil
+        guard let pending, pending.review == review,
+              review.settingsRevision == configStore.acknowledgedSettingsRevision else {
+            throw AppDataClearError.staleReview
+        }
+        isClearingOptionalData = true
+        defer { isClearingOptionalData = false }
+        switch pending.source {
+        case .history(let history, let preview): try await history.clear(preview)
+        case .index(let index, let preview): try await index.clear(preview)
+        case .storedIndex(let index, let preview): try await index.clear(preview)
+        case .absentIndex(let url):
+            guard try Self.indexFamilyIsAbsent(url) else { throw AppDataClearError.staleReview }
+        }
+    }
+
+    private static func indexFamilyIsAbsent(_ database: URL) throws -> Bool {
+        var parent = stat()
+        if lstat(database.deletingLastPathComponent().path, &parent) != 0 {
+            guard errno == ENOENT else { throw AppDataClearError.unavailable }
+            return true
+        }
+        guard parent.st_mode & S_IFMT == S_IFDIR, parent.st_uid == geteuid(),
+              parent.st_mode & 0o077 == 0 else { throw AppDataClearError.unavailable }
+        var absent = true
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            var info = stat()
+            if lstat(database.path + suffix, &info) == 0 { absent = false }
+            else if errno != ENOENT { throw AppDataClearError.unavailable }
+        }
+        return absent
+    }
 
     private init(paths: AppStoragePaths, settings: SettingsStore,
                  worker: AppBootstrapWorkerResult,
@@ -364,6 +473,7 @@ final class AppExecutionServices {
 
     func beginScan(environment: CleanEnvironment, request: AppScanRequest = .policyDefault,
                    ownerID: UUID) async throws -> CoreScanHandle {
+        guard !isClearingOptionalData else { throw AppDataClearError.busy }
         if let scanTransition { return try await resolveScanTransition(scanTransition) }
         if let scanCleanup { await resolveScanCleanup(scanCleanup) }
         if let activeScanSessionID, let activeScanHandle,
@@ -375,6 +485,8 @@ final class AppExecutionServices {
             }
         }
         if let scanCleanup { await resolveScanCleanup(scanCleanup) }
+        guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        pendingDataClear = nil
         let transitionID = UUID()
         let task = Task { @MainActor [self] in
             await scanLifecycleHook?(.startReserved)
@@ -453,6 +565,8 @@ final class AppExecutionServices {
     }
 
     func continueActiveScan() async throws -> CoreScanHandle {
+        guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        pendingDataClear = nil
         if let scanTransition { return try await resolveScanTransition(scanTransition) }
         let transitionID = UUID()
         let task = Task { @MainActor [self] in
@@ -805,6 +919,8 @@ final class AppExecutionServices {
     /// existing task. Window/session cancellation never owns this task and
     /// optional history is recorded exactly once inside it.
     func startConfirmedExecution(binding: ReviewBinding) throws -> Task<RunReport, Error> {
+        guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        pendingDataClear = nil
         if let confirmedExecution {
             guard confirmedExecution.binding == binding else {
                 throw ConfirmationError.busy

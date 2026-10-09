@@ -5,6 +5,13 @@ import Foundation
 import Observation
 import TidyCore
 
+enum AssistanceSection: Hashable {
+    case consent
+    case maintenance
+    case budgets
+    case rescue
+}
+
 @Observable @MainActor
 final class AssistanceModel {
     typealias NotificationBrokerFactory = @MainActor (
@@ -20,6 +27,8 @@ final class AssistanceModel {
     private(set) var budgetInventory: [UUID: [BudgetMeasurement]] = [:]
     private(set) var budgetVolumeID: UUID?
     private(set) var requestedNavigation: AssistanceNavigation?
+    private(set) var selectedSection: AssistanceSection = .consent
+    private(set) var reviewedBudgetID: BudgetID?
     private(set) var errorMessage: String?
     private(set) var maintenanceStatuses: [MaintenanceRuleStatus] = []
 
@@ -33,6 +42,12 @@ final class AssistanceModel {
     @ObservationIgnored private var maintenanceInventory: InstalledMaintenanceInventory?
     @ObservationIgnored private var maintenanceTask: Task<Void, Never>?
     @ObservationIgnored private var maintenanceGeneration: UInt64 = 0
+    @ObservationIgnored private var pendingNavigation: [AssistanceNavigation] = []
+    @ObservationIgnored private var navigationHandler: (@MainActor (AssistanceNavigation) -> Void)?
+    @ObservationIgnored private var routingNavigation = false
+    @ObservationIgnored private var navigationDrainTask: Task<Void, Never>?
+    private static let maximumPendingNavigation = 16
+    private static let maximumNavigationPerPass = 16
 
     init(services: AppExecutionServices,
          notificationBrokerFactory: NotificationBrokerFactory? = {
@@ -70,6 +85,7 @@ final class AssistanceModel {
         bootstrapTask?.cancel()
         signalTask?.cancel()
         maintenanceTask?.cancel()
+        navigationDrainTask?.cancel()
         sceneLease.dispose()
     }
 
@@ -125,7 +141,7 @@ final class AssistanceModel {
             let stateURL = directory.appendingPathComponent(
                 "notification-dedup-v1.json", isDirectory: false)
             notificationBroker = notificationBrokerFactory(stateURL) {
-                [weak self] navigation in self?.requestedNavigation = navigation
+                [weak self] navigation in self?.receiveNavigation(navigation)
             }
             guard notificationBroker != nil else {
                 if reportErrors {
@@ -143,7 +159,61 @@ final class AssistanceModel {
         }
     }
 
-    func consumeNavigation() { requestedNavigation = nil }
+    /// The app's persistent menu-bar label supplies a window opener once it is
+    /// available. Retaining that action keeps routing alive while review windows
+    /// are closed; opening a window never depends on AssistanceView mounting.
+    func bindNavigationHandler(_ handler: @escaping @MainActor (AssistanceNavigation) -> Void) {
+        navigationHandler = handler
+        routePendingNavigation()
+    }
+
+    func selectSection(_ section: AssistanceSection) {
+        selectedSection = section
+    }
+
+    private func receiveNavigation(_ navigation: AssistanceNavigation) {
+        // A delayed scene owner must not allow notification clicks to grow an
+        // unbounded backlog. Preserve the latest 16 exact requests, dropping
+        // the oldest click on overflow without coalescing repeated clicks.
+        if pendingNavigation.count == Self.maximumPendingNavigation {
+            pendingNavigation.removeFirst()
+        }
+        pendingNavigation.append(navigation)
+        requestedNavigation = pendingNavigation.first
+        routePendingNavigation()
+    }
+
+    private func routePendingNavigation() {
+        guard !routingNavigation, navigationHandler != nil else { return }
+        navigationDrainTask?.cancel()
+        navigationDrainTask = nil
+        routingNavigation = true
+        defer { routingNavigation = false }
+        var remaining = Self.maximumNavigationPerPass
+        while let handler = navigationHandler, !pendingNavigation.isEmpty, remaining > 0 {
+            remaining -= 1
+            let navigation = pendingNavigation.removeFirst()
+            // Consume before calling the window opener, including any reentrant
+            // mount or callback. Every click carries its original destination.
+            requestedNavigation = pendingNavigation.first
+            if case .budgetReview(let id, let volumeID) = navigation {
+                selectedSection = .budgets
+                reviewedBudgetID = id
+                budgetVolumeID = volumeID
+            }
+            handler(navigation)
+        }
+        if !pendingNavigation.isEmpty {
+            // Reentrant callbacks can replenish the queue. Finish a bounded
+            // pass, then give other main-actor work a turn before continuing.
+            navigationDrainTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                self.navigationDrainTask = nil
+                self.routePendingNavigation()
+            }
+        }
+    }
 
     func acceptAuthoritySnapshot(_ snapshot: LocalAuthoritySnapshot) {
         // The store stream is authoritative. This immediate presentation
@@ -175,7 +245,8 @@ final class AssistanceModel {
         }
         budgetInventory = byVolume
         budgetEvaluations = budgetEvaluations.filter { byVolume[$0.key] != nil }
-        if let selected = budgetVolumeID, byVolume[selected] != nil {
+        if let selected = budgetVolumeID,
+           reviewedBudgetID != nil || byVolume[selected] != nil {
             budgetVolumeID = selected
         } else {
             budgetVolumeID = budgetVolumeIDs.first
@@ -185,12 +256,13 @@ final class AssistanceModel {
 
     func selectBudgetVolume(_ volumeID: UUID) {
         guard budgetInventory[volumeID] != nil else { return }
+        reviewedBudgetID = nil
         budgetVolumeID = volumeID
     }
 
     func clearBudgetMeasurements() {
         budgetInventory = [:]
-        budgetVolumeID = nil
+        if reviewedBudgetID == nil { budgetVolumeID = nil }
         budgetEvaluations = [:]
     }
 
@@ -251,7 +323,7 @@ final class AssistanceModel {
             for await snapshot in stream {
                 guard let self, !Task.isCancelled else { break }
                 latestSystemSnapshot = snapshot
-                if budgetInventory.isEmpty {
+                if budgetInventory.isEmpty, reviewedBudgetID == nil {
                     budgetVolumeID = snapshot.volumes.first.flatMap {
                         UUID(uuidString: $0.volumeIdentity)
                     }

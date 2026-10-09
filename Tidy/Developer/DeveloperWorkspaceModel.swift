@@ -4,6 +4,81 @@ import Foundation
 import Observation
 import TidyCore
 
+struct BuildPrepVolumeSelection: Equatable {
+    private(set) var selectedID: UUID?
+
+    mutating func select(_ id: UUID) { selectedID = id }
+
+    func resolvedID(homeVolumeID: UUID?, availableVolumeIDs: [UUID]) -> UUID? {
+        guard let candidate = selectedID ?? homeVolumeID,
+              availableVolumeIDs.contains(candidate) else { return nil }
+        return candidate
+    }
+}
+
+struct BuildPrepVolumeTarget: Identifiable, Sendable {
+    enum Error: Swift.Error { case authorityChanged, identityChanged, measurementUnavailable }
+    typealias DiskProbe = @Sendable (URL) async throws -> DiskStats
+
+    let root: LocalRootApproval
+    let scope: LocalAuthorityScope?
+    var id: UUID { root.volumeID }
+    var label: String { scope == nil ? "Home volume" : root.canonicalPath }
+
+    static func options(home: URL, authority: LocalAuthoritySnapshot?) -> [Self] {
+        var result: [Self] = []
+        if let root = try? LocalRootApproval.verify(directory: home) {
+            result.append(Self(root: root, scope: nil))
+        }
+        guard let authority, authority.isCurrent else { return result }
+        let approved = authority.scopes.compactMap { scope -> Self? in
+            switch scope {
+            case .localRoot(let root), .externalVolume(let root):
+                return Self(root: root, scope: scope)
+            default: return nil
+            }
+        }.sorted { $0.root.canonicalPath < $1.root.canonicalPath }
+        for target in approved where !result.contains(where: { $0.id == target.id }) {
+            result.append(target)
+        }
+        return result
+    }
+
+    func measure(authority: LocalAuthoritySnapshot?, probe: DiskProbe) async throws -> DiskStats {
+        try Task.checkCancellation()
+        try validateAuthority(authority)
+        let target = self
+        try await Task.detached { try target.validateIdentity() }.value
+        try Task.checkCancellation()
+        try validateAuthority(authority)
+        let disk = try await probe(URL(fileURLWithPath: root.canonicalPath))
+        try Task.checkCancellation()
+        try validateAuthority(authority)
+        try await Task.detached { try target.validateIdentity() }.value
+        try Task.checkCancellation()
+        try validateAuthority(authority)
+        guard disk.volumeIdentifier.flatMap(UUID.init(uuidString:)) == id,
+              disk.totalBytes > 0, disk.availableBytes >= 0,
+              disk.availableBytes <= disk.totalBytes else { throw Error.measurementUnavailable }
+        return disk
+    }
+
+    private func validateAuthority(_ authority: LocalAuthoritySnapshot?) throws {
+        if let scope, authority?.permits(scope) != true { throw Error.authorityChanged }
+    }
+
+    private func validateIdentity() throws {
+        let url = URL(fileURLWithPath: root.canonicalPath)
+        let current: LocalRootApproval
+        if case .externalVolume? = scope {
+            current = try LocalRootApproval.verifyExternalVolumeRoot(directory: url)
+        } else {
+            current = try LocalRootApproval.verify(directory: url)
+        }
+        guard current == root else { throw Error.identityChanged }
+    }
+}
+
 struct DeveloperWorkspaceSnapshot: Sendable {
     let inventory: DeveloperInventorySnapshot
     let buildPrep: CandidateRanking
@@ -19,6 +94,10 @@ final class DeveloperWorkspaceModel {
     private(set) var error: String?
     private(set) var projectActionMessage: String?
     private(set) var isScanning = false
+    private(set) var isRefreshingBuildPrepCapacity = false
+    private(set) var buildPrepVolumeOptions: [BuildPrepVolumeTarget] = []
+    private(set) var buildPrepVolumeSelection = BuildPrepVolumeSelection()
+    private(set) var buildPrepCapacityMessage: String?
     @ObservationIgnored var onInventoryChange:
         (@MainActor (DeveloperInventorySnapshot?) -> Void)?
 
@@ -27,13 +106,115 @@ final class DeveloperWorkspaceModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var session: WorkSession?
     @ObservationIgnored private var deselectedBuildPrepIDs: Set<String> = []
+    @ObservationIgnored private let diskProbe: BuildPrepVolumeTarget.DiskProbe
+    @ObservationIgnored private var capacityTask: Task<Void, Never>?
+    @ObservationIgnored private var capacityGeneration = UUID()
 
-    init(services: AppExecutionServices) {
+    init(services: AppExecutionServices,
+         diskProbe: @escaping BuildPrepVolumeTarget.DiskProbe = { url in
+             try await Task.detached { try LiveSystemProbe().diskStats(volumeURL: url) }.value
+         }) {
         self.services = services
+        self.diskProbe = diskProbe
+    }
+
+    var selectedBuildPrepVolumeID: UUID? {
+        buildPrepVolumeSelection.selectedID ?? buildPrepVolumeOptions.first(where: { $0.scope == nil })?.id
+    }
+
+    func updateBuildPrepVolumeOptions(localAuthority: LocalAuthoritySnapshot?) {
+        guard let services else { return }
+        buildPrepVolumeOptions = BuildPrepVolumeTarget.options(home: services.paths.home,
+            authority: localAuthority)
+    }
+
+    func selectBuildPrepVolume(_ id: UUID, localAuthority: LocalAuthoritySnapshot?) {
+        guard !isScanning else { return }
+        buildPrepVolumeSelection.select(id)
+        deselectedBuildPrepIDs = []
+        refreshBuildPrepCapacity(localAuthority: localAuthority)
+    }
+
+    func invalidateBuildPrepCapacity() {
+        capacityTask?.cancel()
+        capacityTask = nil
+        capacityGeneration = UUID()
+        isRefreshingBuildPrepCapacity = false
+        buildPrepCapacityMessage = "Refresh capacity for the selected volume."
+        if let snapshot {
+            self.snapshot = DeveloperWorkspaceSnapshot(inventory: snapshot.inventory,
+                buildPrep: snapshot.buildPrep, headroomPlan: nil,
+                headroomUnavailableReason: buildPrepCapacityMessage,
+                measurement: snapshot.measurement, policyRevision: snapshot.policyRevision)
+        }
+    }
+
+    func refreshBuildPrepCapacity(localAuthority: LocalAuthoritySnapshot?) {
+        guard !isScanning, let services else { return }
+        invalidateBuildPrepCapacity()
+        updateBuildPrepVolumeOptions(localAuthority: localAuthority)
+        guard let captured = snapshot else {
+            buildPrepCapacityMessage = "Refresh Inventory before preparing the selected volume."
+            return
+        }
+        guard let target = selectedVolumeTarget() else {
+            buildPrepCapacityMessage = "The selected volume is unavailable or no longer approved."
+            return
+        }
+        let generation = capacityGeneration
+        let probe = diskProbe
+        isRefreshingBuildPrepCapacity = true
+        capacityTask = Task { @MainActor [weak self, weak services] in
+            guard let self, let services else { return }
+            defer {
+                if self.capacityGeneration == generation {
+                    self.capacityTask = nil
+                    self.isRefreshingBuildPrepCapacity = false
+                }
+            }
+            do {
+                guard services.configStore.acknowledgedEffectivePolicy?.allowedFeatures
+                    .contains("buildPrep") == true,
+                      !services.configStore.hasPendingSettingsWrites else {
+                    throw BuildPrepVolumeTarget.Error.authorityChanged
+                }
+                let disk = try await target.measure(authority: localAuthority, probe: probe)
+                try Task.checkCancellation()
+                guard self.capacityGeneration == generation,
+                      services.configStore.acknowledgedSettingsRevision == captured.policyRevision,
+                      !services.configStore.hasPendingSettingsWrites,
+                      let policy = services.configStore.acknowledgedPolicyForVolume(
+                        identity: disk.volumeIdentifier, capacityBytes: disk.totalBytes) else {
+                    throw BuildPrepVolumeTarget.Error.authorityChanged
+                }
+                let measurement = Self.replacingVolume(in: captured.measurement,
+                    target: target, disk: disk)
+                let planning = try Self.headroomPlan(ranking: captured.buildPrep, policy: policy,
+                    policyRevision: captured.policyRevision, measurement: measurement,
+                    volumeID: target.id, deselectedIDs: self.deselectedBuildPrepIDs)
+                self.snapshot = DeveloperWorkspaceSnapshot(inventory: captured.inventory,
+                    buildPrep: captured.buildPrep, headroomPlan: planning.plan,
+                    headroomUnavailableReason: planning.unavailableReason,
+                    measurement: measurement, policyRevision: captured.policyRevision)
+                self.buildPrepCapacityMessage = nil
+            } catch {
+                guard self.capacityGeneration == generation else { return }
+                self.buildPrepCapacityMessage = "Selected-volume capacity is unavailable. Refresh after checking its approval and identity."
+            }
+        }
+    }
+
+    private func selectedVolumeTarget() -> BuildPrepVolumeTarget? {
+        let homeID = buildPrepVolumeOptions.first(where: { $0.scope == nil })?.id
+        guard let id = buildPrepVolumeSelection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: buildPrepVolumeOptions.map(\.id)) else { return nil }
+        return buildPrepVolumeOptions.first { $0.id == id }
     }
 
     func scan(localAuthority: LocalAuthoritySnapshot?) {
         guard task == nil, let services else { return }
+        invalidateBuildPrepCapacity()
+        updateBuildPrepVolumeOptions(localAuthority: localAuthority)
         error = nil
         isScanning = true
         task = Task { @MainActor [weak self, weak services] in
@@ -43,6 +224,7 @@ final class DeveloperWorkspaceModel {
     }
 
     func cancel() {
+        invalidateBuildPrepCapacity()
         task?.cancel()
         if let services, let session {
             Task { await services.explicitSessions.cancel(session: session) }
@@ -223,7 +405,7 @@ final class DeveloperWorkspaceModel {
             self.session = session
             await services.systemMonitor.acquireExplicitWorkLease(monitorLease)
             monitorLeaseAcquired = true
-            let measurement = await services.systemMonitor.requestSnapshot()
+            var measurement = await services.systemMonitor.requestSnapshot()
             let request = Self.inventoryRequest(localAuthority)
             let scanOwnerID = ownerID
             let pins = Self.strings(scope.policy, "scope.pinnedProjects")
@@ -244,17 +426,39 @@ final class DeveloperWorkspaceModel {
             let candidates = inventory.entries.map(Self.candidate)
             let ranking = try CandidateRanker.rank(candidates, policy: scope.policy,
                 pinnedOwnerIDs: pins, currentOwnerID: current)
-            let disk = measurement.volumes.first?.disk
-            let measuredPolicy = services.configStore.acknowledgedPolicyForVolume(
-                identity: disk?.volumeIdentifier, capacityBytes: disk?.totalBytes) ?? scope.policy
-            let planning = try Self.headroomPlan(ranking: ranking, policy: measuredPolicy,
-                policyRevision: scope.policyRevision, measurement: measurement,
-                deselectedIDs: deselectedBuildPrepIDs)
+            var planning: (plan: HeadroomPlan?, unavailableReason: String?) =
+                (nil, "The selected volume is unavailable or no longer approved.")
+            if scope.policy.allowedFeatures.contains("buildPrep"),
+               let target = selectedVolumeTarget() {
+                do {
+                    let disk = try await target.measure(authority: localAuthority, probe: diskProbe)
+                    try Task.checkCancellation()
+                    guard services.configStore.acknowledgedSettingsRevision == scope.policyRevision,
+                          !services.configStore.hasPendingSettingsWrites,
+                          let measuredPolicy = services.configStore.acknowledgedPolicyForVolume(
+                            identity: disk.volumeIdentifier, capacityBytes: disk.totalBytes) else {
+                        throw CancellationError()
+                    }
+                    measurement = Self.replacingVolume(in: measurement, target: target, disk: disk)
+                    planning = try Self.headroomPlan(ranking: ranking, policy: measuredPolicy,
+                        policyRevision: scope.policyRevision, measurement: measurement,
+                        volumeID: target.id, deselectedIDs: deselectedBuildPrepIDs)
+                } catch is CancellationError { throw CancellationError() }
+                catch {
+                    planning = (nil, "Selected-volume capacity is unavailable. Check its approval and identity, then refresh capacity.")
+                }
+            } else if !scope.policy.allowedFeatures.contains("buildPrep") {
+                planning = (nil, "Build Prep is disabled by the acknowledged policy.")
+            }
+            try Task.checkCancellation()
+            guard services.configStore.acknowledgedSettingsRevision == scope.policyRevision,
+                  localAuthority?.isCurrent != false else { throw CancellationError() }
             snapshot = DeveloperWorkspaceSnapshot(inventory: inventory,
                 buildPrep: ranking, headroomPlan: planning.plan,
                 headroomUnavailableReason: planning.unavailableReason,
                 measurement: measurement, policyRevision: scope.policyRevision)
             onInventoryChange?(inventory)
+            buildPrepCapacityMessage = nil
             error = nil
         } catch is CancellationError {
             error = "Inventory scan cancelled."
@@ -514,6 +718,7 @@ final class DeveloperWorkspaceModel {
     private static func headroomPlan(ranking: CandidateRanking, policy: EffectivePolicy,
                                      policyRevision: UInt64,
                                      measurement: SystemSnapshot,
+                                     volumeID: UUID,
                                      deselectedIDs: Set<String>) throws
         -> (plan: HeadroomPlan?, unavailableReason: String?) {
         guard policy.allowedFeatures.contains("buildPrep") else {
@@ -523,10 +728,12 @@ final class DeveloperWorkspaceModel {
                 SettingID(rawValue: "headroom.targetGiB")]?.value else {
             return (nil, "The headroom target is unavailable for the selected volume.")
         }
-        guard let volume = measurement.volumes.first,
+        guard let volume = measurement.volumes.first(where: {
+                  $0.disk?.volumeIdentifier.flatMap(UUID.init(uuidString:)) == volumeID
+              }),
               let disk = volume.disk,
               let rawVolumeID = disk.volumeIdentifier,
-              let volumeID = UUID(uuidString: rawVolumeID) else {
+              UUID(uuidString: rawVolumeID) == volumeID else {
             return (nil, "Strict available capacity or stable volume identity is unavailable.")
         }
         let plan = try HeadroomPlanner.plan(ranking: ranking, volumeID: volumeID,
@@ -534,5 +741,17 @@ final class DeveloperWorkspaceModel {
             byteCap: policy.manualBatchBytes, itemCap: policy.manualBatchItems,
             policyRevision: policyRevision, deselectedIDs: deselectedIDs)
         return (plan, nil)
+    }
+
+    private static func replacingVolume(in measurement: SystemSnapshot,
+                                        target: BuildPrepVolumeTarget, disk: DiskStats) -> SystemSnapshot {
+        let volume = VolumeObservation(volumeIdentity: target.id.uuidString,
+            displayPath: target.root.canonicalPath, disk: disk)
+        return SystemSnapshot(observedAt: Date(), bootIdentity: measurement.bootIdentity,
+            volumes: [volume], memory: nil,
+            memoryUnavailableReason: "This explicit observation measures selected-volume capacity only.",
+            swap: nil, swapUnavailableReason: "This explicit observation measures selected-volume capacity only.",
+            pageOutRatePerSecond: nil, memoryPressureLevel: nil,
+            thermalState: nil, isLowPowerModeEnabled: nil)
     }
 }

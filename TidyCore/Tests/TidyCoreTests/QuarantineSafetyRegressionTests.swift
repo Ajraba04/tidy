@@ -36,12 +36,13 @@ private struct QuarantineAuditScratch {
             detectedTools: [.xcode], protectedRoots: protectedRoots), journalDirectory: journal)
     }
 
-    func assertSelectionDenied(_ coordinator: ExecutionCoordinator) async throws -> RegisteredReview {
+    func assertSelectionDenied(_ coordinator: ExecutionCoordinator,
+        expectedReason: String = CapabilityRegistry.quarantineReason) async throws -> RegisteredReview {
         let review = try await coordinator.prepareReview(engine: CleanEngine(sizeScanner: SizeScanner()),
                                                          tier: .safe, selectDefaults: false)
         let row = try #require(review.plan.reviewItems.first { $0.id == "safe.xcode.derived-data" })
         #expect(!row.review.isSelectable)
-        #expect(row.review.reason == CapabilityRegistry.quarantineReason)
+        #expect(row.review.reason == expectedReason)
         await #expect(throws: ConfirmationError.unavailableSelection) {
             _ = try await coordinator.setSelection(planID: review.binding.planID,
                                                    selectedIDs: [row.id])
@@ -147,7 +148,10 @@ struct QuarantineSafetyRegressionTests {
         let leaf = protected.appendingPathComponent("keep")
         try Data("protected".utf8).write(to: leaf)
         let c = s.coordinator(protectedRoots: [protected.path])
-        let review = try await s.assertSelectionDenied(c)
+        let review = try await s.assertSelectionDenied(c,
+            expectedReason: "One or more targets failed path protection checks.")
+        #expect(await c.reviewedFilesystemIdentities(planID: review.binding.planID,
+            itemID: "safe.xcode.derived-data").isEmpty)
         try await s.executeEmptyConfirmation(review, coordinator: c)
         #expect(try Data(contentsOf: leaf) == Data("protected".utf8))
         try s.verifyWitness()

@@ -30,8 +30,8 @@ The 10 October 2026 reconciliation adds a bounded settings-import reader. Its me
 | `ResourcePreflight.fstatfs/fgetattrlist` | local flag and `ATTR_VOL_UUID` | Capture and recheck an exact local reviewed resource | Same unresolved volume-identity use. The target is not thereby an app container or user-granted document. |
 | `SettingsPublication` `fstat/fstatat` | device, inode, mode, owner, link count, size | Protect settings publication and detect replacement in `~/Library/Application Support/Tidy` | `C617.1` is only a candidate. Empty entitlements and an unsandboxed support path do not demonstrate Apple's formal container condition. |
 | `JournalStorage`, `JournalPOSIXIO`, `MutationAdmissionStore` `fstat/fstatat` | device, inode, mode, owner, link count, size, modification time | Protect mandatory recovery, staging, and admission records below the same support directory | Same `C617.1` candidate, not demonstrated eligibility. Mandatory persistence does not justify inventing a reason. |
-| `OptionalRunHistory` `fstat/fstatat` | type, owner, link count, size, device, inode | Bound and safely replace/remove optional run history below the support directory | Same `C617.1` candidate, not demonstrated eligibility. |
-| `ScanIndex` `lstat` | type, owner, mode, link count | Protect the app-owned SQLite index family below the support directory | Same `C617.1` candidate, not demonstrated eligibility. |
+| `OptionalRunHistory` `fstat/fstatat` | type, owner, link count, size, device, inode, modification/change timestamps | Bound and safely replace/remove optional run history below the support directory | Same `C617.1` candidate, not demonstrated eligibility. |
+| `ScanIndex` `lstat` | type, owner, mode, link count, device, inode, size, modification time | Protect the app-owned SQLite index family below the support directory | Same `C617.1` candidate, not demonstrated eligibility. |
 | `BoundedTraversal` `lstat/fstat/fstatat` | device, inode, generation, type/mode, link count, allocated blocks, size, modification and change timestamps | Bound read-only traversal, detect churn/cross-volume nodes, calculate allocated bytes, and apply age filters | Scope varies. Default quick roots are implicit home subpaths. Selected-project roots come from persisted `gitRoots`, without an OS document picker or security-scoped grant. Full-home uses an in-app one-run consent token. None currently demonstrates `C617.1` or Apple's `3B52.1` user-grant condition. |
 | `StaleNodeModulesScanner` timestamp keys | directory flag and content modification date | Age-filter `node_modules` beneath configured project roots | No OS picker/security-scoped grant is wired. `3B52.1` remains unproven. The bounded production traversal above is the current scan path, but compiled source still requires inventory. |
 | `TranscriptPruneScanner` timestamp keys | directory flag and content modification date | Age-filter transcript files beneath a supplied Claude projects directory | The catalog derives this from the home directory; there is no demonstrated specific user grant. No current reason is asserted. |
@@ -57,13 +57,14 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 
 | Source | Direct API category | Matched tokens and lines |
 |---|---|---|
-| `Tidy/Assistance/AssistanceModel.swift` | File timestamp | `fstat`@574,585,608 |
-| `Tidy/Assistance/AssistanceModel.swift` | Disk space | `fstatfs`@574,585 |
+| `Tidy/Assistance/AssistanceModel.swift` | File timestamp | `fstat`@646,657,680 |
+| `Tidy/Assistance/AssistanceModel.swift` | Disk space | `fstatfs`@646,657 |
 | `Tidy/Budgets/NotificationBroker.swift` | File timestamp | `fstat`@231,300,313,338; `fstatat`@317 |
 | `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@300,313 |
-| `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@495; `fstat`@431,442,458; `fstatat`@450,465 |
-| `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@495; `fstatfs`@461 |
-| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@715 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@699; `fstat`@635,646,662; `fstatat`@654,669 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@699; `fstatfs`@665 |
+| `Tidy/Execution/AppExecutionServices.swift` | File timestamp | `lstat`@316,325 |
+| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@829 |
 | `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@410,437; `lstat`@388 |
 | `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@655; `lstat`@279,546,630 |
 | `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@155 |
@@ -91,14 +92,14 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Measure/DiskStats.swift` | Disk space | `URLResourceKey.volumeAvailableCapacityForImportantUsageKey`@31,47,56; `URLResourceKey.volumeAvailableCapacityKey`@30,45,53; `URLResourceKey.volumeTotalCapacityKey`@29,44,51 |
 | `TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift` | Boot identity (not in current Apple required-reason list) | `kern.boottime`@32,34 |
 | `TidyCore/Sources/TidyCore/Policy/DiagnosticExport.swift` | File timestamp | `fstat`@141,203,223,312; `fstatat`@233,266,342 |
-| `TidyCore/Sources/TidyCore/Policy/OptionalRunHistory.swift` | File timestamp | `fstat`@124,138; `fstatat`@175 |
+| `TidyCore/Sources/TidyCore/Policy/OptionalRunHistory.swift` | File timestamp | `fstat`@82,166,180,215; `fstatat`@225 |
 | `TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift` | File timestamp | `fstat`@75,109,144; `fstatat`@134,415 |
 | `TidyCore/Sources/TidyCore/Policy/SettingsPublication.swift` | Disk space | `fstatfs`@69 |
 | `TidyCore/Sources/TidyCore/Projects/ProjectInventory.swift` | File timestamp | `fstat`@374,428,597,619,693; `fstatat`@411,561 |
 | `TidyCore/Sources/TidyCore/Rescue/WorkloadIdentity.swift` | File timestamp | `fstat`@106 |
 | `TidyCore/Sources/TidyCore/Rescue/WorkloadIdentity.swift` | Disk space | `fstatfs`@106 |
 | `TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift` | File timestamp | `fstat`@1251,1291,1362; `fstatat`@1348; `lstat`@1232,1259 |
-| `TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift` | File timestamp | `lstat`@213,228 |
+| `TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift` | File timestamp | `lstat`@170,219,234,484 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift` | File timestamp | `stat`@335 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@201 |
 
@@ -111,3 +112,10 @@ python3 scripts/verification/privacy-api-inventory.py
 ```
 
 The self-test covers all 35 scanner patterns, including Apple-listed `getattrlistat` and `getattrlistbulk` plus the two separate sysctl identity rows, and rejects false matches from Swift `stat()`/`statfs()` struct initialization. The inventory is lexical source evidence. It does not prove reachability, runtime calls, permissions, traffic, packaged resource inclusion, signature state, App Store or external-distribution acceptance, or that a reason applies. Re-run after source freeze and compare the generated table before packaging.
+
+## 10 October 2026 source refresh
+
+The generated table now includes optional-data preview/clearing identity checks and
+explicit Build Prep volume measurement. Optional-store timestamps invalidate stale
+clear reviews; they do not create cleanup authority. No privacy reason was added
+and the unresolved purpose/classification findings above remain open.

@@ -1,5 +1,9 @@
 # Tidy reconciled local handover
 
+Subsequent macOS work and fresh evidence are recorded in
+[10 October local completion](completion-20261010.md). The Linux checkpoint below
+remains historical; its unrun-test statement is not the latest verification state.
+
 The audit checkpoint has been reconciled onto main for continuation on macOS.
 Use `codex/audit-reconciled-20261010`. Its base is
 `9da3196c8fc3b17791c15cacbf15f2b02aa7e3d4`, which already includes the 67 commits

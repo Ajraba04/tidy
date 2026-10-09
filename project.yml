@@ -94,6 +94,10 @@ targets:
       - path: Tidy/Execution/AppTerminationDelegate.swift
       - path: Tidy/Settings/AppConfigStore.swift
       - path: Tidy/Clean/RunReportPresentation.swift
+      - path: Tidy/Assistance/AssistanceModel.swift
+      - path: Tidy/Assistance/MaintenanceInventoryConsumer.swift
+      - path: Tidy/Budgets/NotificationBroker.swift
+      - path: Tidy/Developer/DeveloperWorkspaceModel.swift
     dependencies:
       - package: TidyCore
     settings:

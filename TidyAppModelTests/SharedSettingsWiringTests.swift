@@ -97,6 +97,70 @@ private enum SettingsWorkflowGatePoint: Hashable {
 private enum SettingsWorkflowFixtureError: Error { case failedAnalysis, failedIssuance }
 
 extension SharedSettingsWiringTests {
+    @MainActor func testOptionalDataClearingPreservesUnresolvedRecoveryAndLocalAuthority() async throws {
+        try await run { scratch, services, _ in
+            services.disposeMonitoring()
+            await services.policyBridge.drain()
+            let admission = try MutationAdmissionStore(directory: scratch.paths.journal)
+            XCTAssertEqual(admission.acquire(), .ready)
+            let journal = try RunJournal(store: admission,
+                storage: DurableJournalStorage(directory: scratch.paths.journal))
+            let runID = UUID()
+            try journal.append(JournalEvent(runID: runID, sequence: 1, phase: .planned,
+                operationID: nil, status: nil, reason: nil))
+            try journal.append(JournalEvent(runID: runID, sequence: 2, phase: .confirmed,
+                operationID: nil, status: nil, reason: nil))
+            try journal.persistIntent(PendingEffectIntent(runID: runID, operationID: UUID(),
+                adapterID: "unresolved-fixture", bootID: UUID(), executablePath: "/not-executed",
+                executableDevice: 1, executableInode: 1, childPID: nil,
+                childStartSeconds: nil, childStartMicroseconds: nil, phase: .prepared))
+            admission.release()
+            let authorityDirectory = scratch.root.appendingPathComponent("authority")
+            try FileManager.default.createDirectory(at: authorityDirectory,
+                withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            let authority = try LocalAuthorityStore(directory: authorityDirectory,
+                installation: LocalInstallationIdentity.verify(directory: authorityDirectory))
+            let owner = LocalAuthorityOwner()
+            let consent = try await authority.beginReview(scope: .notifications, owner: owner,
+                nowMonotonicNanoseconds: 1)
+            _ = try await authority.confirm(consent, owner: owner, nowMonotonicNanoseconds: 2)
+            func files(_ directory: URL) throws -> [String: Data] {
+                var result: [String: Data] = [:]
+                for name in try FileManager.default.contentsOfDirectory(atPath: directory.path) {
+                    let url = directory.appendingPathComponent(name)
+                    if let value = try? Data(contentsOf: url) { result[name] = value }
+                }
+                return result
+            }
+            let recoveryBefore = try files(scratch.paths.journal)
+            let authorityBefore = try files(authorityDirectory)
+            let settingsBefore = try? Data(contentsOf: scratch.paths.settings)
+            let history = try XCTUnwrap(services.optionalRunHistory)
+            _ = try await history.record(RunReport(tier: .safe, results: [],
+                startedAt: Date(), finishedAt: Date(), freeSpaceBeforeBytes: 0,
+                freeSpaceAfterBytes: 0),
+                policy: .init(enabled: true, retentionDays: 30, maxMiB: 1), acknowledgedRevision: 100)
+            let cancelled = try await services.previewOptionalDataClearing(.completedReports)
+            XCTAssertGreaterThan(cancelled.byteCount, 0)
+            services.cancelOptionalDataReview(cancelled.id)
+            do { try await services.confirmOptionalDataClearing(cancelled); XCTFail("Cancelled review applied") }
+            catch AppDataClearError.staleReview {}
+            let reviewed = try await services.previewOptionalDataClearing(.completedReports)
+            try await services.confirmOptionalDataClearing(reviewed)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: services.runLogURL.path))
+            let missingIndex = try await services.previewOptionalDataClearing(.scanIndex)
+            XCTAssertEqual(missingIndex.byteCount, 0)
+            try await services.confirmOptionalDataClearing(missingIndex)
+            XCTAssertFalse(FileManager.default.fileExists(atPath:
+                scratch.support.appendingPathComponent("scan-index").path))
+            XCTAssertEqual(try files(scratch.paths.journal), recoveryBefore)
+            XCTAssertEqual(try files(authorityDirectory), authorityBefore)
+            XCTAssertEqual(try? Data(contentsOf: scratch.paths.settings), settingsBefore)
+            XCTAssertEqual(admission.acquire(), .uncertainAndPossiblyRunning)
+            admission.release()
+        }
+    }
+
     private func workflowSummary(_ id: UUID,
                                  collisions: [ProfileImportCollision] = []) throws
         -> SettingsImportUISummary {
@@ -746,6 +810,7 @@ extension SharedSettingsWiringTests {
             try c.prepareReset(.init(globalPreferenceIDs: [id]))
             guard case .reset(let preview)? = c.confirmation else { return XCTFail() }
             XCTAssertEqual(preview.immutableBoundaries, Set(SettingsResetBoundary.allCases))
+            XCTAssertTrue(preview.immutableBoundaries.contains(.mandatoryJournal))
             XCTAssertTrue(preview.delta.inert.isEmpty && !preview.delta.touchesActiveProfile)
             c.cancelConfirmation(); XCTAssertEqual(services.configStore.config, config)
             XCTAssertEqual(services.configStore.inertImports, inert)
@@ -768,8 +833,28 @@ extension SharedSettingsWiringTests {
                 XCTAssertFalse(copy.isEmpty)
                 XCTAssertNotEqual(copy, key)
                 XCTAssertNotEqual(copy, "Description unavailable.")
-                XCTAssertTrue(copy.localizedCaseInsensitiveContains("unavailable"))
+                switch deferred {
+                case .localReassociation:
+                    XCTAssertTrue(copy.contains("Manage Local Consent"))
+                    XCTAssertTrue(copy.contains("Assistance"))
+                    XCTAssertTrue(copy.contains("Import cannot authorize this Mac"))
+                case .historyAndIndexClearing:
+                    XCTAssertTrue(copy.contains("Settings > Experience"))
+                    XCTAssertTrue(copy.contains("mandatory safety journal is never cleared"))
+                }
             }
+            let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let source = try String(contentsOf: root.appendingPathComponent(
+                "Tidy/Settings/SettingsView.swift"), encoding: .utf8)
+            XCTAssertTrue(source.contains("Button(\"Manage Local Consent…\") { openWindow(id: \"assistance\") }"))
+            XCTAssertTrue(source.contains("if selectedSection == .experience"))
+            XCTAssertTrue(source.contains("optionalDataControls"))
+            let optionalControls = try String(contentsOf: root.appendingPathComponent(
+                "Tidy/Settings/OptionalDataControls.swift"), encoding: .utf8)
+            XCTAssertTrue(optionalControls.contains("mandatory recovery records are preserved"))
+            XCTAssertTrue(optionalControls.contains("services.previewOptionalDataClearing(kind)"))
+            XCTAssertTrue(optionalControls.contains("services.confirmOptionalDataClearing(value)"))
         }
     }
 
@@ -1266,11 +1351,11 @@ extension SharedSettingsWiringTests {
         let bundle = Bundle(for: SharedSettingsWiringTests.self)
         let reassociation = SettingsWorkflowPresentation.deferredExplanation(
             .localReassociation, bundle: bundle)
-        XCTAssertTrue(reassociation.contains("T22.3"))
+        XCTAssertTrue(reassociation.contains("Local Consent"))
         XCTAssertTrue(reassociation.contains("cannot authorize this Mac"))
         let clearing = SettingsWorkflowPresentation.deferredExplanation(
             .historyAndIndexClearing, bundle: bundle)
-        for token in ["T07.3d", "T09", "mandatory safety journal", "never cleared"] {
+        for token in ["Experience", "optional", "mandatory safety journal", "never cleared"] {
             XCTAssertTrue(clearing.contains(token), token)
         }
         let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
@@ -1341,6 +1426,55 @@ extension SharedSettingsWiringTests {
         }
     }
 
+    private func settingsTaskInvocationCount(_ source: String) throws -> Int {
+        let expression = try NSRegularExpression(
+            pattern: #"\bTask\s*(?:\.\s*detached)?\s*(?:\([^{}]*\))?\s*\{"#)
+        return expression.numberOfMatches(in: source,
+            range: NSRange(source.startIndex..<source.endIndex, in: source))
+    }
+
+    /// Exempt only the selected-file and accepted-save-panel callbacks. The
+    /// settings body, reader declaration and all other source stay subject to
+    /// the no-on-open-work contract and the four controller-helper boundaries.
+    private func settingsTaskSourceWithoutExplicitFileCallbacks(_ source: String) throws -> String {
+        var remainder = source
+        for (name, entry) in [("IMPORT_FILE", ".fileImporter("),
+                              ("DIAGNOSTIC_EXPORT", "panel.begin { response in")] {
+            let begin = "// SETTINGS_" + name + "_CALLBACK_BEGIN"
+            let end = "// SETTINGS_" + name + "_CALLBACK_END"
+            XCTAssertEqual(source.components(separatedBy: begin).count - 1, 1, name)
+            XCTAssertEqual(source.components(separatedBy: end).count - 1, 1, name)
+            let beginRange = try XCTUnwrap(remainder.range(of: begin))
+            let endRange = try XCTUnwrap(remainder.range(of: end))
+            XCTAssertLessThan(beginRange.lowerBound, endRange.lowerBound, name)
+            let block = String(remainder[beginRange.lowerBound..<endRange.upperBound])
+            XCTAssertEqual(block.components(separatedBy: entry).count - 1, 1, name)
+            XCTAssertEqual(block.components(separatedBy: "Task.detached").count - 1, 1, name)
+            XCTAssertEqual(block.components(separatedBy: "Task {").count - 1, 1, name)
+            XCTAssertEqual(try settingsTaskInvocationCount(block), 2, name)
+            XCTAssertTrue(block.contains("startAccessingSecurityScopedResource"), name)
+            XCTAssertTrue(block.contains("stopAccessingSecurityScopedResource"), name)
+            if name == "IMPORT_FILE" {
+                XCTAssertTrue(block.contains("guard case .success(let url) = result else { return }"))
+                XCTAssertTrue(block.contains("importReadTask?.cancel()"))
+                XCTAssertTrue(block.contains("isReadingImport = true"))
+                XCTAssertTrue(block.contains("let result = await readTask.value"))
+                XCTAssertTrue(block.contains("guard importReadID == requestID else { return }"))
+                XCTAssertTrue(block.contains("controller.beginImportSelection(bytes: data)"))
+                let detached = try XCTUnwrap(block.range(of: "Task.detached"))
+                let read = try XCTUnwrap(block.range(of: "SettingsImportFileReader.read(url)"))
+                XCTAssertLessThan(detached.lowerBound, read.lowerBound)
+            } else {
+                XCTAssertTrue(block.contains("guard response == .OK, let destination = panel.url else"))
+                let detached = try XCTUnwrap(block.range(of: "Task.detached"))
+                let write = try XCTUnwrap(block.range(of: "DiagnosticExportWriter.write(input, to: destination)"))
+                XCTAssertLessThan(detached.lowerBound, write.lowerBound)
+            }
+            remainder.replaceSubrange(beginRange.lowerBound..<endRange.upperBound, with: "")
+        }
+        return remainder
+    }
+
     func testWorkflowSourceHasNoOpenWorkOrSecondOwner() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -1354,20 +1488,22 @@ extension SharedSettingsWiringTests {
                       "ExecutionPolicyBridge(", "SettingsTransfer.resolve"] {
             XCTAssertFalse(source.contains(token), token)
         }
-        XCTAssertFalse(source.contains("Task.detached"))
+        let taskSource = try settingsTaskSourceWithoutExplicitFileCallbacks(source)
+        XCTAssertFalse(taskSource.contains("Task.detached"))
         let begin = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_BEGIN"
         let end = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_END"
         XCTAssertEqual(source.components(separatedBy: begin).count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: end).count - 1, 1)
-        let beginRange = try XCTUnwrap(source.range(of: begin))
-        let endRange = try XCTUnwrap(source.range(of: end))
+        let beginRange = try XCTUnwrap(taskSource.range(of: begin))
+        let endRange = try XCTUnwrap(taskSource.range(of: end))
         XCTAssertLessThan(beginRange.lowerBound, endRange.lowerBound)
-        let block = String(source[beginRange.lowerBound..<endRange.upperBound])
-        let beforeBlock = String(source[..<beginRange.lowerBound])
-        let afterBlock = String(source[endRange.upperBound...])
+        let block = String(taskSource[beginRange.lowerBound..<endRange.upperBound])
+        let beforeBlock = String(taskSource[..<beginRange.lowerBound])
+        let afterBlock = String(taskSource[endRange.upperBound...])
         XCTAssertEqual(block.components(separatedBy: "Task {").count - 1, 4)
-        XCTAssertFalse(beforeBlock.contains("Task {"))
-        XCTAssertFalse(afterBlock.contains("Task {"))
+        XCTAssertEqual(try settingsTaskInvocationCount(block), 4)
+        XCTAssertEqual(try settingsTaskInvocationCount(beforeBlock), 0)
+        XCTAssertEqual(try settingsTaskInvocationCount(afterBlock), 0)
         var remainder = block
         for helper in ["beginImportSelection", "beginImportPreviewIssuance",
                        "beginImportConfirmation", "beginImportCancellation"] {
@@ -1404,8 +1540,20 @@ extension SharedSettingsWiringTests {
         XCTAssertTrue(source.contains("startAccessingSecurityScopedResource"))
         XCTAssertTrue(source.contains("stopAccessingSecurityScopedResource"))
         XCTAssertFalse(source.contains("Data(contentsOf:"))
-        XCTAssertTrue(source.contains("seekToEnd()"))
-        XCTAssertTrue(source.contains("read(upToCount: 1_048_577)"))
+        XCTAssertFalse(source.contains("FileHandle(forReadingFrom:"))
+        for boundary in ["static let maximumByteCount = 1_048_576",
+                         "O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC",
+                         "defer { close(fd) }", "fstat(fd, &info)",
+                         "info.st_mode & S_IFMT == S_IFREG", "info.st_size >= 0",
+                         "info.st_size <= maximumByteCount", "try Task.checkCancellation()",
+                         "ProcessInfo.processInfo.systemUptime + 5",
+                         "ProcessInfo.processInfo.systemUptime < deadline",
+                         "Darwin.read(fd, $0.baseAddress, $0.count)",
+                         "count <= maximumByteCount - data.count",
+                         ".onDisappear { cancelImportRead() }",
+                         "importReadID = UUID()", "importReadTask?.cancel()"] {
+            XCTAssertTrue(source.contains(boundary), boundary)
+        }
         XCTAssertTrue(source.contains("operationGeneration &+="))
         XCTAssertTrue(source.contains("let bundle: Bundle"))
         XCTAssertTrue(source.contains("bundle: Bundle = .main"))
@@ -2858,6 +3006,21 @@ final class SharedSettingsWiringTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: s.paths.settings.path))
             let report = await services.coordinator.execute(token, currentPolicyRevision: 1)
             XCTAssertEqual(report.disposition, .noWork)
+            let terminalProgress = await services.coordinator.executionProgress()
+            XCTAssertEqual(terminalProgress.phase, .idle)
+            XCTAssertEqual(terminalProgress.recovery, .ready)
+            // Execution returns before the app's main-actor progress subscriber
+            // necessarily consumes the terminal event. Await that event rather
+            // than interpreting an in-flight busy presentation as a policy change.
+            let progressDeadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
+            while services.executionProgress != terminalProgress
+                || services.liveRecoveryAdmission != .ready {
+                guard DispatchTime.now().uptimeNanoseconds < progressDeadline else {
+                    XCTFail("Terminal no-work progress did not propagate to app services")
+                    throw A3Failure.timeout
+                }
+                try await Task.sleep(nanoseconds: 2_000_000)
+            }
             var invalid = TidyConfig(schemaVersion: 2); invalid.transcriptAgeThresholdDays = 366
             services.configStore.config = invalid
             await services.policyBridge.drain()
@@ -4660,7 +4823,7 @@ extension SharedSettingsWiringTests {
             repository.appendingPathComponent("Tidy/Settings/SettingsView.swift"),
             encoding: .utf8)
         let forbidden = [
-            ".task", "Task.detached", ".onAppear", ".onReceive",
+            ".task", ".onAppear", ".onReceive",
             ".refreshable", "Timer", "Process(", "Process.", "ProcessSurvey",
             "CookieDomainSuggester", "GitRootDiscovery", "SimctlClient", "CleanEngine",
             "requestPlan", "loadPlan", "FileManager", "URLSession", "NSWorkspace",
@@ -4669,16 +4832,20 @@ extension SharedSettingsWiringTests {
         for token in forbidden {
             XCTAssertFalse(source.contains(token), "Settings on-open source contains \(token)")
         }
+        let taskSource = try settingsTaskSourceWithoutExplicitFileCallbacks(source)
+        XCTAssertFalse(taskSource.contains("Task.detached"))
         let taskBoundaryBegin = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_BEGIN"
         let taskBoundaryEnd = "// SETTINGS_WORKFLOW_TASK_BOUNDARIES_END"
         XCTAssertEqual(source.components(separatedBy: taskBoundaryBegin).count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: taskBoundaryEnd).count - 1, 1)
-        let taskBeginRange = try XCTUnwrap(source.range(of: taskBoundaryBegin))
-        let taskEndRange = try XCTUnwrap(source.range(of: taskBoundaryEnd))
-        let taskBlock = String(source[taskBeginRange.lowerBound..<taskEndRange.upperBound])
+        let taskBeginRange = try XCTUnwrap(taskSource.range(of: taskBoundaryBegin))
+        let taskEndRange = try XCTUnwrap(taskSource.range(of: taskBoundaryEnd))
+        XCTAssertLessThan(taskBeginRange.lowerBound, taskEndRange.lowerBound)
+        let taskBlock = String(taskSource[taskBeginRange.lowerBound..<taskEndRange.upperBound])
         XCTAssertEqual(taskBlock.components(separatedBy: "Task {").count - 1, 4)
-        XCTAssertFalse(source[..<taskBeginRange.lowerBound].contains("Task {"))
-        XCTAssertFalse(source[taskEndRange.upperBound...].contains("Task {"))
+        XCTAssertEqual(try settingsTaskInvocationCount(taskBlock), 4)
+        XCTAssertEqual(try settingsTaskInvocationCount(String(taskSource[..<taskBeginRange.lowerBound])), 0)
+        XCTAssertEqual(try settingsTaskInvocationCount(String(taskSource[taskEndRange.upperBound...])), 0)
         var taskRemainder = taskBlock
         for helper in ["beginImportSelection", "beginImportPreviewIssuance",
                        "beginImportConfirmation", "beginImportCancellation"] {

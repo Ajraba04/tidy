@@ -1,18 +1,9 @@
 import SwiftUI
 import TidyCore
 
-private enum AssistanceTab: Hashable {
-    case consent
-    case maintenance
-    case budgets
-    case rescue
-}
-
 struct AssistanceView: View {
     @Bindable private var model: AssistanceModel
     private let loginItemManager: any LoginItemManaging
-    @State private var tab: AssistanceTab = .consent
-    @Environment(\.openWindow) private var openWindow
 
     @MainActor init(model: AssistanceModel,
          loginItemManager: (any LoginItemManaging)? = nil) {
@@ -29,7 +20,8 @@ struct AssistanceView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
             }
-            TabView(selection: $tab) {
+            TabView(selection: Binding(
+                get: { model.selectedSection }, set: model.selectSection)) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         LocalConsentView(authority: model.authority,
@@ -44,7 +36,7 @@ struct AssistanceView: View {
                     .padding(20)
                 }
                 .tabItem { Label("Consent", systemImage: "checkmark.shield") }
-                .tag(AssistanceTab.consent)
+                .tag(AssistanceSection.consent)
 
                 ScrollView {
                     MaintenanceSettingsView(authority: model.authority,
@@ -56,15 +48,38 @@ struct AssistanceView: View {
                         .padding(20)
                 }
                 .tabItem { Label("Maintenance", systemImage: "wrench.and.screwdriver") }
-                .tag(AssistanceTab.maintenance)
+                .tag(AssistanceSection.maintenance)
 
                 VStack(spacing: 8) {
-                    if model.budgetVolumeIDs.count > 1 {
+                    if let budgetID = model.reviewedBudgetID,
+                       let volumeID = model.budgetVolumeID {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Notification review: \(budgetID.rawValue)")
+                                .font(.headline)
+                            Text("Volume: \(volumeID.uuidString)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if !model.budgetVolumeIDs.contains(volumeID) {
+                                Text("This volume has no current inventory. Measurements remain unavailable until you explicitly collect inventory.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .accessibilityIdentifier("assistance.notificationBudgetReview")
+                    }
+                    if model.budgetVolumeIDs.count > 1
+                        || (model.budgetVolumeIDs.count == 1
+                            && model.budgetVolumeID != model.budgetVolumeIDs.first) {
                         Picker("Volume", selection: Binding(
                             get: { model.budgetVolumeID },
                             set: { value in
                                 if let value { model.selectBudgetVolume(value) }
                             })) {
+                                if let volumeID = model.budgetVolumeID,
+                                   !model.budgetVolumeIDs.contains(volumeID) {
+                                    Text("\(volumeID.uuidString) (inventory unavailable)")
+                                        .tag(Optional(volumeID))
+                                }
                                 ForEach(model.budgetVolumeIDs, id: \.self) { volumeID in
                                     Text(volumeID.uuidString).tag(Optional(volumeID))
                                 }
@@ -87,7 +102,7 @@ struct AssistanceView: View {
                         onAuthorityChange: model.acceptAuthoritySnapshot)
                 }
                 .tabItem { Label("Budgets", systemImage: "gauge.with.dots.needle.50percent") }
-                .tag(AssistanceTab.budgets)
+                .tag(AssistanceSection.budgets)
 
                 RescueView(authority: model.authority,
                     snapshot: model.authoritySnapshot,
@@ -103,23 +118,11 @@ struct AssistanceView: View {
                     },
                     onAuthorityChange: model.acceptAuthoritySnapshot)
                     .tabItem { Label("Rescue", systemImage: "lifepreserver") }
-                    .tag(AssistanceTab.rescue)
+                    .tag(AssistanceSection.rescue)
             }
         }
         .frame(minWidth: 640, minHeight: 560)
         .onAppear { model.setVisible(true) }
         .onDisappear { model.setVisible(false) }
-        .onChange(of: model.requestedNavigation) { _, navigation in
-            guard let navigation else { return }
-            switch navigation {
-            case .headroomReview:
-                openWindow(id: WindowID.headroom)
-            case .budgetReview:
-                tab = .budgets
-            case .maintenance(.reviewCache):
-                openWindow(id: WindowID.developer)
-            }
-            model.consumeNavigation()
-        }
     }
 }

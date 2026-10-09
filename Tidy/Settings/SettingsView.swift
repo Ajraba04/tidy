@@ -1112,6 +1112,7 @@ struct SettingsWorkflowSurface: View {
                     .accessibilityIdentifier("settings.workflow.projectionFailure")
             }
         }
+        // SETTINGS_IMPORT_FILE_CALLBACK_BEGIN
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }
             let requestID = UUID()
@@ -1135,6 +1136,7 @@ struct SettingsWorkflowSurface: View {
                 }
             }
         }
+        // SETTINGS_IMPORT_FILE_CALLBACK_END
         .overlay(alignment: .bottom) {
             if isReadingImport {
                 HStack {
@@ -1592,6 +1594,7 @@ struct SettingsWorkflowSurface: View {
 }
 
 struct SettingsView: View {
+    var optionalDataControls: AnyView? = nil
     @Environment(AppConfigStore.self) private var store
     @Environment(\.openWindow) private var openWindow
     @State private var selectedSection = SettingsPresentationSection.features
@@ -1627,6 +1630,7 @@ struct SettingsView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if selectedSection == .experience {
                         DiagnosticExportControl(store: store)
+                        optionalDataControls
                     }
                     RegistrySettingsContent(rows: rows) { id, value in
                         _ = model.submit(id: id, value: value)
@@ -1676,6 +1680,7 @@ private struct DiagnosticExportControl: View {
         panel.nameFieldStringValue = "tidy-diagnostics-\(UUID().uuidString.prefix(8)).json"
         isExporting = true
         message = nil
+        // SETTINGS_DIAGNOSTIC_EXPORT_CALLBACK_BEGIN
         panel.begin { response in
             guard response == .OK, let destination = panel.url else {
                 isExporting = false
@@ -1706,6 +1711,7 @@ private struct DiagnosticExportControl: View {
                 }
             }
         }
+        // SETTINGS_DIAGNOSTIC_EXPORT_CALLBACK_END
     }
 }
 

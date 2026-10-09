@@ -86,6 +86,7 @@ public enum ScanIndexError: Error, Equatable, Sendable {
     case statementFailed(String)
     case partialCannotReplaceComplete
     case unsafeLocation
+    case staleClearPreview
 }
 
 /// Outcome of one commit attempt through the generation/barrier protocol.
@@ -115,6 +116,8 @@ public struct ScanContinuationWatchGuard: Equatable, Sendable {
 public actor ScanIndexStore {
     private var db: OpaquePointer?
     private let databaseURL: URL
+    private var openedFileIdentity = ""
+    private var pendingClear: (preview: OptionalDataClearPreview, fingerprint: String)?
 
     /// Opens (creating if absent) the database at `databaseURL`. Throws
     /// `.corrupted` rather than crashing or quietly starting empty when the
@@ -163,6 +166,9 @@ public actor ScanIndexStore {
             try Self.execStatement("PRAGMA foreign_keys=ON;", on: opened)
             try Self.checkIntegrity(on: opened)
             try Self.createSchema(on: opened)
+            var identity = stat()
+            guard lstat(openedURL.path, &identity) == 0 else { throw ScanIndexError.unsafeLocation }
+            openedFileIdentity = "\(identity.st_dev):\(identity.st_ino)"
         } catch {
             sqlite3_close_v2(opened)
             db = nil
@@ -435,6 +441,66 @@ public actor ScanIndexStore {
         try exec("DELETE FROM scan_records;")
     }
 
+    public func previewClearing() throws -> OptionalDataClearPreview {
+        let snapshot = try clearingSnapshot()
+        let preview = OptionalDataClearPreview(byteCount: snapshot.bytes,
+            storagePaths: ["", "-wal", "-shm", "-journal"].map { databaseURL.path + $0 },
+            token: UUID())
+        pendingClear = (preview, snapshot.fingerprint)
+        return preview
+    }
+
+    /// Deletes optional aggregates and event-resume metadata in one transaction.
+    /// The database/schema stay in place; this never removes a directory.
+    public func clear(_ preview: OptionalDataClearPreview) throws {
+        let pending = pendingClear
+        pendingClear = nil
+        guard let pending, pending.preview == preview else { throw ScanIndexError.staleClearPreview }
+        try exec("BEGIN IMMEDIATE;")
+        do {
+            guard try clearingSnapshot().fingerprint == pending.fingerprint else {
+                throw ScanIndexError.staleClearPreview
+            }
+            try exec("DELETE FROM scan_records;")
+            try exec("DELETE FROM volume_watch;")
+            try exec("COMMIT;")
+        } catch {
+            try? exec("ROLLBACK;")
+            throw error
+        }
+    }
+
+    private func clearingSnapshot() throws -> (bytes: Int64, fingerprint: String) {
+        guard let db else { throw ScanIndexError.corrupted }
+        var total: Int64 = 0
+        var parts: [String] = []
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let url = URL(fileURLWithPath: databaseURL.path + suffix)
+            guard try Self.validateRegularFileIfPresent(url) else {
+                if suffix.isEmpty { throw ScanIndexError.unsafeLocation }
+                parts.append(suffix + ":absent"); continue
+            }
+            var info = stat()
+            guard lstat(url.path, &info) == 0, info.st_size >= 0 else {
+                throw ScanIndexError.unsafeLocation
+            }
+            if suffix.isEmpty, "\(info.st_dev):\(info.st_ino)" != openedFileIdentity {
+                throw ScanIndexError.unsafeLocation
+            }
+            let (next, overflow) = total.addingReportingOverflow(Int64(info.st_size))
+            guard !overflow else { throw ScanIndexError.unsafeLocation }
+            total = next
+            parts.append("\(suffix):\(info.st_dev):\(info.st_ino):\(info.st_size):"
+                + "\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec)")
+        }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "PRAGMA data_version;", -1, &statement, nil) == SQLITE_OK,
+              sqlite3_step(statement) == SQLITE_ROW else { throw ScanIndexError.corrupted }
+        parts.append("\(sqlite3_column_int64(statement, 0)):\(sqlite3_total_changes(db))")
+        return (total, parts.joined(separator: "|"))
+    }
+
     // MARK: - Cursor / device UUID persistence
 
     public func persistedCursor(volumeUUID: String) throws -> UInt64? {
@@ -700,6 +766,20 @@ public actor ScanIndexCoordinator {
         activeContinuationGuards.removeAll()
         pendingContinuationPublication = nil
         await invalidation.stop()
+    }
+
+    public func previewClearing() async throws -> OptionalDataClearPreview {
+        guard let store else { throw ScanIndexError.unsafeLocation }
+        await stopWatching()
+        await invalidation.invalidateAllApprovedRoots()
+        return try await store.previewClearing()
+    }
+
+    public func clear(_ preview: OptionalDataClearPreview) async throws {
+        guard let store else { throw ScanIndexError.unsafeLocation }
+        await stopWatching()
+        await invalidation.invalidateAllApprovedRoots()
+        try await store.clear(preview)
     }
 
     /// A terminal partial result is dormant explicit work. Stop all event delivery while the

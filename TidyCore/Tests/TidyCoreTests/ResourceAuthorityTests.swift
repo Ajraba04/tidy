@@ -122,7 +122,7 @@ struct ResourceAuthorityTests {
         let scratch = try AuthorityScratch(); defer { scratch.cleanup() }
         let home = scratch.root.appendingPathComponent("home", isDirectory: true)
         let coordinator = ExecutionCoordinator(environment: CleanEnvironment(
-            homeDirectory: home.path, detectedTools: [.xcode], protectedRoots: [scratch.protected.path]),
+            homeDirectory: home.path, detectedTools: [.xcode], protectedRoots: [scratch.outside.path]),
             journalDirectory: scratch.journal)
         let review = try await coordinator.prepareReview(
             engine: CleanEngine(sizeScanner: SizeScanner()), tier: .safe, selectDefaults: false)
