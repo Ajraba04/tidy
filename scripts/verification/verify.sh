@@ -25,6 +25,8 @@ python3 scripts/verification/privacy-api-inventory.py \
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
 python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
+  --require-case 'reviewed optional history clearing preserves future retention and rejects stale previews' \
+  --require-case 'reviewed index clearing removes records and watch cursors but rejects changed content' \
   --require-case 'bounded catalog discovery never enters mandatory cloud roots' \
   --require-case 'bounded stale scan honors caller exclusions before descending into projects' \
   --require-case 'a candidate containing a protected descendant is refused even inside its declared root' \
@@ -83,6 +85,12 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 146 \
+  --require-case 'testOptionalDataClearingPreservesUnresolvedRecoveryAndLocalAuthority' \
+  --require-case 'testOptionalDataClearingRejectsReservedScanWithoutCancellingIt' \
+  --require-case 'testClosedAssistanceWindowRoutesEveryDestinationOnce' \
+  --require-case 'testBudgetClickPreservesExactCategoryAndUnavailableVolume' \
+  --require-case 'testUnboundBacklogRetainsOnlyLatestSixteenDestinations' \
+  --require-case 'testReentrantBurstYieldsBeforeDeliveringEveryClick' \
   --require-case 'testImportFileReaderRejectsFIFOAndSymlinkWithoutBlocking' \
   --require-case 'testLivePowerAndThermalSignalsRemainIndependent' \
   --require-case 'testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending' \
@@ -132,7 +140,9 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES \
   2>&1 | tee "$EVIDENCE/production-native-ui.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/production-native-ui.xcresult" \
-  --minimum 11 \
+  --minimum 13 \
+  --require-case 'testProductionDiagnosticExportSavesOnlyMetadataInSyntheticHome' \
+  --require-case 'testProductionOptionalDataReviewCancelClearAndDiagnosticPanel' \
   --require-case 'testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit' \
   --require-case 'testProductionLightAppearanceKeepsSettingsAndCleanupUsable' \
   --require-case 'testProductionDarkAppearanceKeepsSettingsAndCleanupUsable' \

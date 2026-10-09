@@ -251,6 +251,31 @@ private func runAppScanToCompletion(services: AppExecutionServices,
 @MainActor
 final class ScanOrchestrationWiringTests: XCTestCase {
 
+    func testOptionalDataClearingRejectsReservedScanWithoutCancellingIt() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let gate = ScanLifecycleGate()
+        let services = try await scratch.services(scanLifecycleHook: { event in
+            if event == .startReserved { await gate.pause() }
+        })
+        let review = try await services.previewOptionalDataClearing(.scanIndex)
+        let model = ScanViewModel(services: services)
+        let scan = Task { @MainActor in await model.runScan() }
+        await gate.waitUntilEntered()
+        do {
+            try await services.confirmOptionalDataClearing(review)
+            XCTFail("Clearing overlapped reserved scan startup")
+        } catch AppDataClearError.busy {}
+        do {
+            _ = try await services.previewOptionalDataClearing(.completedReports)
+            XCTFail("Preview overlapped reserved scan startup")
+        } catch AppDataClearError.busy {}
+        await model.cancelScan()
+        await gate.release()
+        await scan.value
+        await services.disposeScanResourcesForTesting()
+        services.disposeMonitoring()
+    }
+
     func testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan() async throws {
         let scratch = try ScanWiringScratch(); defer { scratch.remove() }
         let startGate = ScanLifecycleGate()

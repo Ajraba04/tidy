@@ -60,7 +60,7 @@ struct TidyApp: App {
         }
 #endif
 
-        MenuBarExtra("Tidy", systemImage: "trash.circle") {
+        MenuBarExtra {
             withServices(accessibilityLabel: "Tidy menu") { services in
                 VStack(alignment: .leading, spacing: 0) {
                     MenuBarContentView(services: services)
@@ -94,6 +94,11 @@ struct TidyApp: App {
                     }
                 }
             }
+        } label: {
+            Image(systemName: "trash.circle")
+                .accessibilityLabel("Tidy")
+                .modifier(AssistanceNavigationHost(model: features?.assistance))
+                .task { await startBootstrap() }
         }
         .menuBarExtraStyle(.window)
 
@@ -156,7 +161,7 @@ struct TidyApp: App {
                             .foregroundStyle(.orange)
                             .padding(.horizontal)
                     }
-                    SettingsView()
+                    SettingsView(optionalDataControls: AnyView(OptionalDataControls(services: services)))
                         .environment(services.configStore)
                 }
             }
@@ -278,6 +283,30 @@ struct TidyApp: App {
         return AppStoragePaths(home: home,
             settings: base.appendingPathComponent("config.json"),
             journal: base.appendingPathComponent("execution", isDirectory: true))
+    }
+}
+
+/// The menu-bar label remains mounted while its menu and every review window
+/// are closed. It supplies the app's sole navigation owner with a scene-aware
+/// window opener; destination views only render selected state.
+private struct AssistanceNavigationHost: ViewModifier {
+    let model: AssistanceModel?
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onChange(of: model.map { ObjectIdentifier($0) }, initial: true) { _, _ in
+            let opener = openWindow
+            model?.bindNavigationHandler { navigation in
+                switch navigation {
+                case .headroomReview:
+                    opener(id: WindowID.headroom)
+                case .budgetReview:
+                    opener(id: WindowID.assistance)
+                case .maintenance(.reviewCache):
+                    opener(id: WindowID.developer)
+                }
+            }
+        }
     }
 }
 

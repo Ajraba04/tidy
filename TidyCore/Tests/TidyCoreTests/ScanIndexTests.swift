@@ -35,6 +35,34 @@ private func makeRecord(key: ScanIndexKey, totalBytes: Int64 = 4_096, isComplete
         updatedAt: Date())
 }
 
+@Suite("Reviewed optional index clearing")
+struct OptionalIndexClearingTests {
+    @Test("reviewed index clearing removes records and watch cursors but rejects changed content")
+    func reviewedIndexClearing() async throws {
+        let root = try makeFixtureRoot()
+        let (url, store) = try makeStore()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+        let key = makeKey(root: root)
+        try await store.commit(makeRecord(key: key), volumeUUID: key.volumeUUID,
+            cursor: 42, deviceUUID: "fixture-device")
+        let first = try await store.previewClearing()
+        #expect(first.byteCount > 0)
+        try await store.commit(makeRecord(key: key, totalBytes: 8192),
+            volumeUUID: key.volumeUUID, cursor: 43, deviceUUID: "fixture-device")
+        await #expect(throws: ScanIndexError.staleClearPreview) { try await store.clear(first) }
+        let current = try await store.previewClearing()
+        try await store.clear(current)
+        #expect(try await store.record(for: key) == nil)
+        #expect(try await store.persistedCursor(volumeUUID: key.volumeUUID) == nil)
+        #expect(try await store.persistedDeviceUUID(volumeUUID: key.volumeUUID) == nil)
+        await #expect(throws: ScanIndexError.staleClearPreview) { try await store.clear(current) }
+        await store.close()
+    }
+}
+
 private actor CatchupOnFlushSource: ScanEventSource {
     let stream: CatchupOnFlushStream
     init(changedPath: String, cursor: UInt64) {

@@ -28,16 +28,25 @@ public enum OptionalRunHistoryOutcome: Equatable, Sendable {
     case recorded(retainedCount: Int), disabled, entryExceedsLimit, stalePolicy
 }
 
+/// An actor-issued review of optional storage. Byte counts describe current
+/// logical file sizes, not physical space that clearing promises to reclaim.
+public struct OptionalDataClearPreview: Equatable, Sendable {
+    public let byteCount: Int64
+    public let storagePaths: [String]
+    internal let token: UUID
+}
+
 /// Serialized storage anchored to one owner-only directory and the exact
 /// `runs.jsonl` filename. Callers cannot redirect an operation to a journal.
 public actor OptionalRunHistoryStore {
     public enum Error: Swift.Error, Equatable, Sendable {
-        case malformed, invalidPolicy, unsafeStorage, oversized, unavailable
+        case malformed, invalidPolicy, unsafeStorage, oversized, unavailable, stalePreview
     }
     private static let filename = "runs.jsonl"
     private static let storageSafetyCeilingBytes = 50 * 1_048_576
     private let directory: URL
     private var acknowledgedPolicy: (revision: UInt64, policy: OptionalRunHistoryPolicy)?
+    private var pendingClear: (preview: OptionalDataClearPreview, fingerprint: String)?
 
     public init(directory: URL) throws {
         let value = directory.standardizedFileURL
@@ -47,6 +56,39 @@ public actor OptionalRunHistoryStore {
         self.directory = value
     }
     public var fileURL: URL { directory.appendingPathComponent(Self.filename) }
+
+    public func previewClearing() throws -> OptionalDataClearPreview {
+        let snapshot = try clearingSnapshot()
+        let preview = OptionalDataClearPreview(byteCount: snapshot.bytes,
+            storagePaths: [fileURL.path], token: UUID())
+        pendingClear = (preview, snapshot.fingerprint)
+        return preview
+    }
+
+    public func clear(_ preview: OptionalDataClearPreview) throws {
+        let pending = pendingClear
+        pendingClear = nil
+        guard let pending, pending.preview == preview,
+              try clearingSnapshot().fingerprint == pending.fingerprint else {
+            throw Error.stalePreview
+        }
+        try removeValidatedIfPresent(maxBytes: Self.storageSafetyCeilingBytes,
+            expectedFingerprint: pending.fingerprint)
+    }
+
+    private func clearingSnapshot() throws -> (bytes: Int64, fingerprint: String) {
+        let directoryFD = try openDirectory(); defer { Darwin.close(directoryFD) }
+        var parent = stat()
+        guard fstat(directoryFD, &parent) == 0 else { throw Error.unsafeStorage }
+        let prefix = "\(parent.st_dev):\(parent.st_ino):"
+        guard let opened = try validatedFile(directoryFD, maxBytes: Self.storageSafetyCeilingBytes)
+        else { return (0, prefix + "absent") }
+        defer { Darwin.close(opened.fd) }
+        let value = opened.identity
+        return (Int64(value.st_size), prefix + "\(value.st_dev):\(value.st_ino):\(value.st_size):"
+            + "\(value.st_mtimespec.tv_sec):\(value.st_mtimespec.tv_nsec):"
+            + "\(value.st_ctimespec.tv_sec):\(value.st_ctimespec.tv_nsec)")
+    }
 
     @discardableResult
     public func record(_ report: RunReport, policy: OptionalRunHistoryPolicy,
@@ -167,14 +209,28 @@ public actor OptionalRunHistoryStore {
         }
     }
 
-    private func removeValidatedIfPresent(maxBytes: Int) throws {
+    private func removeValidatedIfPresent(maxBytes: Int, expectedFingerprint: String? = nil) throws {
         let directoryFD = try openDirectory(); defer { Darwin.close(directoryFD) }
-        guard let opened = try validatedFile(directoryFD, maxBytes: maxBytes) else { return }
+        var parent = stat()
+        guard fstat(directoryFD, &parent) == 0 else { throw Error.unsafeStorage }
+        let prefix = "\(parent.st_dev):\(parent.st_ino):"
+        guard let opened = try validatedFile(directoryFD, maxBytes: maxBytes) else {
+            if let expectedFingerprint, expectedFingerprint != prefix + "absent" {
+                throw Error.stalePreview
+            }
+            return
+        }
         defer { Darwin.close(opened.fd) }
         var current = stat()
         guard fstatat(directoryFD, Self.filename, &current, AT_SYMLINK_NOFOLLOW) == 0,
               current.st_dev == opened.identity.st_dev, current.st_ino == opened.identity.st_ino,
               (current.st_mode & S_IFMT) == S_IFREG else { throw Error.unsafeStorage }
+        if let expectedFingerprint {
+            let value = prefix + "\(current.st_dev):\(current.st_ino):\(current.st_size):"
+                + "\(current.st_mtimespec.tv_sec):\(current.st_mtimespec.tv_nsec):"
+                + "\(current.st_ctimespec.tv_sec):\(current.st_ctimespec.tv_nsec)"
+            guard value == expectedFingerprint, current.st_nlink == 1 else { throw Error.stalePreview }
+        }
         guard unlinkat(directoryFD, Self.filename, 0) == 0 else { throw Error.unavailable }
         guard fsync(directoryFD) == 0 else { throw Error.unavailable }
     }

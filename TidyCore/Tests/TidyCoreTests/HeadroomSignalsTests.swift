@@ -289,6 +289,9 @@ struct HeadroomSignalsTests {
             clock: clock.now)
 
         _ = await monitor.requestSnapshot()
+        // A settings acknowledgement with no sampling lease is not a stopped
+        // sampling session. It must not erase the explicit measurement baseline.
+        await monitor.applyConfiguration(enabledVisibleConfiguration)
         let second = await monitor.requestSnapshot()
         // (100 - 0) pages / 10 seconds * 16384 bytes/page (a nondefault page size, not the
         // hardcoded 4 KiB many tools assume) = 163840 bytes/sec.

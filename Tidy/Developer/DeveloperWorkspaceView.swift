@@ -45,6 +45,11 @@ struct DeveloperWorkspaceView: View {
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 480)
+        .onAppear { model.updateBuildPrepVolumeOptions(localAuthority: localAuthority) }
+        .onChange(of: localAuthority) { _, updated in
+            model.invalidateBuildPrepCapacity()
+            model.updateBuildPrepVolumeOptions(localAuthority: updated)
+        }
     }
 
     private var projectsTab: some View {
@@ -183,6 +188,36 @@ struct DeveloperWorkspaceView: View {
     private var buildPrepTab: some View {
         List {
             Section("Headroom target") {
+                Picker("Target volume", selection: Binding(
+                    get: { model.selectedBuildPrepVolumeID },
+                    set: { id in
+                        if let id { model.selectBuildPrepVolume(id, localAuthority: localAuthority) }
+                    })) {
+                    if model.selectedBuildPrepVolumeID == nil {
+                        Text("No available home volume").tag(Optional<UUID>.none)
+                    }
+                    ForEach(model.buildPrepVolumeOptions) { target in
+                        Text(target.label).tag(Optional(target.id))
+                    }
+                    if let selected = model.selectedBuildPrepVolumeID,
+                       !model.buildPrepVolumeOptions.contains(where: { $0.id == selected }) {
+                        Text("Selected volume unavailable — \(selected.uuidString)")
+                            .tag(Optional(selected))
+                    }
+                }
+                .disabled(model.isScanning || model.isRefreshingBuildPrepCapacity)
+                .accessibilityIdentifier("buildPrep.targetVolume")
+                Button(model.isRefreshingBuildPrepCapacity ? "Refreshing capacity…" : "Refresh Capacity") {
+                    model.refreshBuildPrepCapacity(localAuthority: localAuthority)
+                }
+                .disabled(model.isScanning || model.isRefreshingBuildPrepCapacity
+                    || policy?.allowedFeatures.contains("buildPrep") != true)
+                .accessibilityIdentifier("buildPrep.refreshCapacity")
+                Text("Only the selected home or locally approved volume is measured. Choosing a volume does not enable cleanup or background monitoring.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let message = model.buildPrepCapacityMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(headroomStatus)
                 if let plan = model.snapshot?.headroomPlan {
                     Text("Target: \(ByteFormat.human(plan.targetBytes)); strictly available: "

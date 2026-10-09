@@ -397,6 +397,8 @@ public actor SystemMonitor {
         let previous = configuration
         configuration = newConfiguration
         if !newConfiguration.featureEnabled {
+            lastPageOutCounter = nil
+            latestPressureLevel = nil
             let snapshot = featureDisabledSnapshot()
             latestSnapshot = snapshot
             latestPressureLevel = nil
@@ -602,11 +604,14 @@ public actor SystemMonitor {
             if wasRunning {
                 instrumentation.timerCancelled()
             }
+            let hadSamplingSession = wasRunning || pressureSubscription != nil
             pressureSubscription?.cancel()
             pressureSubscription = nil
             pressureSubscriptionGeneration &+= 1
-            latestPressureLevel = nil
-            lastPageOutCounter = nil
+            if hadSamplingSession {
+                latestPressureLevel = nil
+                lastPageOutCounter = nil
+            }
             return
         }
 

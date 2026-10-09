@@ -5404,9 +5404,9 @@
     "settings.reset.boundary.authority": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Authority-managed settings" } } } },
     "settings.reset.boundary.inertQuarantine": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Quarantined unknown settings" } } } },
     "settings.deferred.localReassociation.title": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Local reassociation" } } } },
-    "settings.deferred.localReassociation.explanation": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Unavailable until the T22.3 local picker and ledger are complete. Import cannot authorize this Mac." } } } },
+    "settings.deferred.localReassociation.explanation": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Use Manage Local Consent to review or reassociate local identities in Assistance. Import cannot authorize this Mac." } } } },
     "settings.deferred.historyAndIndexClearing.title": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "History and index clearing" } } } },
-    "settings.deferred.historyAndIndexClearing.explanation": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Unavailable until the optional T07.3d report store and T09 index exist. The mandatory safety journal is never cleared." } } } },
+    "settings.deferred.historyAndIndexClearing.explanation": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Review optional completed reports and scan index data in Settings > Experience. The mandatory safety journal is never cleared." } } } },
     "settings.copy.missing": {
       "localizations": {
         "en": {
