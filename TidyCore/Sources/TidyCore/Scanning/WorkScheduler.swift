@@ -24,10 +24,12 @@ internal struct SchedulerResolutionInputs: Equatable, Sendable {
 
 internal enum SchedulerObservation: Equatable, Sendable {
     case unknown, nominal, constrained, critical
+    case signals(lowPower: Bool, seriousThermal: Bool)
 }
 
 public enum SchedulerLiveObservation: Equatable, Sendable {
     case unknown, nominal, constrained, critical
+    case signals(lowPower: Bool, seriousThermal: Bool)
 }
 
 public enum SchedulerLiveObservationResult: Equatable, Sendable {
@@ -873,6 +875,7 @@ internal actor SchedulerPolicyController {
         case .nominal, .unknown: low = false; thermal = false; critical = false
         case .constrained: low = true; thermal = true; critical = false
         case .critical: low = true; thermal = true; critical = true
+        case .signals(let power, let heat): low = power; thermal = heat; critical = false
         }
         let policy: EffectivePolicy
         do {

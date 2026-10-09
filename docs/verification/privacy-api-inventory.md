@@ -15,7 +15,9 @@ Apple currently lists five categories: file timestamps, system boot time, disk s
 
 `Tidy/PrivacyInfo.xcprivacy` declares disk space `85F4.1` and system boot time `35F9.1`. It declares no file-timestamp reason. `Tidy/Tidy.entitlements` is empty. Although production resolves storage under `~/Library/Application Support/Tidy`, the checked-in configuration does not demonstrate that this unsandboxed directory is an Apple app, app-group, or CloudKit container for `C617.1`. The production build setting requests hardened runtime, while final signature and entitlement state remain artifact-inspection gates.
 
-No privacy-manifest reason or category change is justified by this review. Its boot-time comment now binds `35F9.1` to the two actual `systemUptime` timer/elapsed uses and keeps the sysctl identity uses separate. The two existing reasons match some call sites, but the file-metadata and identity uses below still lack a demonstrated reason/mechanism. Adding `C617.1` or `3B52.1` globally would conceal that gap.
+No privacy-manifest reason or category change is justified by this review. Its boot-time comment binds `35F9.1` to the `systemUptime` timer/elapsed uses and keeps the sysctl identity uses separate. The two existing reasons match some call sites, but the file-metadata and identity uses below still lack a demonstrated reason/mechanism. Adding `C617.1` or `3B52.1` globally would conceal that gap.
+
+The 10 October 2026 reconciliation adds a bounded settings-import reader. Its metadata and deadline uses are mapped below; token locations were updated by source inspection. The Apple catalogue review above remains dated 19 September, and the native verification gates have not been rerun for this patch.
 
 ## Function, fields, purpose, and reason disposition
 
@@ -37,7 +39,8 @@ No privacy-manifest reason or category change is justified by this review. Its b
 | `GuardedFileDeleter` `fstat/fstatat` | device, inode, generation, type/mode, link count, apparent/allocated size, modification/change timestamps | Seal and recheck reviewed leaves and ancestors before any effect | Current registry denial keeps mutations unavailable. Implicit home roots and ancestor metadata still lack a demonstrated file-timestamp reason. |
 | `ResourcePreflight` `fstat/fstatat` | ancestor and leaf device/inode/generation/mode; leaf size and modification time | Capture exact review-time identity and detect replacement | Same unresolved external-root/ancestor classification. |
 | `ScanInvalidation.stat` | root device ID | Bind FSEvents state to a volume incarnation | Inherits the scan root's unresolved grant classification. |
-| `AppExecutionServices` and `ScanScopeAuthority`: `ProcessInfo.systemUptime` | monotonic nanoseconds derived from uptime | Epoch live scheduler observations and expire one-run scan consent | `35F9.1` accurately covers elapsed-time/timer calculations and is declared. |
+| `AppExecutionServices`, `ScanScopeAuthority`, and `SettingsImportFileReader`: `ProcessInfo.systemUptime` | monotonic elapsed time | Epoch live scheduler observations, expire one-run scan consent, and bound import reads between syscalls | `35F9.1` covers elapsed-time/timer calculations and is declared. |
+| `SettingsImportFileReader` `fstat` | file type and size only | Reject special files and oversized payloads selected through the settings file importer | `3B52.1` is a candidate for this specifically selected file; the manifest does not declare it. This row does not establish a reason for unrelated metadata accesses or change the existing unresolved category gate. |
 | `SystemMonitor`: `kern.boottime` | boot timestamp identity | Reject page-out deltas that cross a reboot | The current Apple accessed-API catalogue does not name this sysctl string. It remains a separate privacy/platform review row; `35F9.1` is not stretched to claim this identity use. |
 | `ProcessIdentity`: `kern.bootsessionuuid` | boot-session UUID | Prevent process-instance evidence from transferring across boots | Also not named in the current Apple accessed-API catalogue; retained as a separate sensitive identity review row. |
 | Dedicated runtime-verification target: `RuntimeTestComposition.lstat` | fixture-root type, owner UID, and mode | Before test-only cleanup, require the exact owned mode-0700 disposable `/tmp` root; production services then use the same APIs against its synthetic home/state subtree | Apple lists `lstat` in file timestamps even though this call reads no timestamp. The guarded temporary root is neither a demonstrated Apple container nor a user-granted document, so no current reason is asserted. The target has no code-signing entitlements, skips installation, and must remain absent from distributed artifacts. |
@@ -60,11 +63,13 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@300,313 |
 | `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@495; `fstat`@431,442,458; `fstatat`@450,465 |
 | `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@495; `fstatfs`@461 |
-| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@714 |
+| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@715 |
 | `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@410,437; `lstat`@388 |
 | `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@655; `lstat`@279,546,630 |
 | `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@155 |
 | `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | Disk space | `statfs`@272 |
+| `Tidy/Settings/SettingsView.swift` | File timestamp | `fstat`@465 |
+| `Tidy/Settings/SettingsView.swift` | System boot time | `ProcessInfo.systemUptime`@469,474 |
 | `TidyCore/Sources/TidyCore/Assistance/LocalAuthorityStore.swift` | File timestamp | `fstat`@57,98,668; `fstatat`@138,768,782 |
 | `TidyCore/Sources/TidyCore/Assistance/LocalAuthorityStore.swift` | Disk space | `fstatfs`@57,98,141,657,780 |
 | `TidyCore/Sources/TidyCore/Detect/StaleNodeModulesScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@25,37; `URLResourceValues.contentModificationDate`@46 |
@@ -72,8 +77,8 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | File timestamp | `fstat`@45; `lstat`@45 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | Boot identity (not in current Apple required-reason list) | `kern.bootsessionuuid`@31 |
 | `TidyCore/Sources/TidyCore/Execution/DerivedDataEffectAdapter.swift` | Disk space | `fstatfs`@228 |
-| `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | File timestamp | `fgetattrlist`@199; `fstat`@175; `fstatat`@175 |
-| `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | Disk space | `fgetattrlist`@199; `fstatfs`@181 |
+| `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | File timestamp | `fgetattrlist`@200; `fstat`@176; `fstatat`@176 |
+| `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | Disk space | `fgetattrlist`@200; `fstatfs`@182 |
 | `TidyCore/Sources/TidyCore/Execution/JournalPOSIXIO.swift` | File timestamp | `fstatat`@47 |
 | `TidyCore/Sources/TidyCore/Execution/JournalStorage.swift` | File timestamp | `fstat`@81,153,158,181,197; `fstatat`@180 |
 | `TidyCore/Sources/TidyCore/Execution/MutationAdmissionStore.swift` | File timestamp | `fstat`@206,212,219; `fstatat`@211 |

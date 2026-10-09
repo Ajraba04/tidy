@@ -98,6 +98,17 @@ struct PathGuardTests {
 
     // MARK: - Declared root (an item may only touch its own territory)
 
+    @Test("a candidate containing a protected descendant is refused even inside its declared root")
+    func refusesAncestorOfProtectedRoot() {
+        let guardian = PathGuard(protectedRoots: ["/Users/tester/Projects/project/keep"])
+        #expect(throws: PathGuardError.self) {
+            try guardian.validate("/Users/tester/Projects/project",
+                mustBeUnder: "/Users/tester/Projects", home: "/Users/tester")
+        }
+        #expect(guardian.isSafe("/Users/tester/Projects/project/cache", home: "/Users/tester"))
+        #expect(guardian.isSafe("/Users/tester/Projects/project2", home: "/Users/tester"))
+    }
+
     @Test("allows a path under its declared root")
     func allowsPathUnderDeclaredRoot() throws {
         let guardian = PathGuard(protectedRoots: [])

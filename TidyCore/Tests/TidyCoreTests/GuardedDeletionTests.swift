@@ -46,6 +46,14 @@ private func inScratch(_ body: (DeletionScratch) throws -> Void) throws {
 private func observed(_ bytes: Int64) -> ByteObservation {
     ByteObservation(bytes: bytes, explanation: nil)
 }
+
+@Test("overdeep anchor paths are rejected before acquiring ancestor descriptors")
+func anchorDescriptorLimitPrecedesFilesystemAccess() {
+    let path = "/" + Array(repeating: "missing-component", count: 65).joined(separator: "/")
+    #expect(throws: GuardedFileError.manifestLimit) {
+        _ = try DirectoryAnchor.open(path: path)
+    }
+}
 private func unknown() -> ByteObservation {
     ByteObservation(bytes: nil, explanation: "Not measured")
 }

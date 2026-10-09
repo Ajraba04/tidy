@@ -59,9 +59,10 @@ func schedulerLiveObservation(from snapshot: SystemSnapshot) -> SchedulerLiveObs
     if snapshot.memoryPressureLevel == .critical || snapshot.thermalState == .critical {
         return .critical
     }
-    if snapshot.memoryPressureLevel == .warning || snapshot.thermalState == .serious
-        || snapshot.isLowPowerModeEnabled == true {
-        return .constrained
+    if snapshot.memoryPressureLevel == .warning { return .constrained }
+    if snapshot.thermalState == .serious || snapshot.isLowPowerModeEnabled == true {
+        return .signals(lowPower: snapshot.isLowPowerModeEnabled ?? true,
+            seriousThermal: snapshot.thermalState.map { $0 == .serious || $0 == .critical } ?? true)
     }
     if snapshot.memoryPressureLevel == .normal, snapshot.thermalState != nil,
        snapshot.isLowPowerModeEnabled == false {

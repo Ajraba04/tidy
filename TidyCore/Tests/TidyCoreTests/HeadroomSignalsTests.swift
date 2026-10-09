@@ -599,6 +599,50 @@ struct HeadroomSignalsTests {
 
     // MARK: History -- opt-in and bounded, never stores process data
 
+    @Test("acknowledging settings preserves raw history unless its retention policy changes")
+    func acknowledgedSettingsPreserveRawHistory() async {
+        var configuration = enabledVisibleConfiguration
+        let monitor = SystemMonitor(configuration: configuration, probe: FakeSystemProbing(),
+            pressureObserving: NoOpPressureObserving(), scheduling: ImmediateScheduling())
+        _ = await monitor.requestSnapshot()
+        let original = await monitor.recordedHistory()
+        #expect(original.count == 1)
+        await monitor.applyConfiguration(configuration, acknowledgedRevision: 1)
+        #expect(await monitor.recordedHistory() == original)
+        configuration.visibleIntervalSeconds = 30
+        await monitor.applyConfiguration(configuration, acknowledgedRevision: 2)
+        #expect(await monitor.recordedHistory() == original)
+        configuration.historyEnabled = false
+        await monitor.applyConfiguration(configuration, acknowledgedRevision: 3)
+        #expect(await monitor.recordedHistory().isEmpty)
+        configuration.historyEnabled = true
+        await monitor.applyConfiguration(configuration, acknowledgedRevision: 4)
+        #expect(await monitor.recordedHistory().isEmpty)
+        await monitor.stop()
+    }
+
+    @Test("ending the last sampling lease invalidates pressure for the next measurement")
+    func stoppedPressureIsNotReused() async throws {
+        let pressure = ControlledPressureObserving()
+        let monitor = SystemMonitor(configuration: enabledVisibleConfiguration,
+            probe: FakeSystemProbing(), pressureObserving: pressure,
+            scheduling: ImmediateScheduling())
+        let lease = MonitorLease()
+        await monitor.acquireSceneLease(lease)
+        pressure.emit(.critical, subscription: 0)
+        for _ in 0..<200 {
+            if await monitor.latestPressureLevelForTesting() == .critical { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(await monitor.latestPressureLevelForTesting() == .critical)
+        await monitor.releaseSceneLease(lease)
+        #expect(await monitor.latestPressureLevelForTesting() == nil)
+        let fresh = await monitor.requestSnapshot()
+        #expect(fresh.memoryPressureLevel == nil)
+        #expect(fresh.pageOutRatePerSecond == nil)
+        await monitor.stop()
+    }
+
     @Test("history stays empty when disabled, even after explicit snapshots")
     func historyStaysEmptyWhenDisabled() async {
         var configuration = enabledVisibleConfiguration
