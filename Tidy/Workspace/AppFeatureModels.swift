@@ -8,12 +8,32 @@ import TidyCore
 final class AppFeatureModels {
     let developer: DeveloperWorkspaceModel
     let assistance: AssistanceModel
+    let manualServices: ManualServiceReviewModel
     @ObservationIgnored private weak var configStore: AppConfigStore?
     @ObservationIgnored nonisolated(unsafe) private var policyObserver: UUID?
 
     init(services: AppExecutionServices) {
-        developer = DeveloperWorkspaceModel(services: services)
-        assistance = AssistanceModel(services: services)
+        let developer = DeveloperWorkspaceModel(services: services)
+        let assistance = AssistanceModel(services: services)
+        self.developer = developer
+        self.assistance = assistance
+        manualServices = ManualServiceReviewModel(facadeProvider: { [weak services, weak assistance] in
+            guard let services, let authority = assistance?.authority else { return nil }
+            return services.policyBridge.manualServices(authority: authority)
+        }, candidateReader: { [weak services, weak assistance, weak developer] in
+            guard let services, let authority = assistance?.authority,
+                  let deviceSet = developer?.selectedManualDeviceSet else {
+                throw ManualServiceReviewError.authorityDenied
+            }
+            let snapshot = try await authority.snapshot()
+            return try await services.readManualSimulatorCandidates(deviceSet: deviceSet, authority: snapshot)
+        }, executionStarter: { [weak services] facade, review in
+            guard let services else { throw ManualServiceReviewError.policyUnavailable }
+            return try services.startManualServiceExecution(facade: facade, review: review)
+        }, executionOwnerAvailable: { [weak services, weak assistance] in
+            guard let services, assistance?.authority != nil else { return false }
+            return services.canStartManualServiceExecution
+        })
         configStore = services.configStore
         developer.onInventoryChange = { [weak assistance, weak configStore = services.configStore] inventory in
             guard let assistance else { return }
@@ -31,8 +51,9 @@ final class AppFeatureModels {
                 (volume, InventoryBudgetProjection.measurements(inventory, volumeID: volume))
             }))
         }
-        policyObserver = services.configStore.observeAcknowledgedPolicy { [weak developer] _, _ in
+        policyObserver = services.configStore.observeAcknowledgedPolicy { [weak developer, weak manualServices] _, _ in
             developer?.invalidate()
+            manualServices?.invalidateCandidates()
         }
     }
 

@@ -61,14 +61,14 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `Tidy/Assistance/AssistanceModel.swift` | Disk space | `fstatfs`@646,657 |
 | `Tidy/Budgets/NotificationBroker.swift` | File timestamp | `fstat`@231,300,313,338; `fstatat`@317 |
 | `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@300,313 |
-| `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@699; `fstat`@635,646,662; `fstatat`@654,669 |
-| `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@699; `fstatfs`@665 |
-| `Tidy/Execution/AppExecutionServices.swift` | File timestamp | `lstat`@316,325 |
-| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@829 |
-| `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@410,437; `lstat`@388 |
-| `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@655; `lstat`@279,546,630 |
-| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@155 |
-| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | Disk space | `statfs`@272 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@730; `fstat`@666,677,693; `fstatat`@685,700 |
+| `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@730; `fstatfs`@696 |
+| `Tidy/Execution/AppExecutionServices.swift` | File timestamp | `lstat`@327,336 |
+| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@876 |
+| `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@412,439; `lstat`@390 |
+| `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@659; `lstat`@279,546,634 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@174 |
+| `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | Disk space | `statfs`@291 |
 | `Tidy/Settings/SettingsView.swift` | File timestamp | `fstat`@465 |
 | `Tidy/Settings/SettingsView.swift` | System boot time | `ProcessInfo.systemUptime`@469,474 |
 | `TidyCore/Sources/TidyCore/Assistance/LocalAuthorityStore.swift` | File timestamp | `fstat`@57,98,668; `fstatat`@138,768,782 |
@@ -77,17 +77,20 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Detect/TranscriptPruneScanner.swift` | File timestamp | `URLResourceKey.contentModificationDateKey`@16,24; `URLResourceValues.contentModificationDate`@35 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | File timestamp | `fstat`@45; `lstat`@45 |
 | `TidyCore/Sources/TidyCore/Exec/ProcessIdentity.swift` | Boot identity (not in current Apple required-reason list) | `kern.bootsessionuuid`@31 |
+| `TidyCore/Sources/TidyCore/Exec/ProcessRunner.swift` | File timestamp | `lstat`@402 |
 | `TidyCore/Sources/TidyCore/Execution/DerivedDataEffectAdapter.swift` | Disk space | `fstatfs`@228 |
 | `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | File timestamp | `fgetattrlist`@200; `fstat`@176; `fstatat`@176 |
 | `TidyCore/Sources/TidyCore/Execution/GuardedFileDeleter.swift` | Disk space | `fgetattrlist`@200; `fstatfs`@182 |
 | `TidyCore/Sources/TidyCore/Execution/JournalPOSIXIO.swift` | File timestamp | `fstatat`@47 |
 | `TidyCore/Sources/TidyCore/Execution/JournalStorage.swift` | File timestamp | `fstat`@81,153,158,181,197; `fstatat`@180 |
-| `TidyCore/Sources/TidyCore/Execution/MutationAdmissionStore.swift` | File timestamp | `fstat`@206,212,219; `fstatat`@211 |
+| `TidyCore/Sources/TidyCore/Execution/MutationAdmissionStore.swift` | File timestamp | `fstat`@261,267,274; `fstatat`@266 |
 | `TidyCore/Sources/TidyCore/Execution/ResourcePreflight.swift` | File timestamp | `fgetattrlist`@180; `fstat`@142,151,166; `fstatat`@157,188 |
 | `TidyCore/Sources/TidyCore/Execution/ResourcePreflight.swift` | Disk space | `fgetattrlist`@180; `fstatfs`@167 |
-| `TidyCore/Sources/TidyCore/Execution/ReviewedManifestStore.swift` | File timestamp | `fstat`@335,403,536,590,624; `fstatat`@371,628 |
+| `TidyCore/Sources/TidyCore/Execution/ReviewedManifestStore.swift` | File timestamp | `fstat`@362,430,564,619,653; `fstatat`@398,657 |
 | `TidyCore/Sources/TidyCore/Integrations/GitStorageAdapter.swift` | File timestamp | `lstat`@22 |
 | `TidyCore/Sources/TidyCore/Integrations/LocalEndpointGuard.swift` | File timestamp | `lstat`@30 |
+| `TidyCore/Sources/TidyCore/Integrations/ManualSimulatorDiscovery.swift` | File timestamp | `fstat`@175,182,288,303; `fstatat`@133,168,282,303 |
+| `TidyCore/Sources/TidyCore/Integrations/ManualSimulatorDiscovery.swift` | Disk space | `fstatfs`@184 |
 | `TidyCore/Sources/TidyCore/Integrations/ToolAdapter.swift` | File timestamp | `fstat`@511; `fstatat`@557 |
 | `TidyCore/Sources/TidyCore/Measure/DiskStats.swift` | Disk space | `URLResourceKey.volumeAvailableCapacityForImportantUsageKey`@31,47,56; `URLResourceKey.volumeAvailableCapacityKey`@30,45,53; `URLResourceKey.volumeTotalCapacityKey`@29,44,51 |
 | `TidyCore/Sources/TidyCore/Monitoring/SystemMonitor.swift` | Boot identity (not in current Apple required-reason list) | `kern.boottime`@32,34 |
@@ -98,7 +101,7 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `TidyCore/Sources/TidyCore/Projects/ProjectInventory.swift` | File timestamp | `fstat`@374,428,597,619,693; `fstatat`@411,561 |
 | `TidyCore/Sources/TidyCore/Rescue/WorkloadIdentity.swift` | File timestamp | `fstat`@106 |
 | `TidyCore/Sources/TidyCore/Rescue/WorkloadIdentity.swift` | Disk space | `fstatfs`@106 |
-| `TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift` | File timestamp | `fstat`@1251,1291,1362; `fstatat`@1348; `lstat`@1232,1259 |
+| `TidyCore/Sources/TidyCore/Scanning/BoundedTraversal.swift` | File timestamp | `fstat`@1287,1327,1398; `fstatat`@1384; `lstat`@1268,1295 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanIndex.swift` | File timestamp | `lstat`@170,219,234,484 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanInvalidation.swift` | File timestamp | `stat`@335 |
 | `TidyCore/Sources/TidyCore/Scanning/ScanScope.swift` | System boot time | `ProcessInfo.systemUptime`@201 |

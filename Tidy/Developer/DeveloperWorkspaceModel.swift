@@ -98,6 +98,37 @@ final class DeveloperWorkspaceModel {
     private(set) var buildPrepVolumeOptions: [BuildPrepVolumeTarget] = []
     private(set) var buildPrepVolumeSelection = BuildPrepVolumeSelection()
     private(set) var buildPrepCapacityMessage: String?
+    private(set) var approvedManualDeviceSets: [LocalRootApproval] = []
+    var selectedManualDeviceSetPath: String?
+    var selectedManualDeviceSet: LocalRootApproval? {
+        approvedManualDeviceSets.first { $0.canonicalPath == selectedManualDeviceSetPath }
+    }
+
+    @ObservationIgnored private var manualDeviceSetTask: Task<Void, Never>?
+    @ObservationIgnored private var manualDeviceSetGeneration = UUID()
+    private(set) var isLoadingManualDeviceSets = false
+
+    func updateManualDeviceSets(localAuthority: LocalAuthoritySnapshot?) {
+        manualDeviceSetTask?.cancel()
+        manualDeviceSetGeneration = UUID()
+        let generation = manualDeviceSetGeneration
+        guard let localAuthority, localAuthority.isCurrent else {
+            approvedManualDeviceSets = []; selectedManualDeviceSetPath = nil
+            isLoadingManualDeviceSets = false
+            return
+        }
+        isLoadingManualDeviceSets = true
+        manualDeviceSetTask = Task { @MainActor [weak self] in
+            let roots = await ManualSimulatorCandidateService.approvedExistingDeviceSets(authority: localAuthority)
+            guard let self, self.manualDeviceSetGeneration == generation, !Task.isCancelled else { return }
+            self.approvedManualDeviceSets = roots
+            if !roots.contains(where: { $0.canonicalPath == self.selectedManualDeviceSetPath }) {
+                self.selectedManualDeviceSetPath = nil
+            }
+            self.isLoadingManualDeviceSets = false
+            self.manualDeviceSetTask = nil
+        }
+    }
     @ObservationIgnored var onInventoryChange:
         (@MainActor (DeveloperInventorySnapshot?) -> Void)?
 

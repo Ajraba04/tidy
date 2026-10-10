@@ -44,7 +44,8 @@ struct TidyApp: App {
         WindowGroup("Tidy Production Runtime Verification",
                     id: RuntimeTestComposition.controlWindowID) {
             withServices(accessibilityLabel: "Runtime verification controls") { services in
-                RuntimeTestControlView(services: services, scenario: runtimeScenario)
+                RuntimeTestControlView(services: services, scenario: runtimeScenario,
+                    manualServices: features?.manualServices)
             }
         }
         .defaultSize(width: 620, height: 540)
@@ -127,7 +128,7 @@ struct TidyApp: App {
         Window("Developer Workspace", id: WindowID.developer) {
             withServices(accessibilityLabel: "Developer workspace") { services in
                 if let features {
-                    DeveloperWorkspaceView(model: features.developer,
+                    DeveloperWorkspaceView(model: features.developer, manualServices: features.manualServices,
                         localAuthority: services.configStore.localAuthoritySnapshot,
                         policy: services.configStore.acknowledgedEffectivePolicy)
                 }

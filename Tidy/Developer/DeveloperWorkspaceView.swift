@@ -3,12 +3,14 @@ import TidyCore
 
 struct DeveloperWorkspaceView: View {
     @Bindable private var model: DeveloperWorkspaceModel
+    @Bindable private var manualServices: ManualServiceReviewModel
     private let localAuthority: LocalAuthoritySnapshot?
     private let policy: EffectivePolicy?
 
-    init(model: DeveloperWorkspaceModel, localAuthority: LocalAuthoritySnapshot?,
+    init(model: DeveloperWorkspaceModel, manualServices: ManualServiceReviewModel, localAuthority: LocalAuthoritySnapshot?,
          policy: EffectivePolicy?) {
         self.model = model
+        self.manualServices = manualServices
         self.localAuthority = localAuthority
         self.policy = policy
     }
@@ -41,14 +43,39 @@ struct DeveloperWorkspaceView: View {
                 projectsTab.tabItem { Text("Projects") }
                 ecosystemsTab.tabItem { Text("Ecosystems") }
                 buildPrepTab.tabItem { Text("Build Prep") }
+                manualOperationsTab.tabItem { Text("Manual Operations") }
             }
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 480)
-        .onAppear { model.updateBuildPrepVolumeOptions(localAuthority: localAuthority) }
+        .onAppear {
+            model.updateBuildPrepVolumeOptions(localAuthority: localAuthority)
+            model.updateManualDeviceSets(localAuthority: localAuthority)
+        }
         .onChange(of: localAuthority) { _, updated in
             model.invalidateBuildPrepCapacity()
             model.updateBuildPrepVolumeOptions(localAuthority: updated)
+            model.updateManualDeviceSets(localAuthority: updated)
+            manualServices.invalidateCandidates()
+        }
+        .onChange(of: model.selectedManualDeviceSetPath) { _, _ in
+            manualServices.invalidateCandidates()
+        }
+    }
+
+    private var manualOperationsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Approved simulator device set", selection: $model.selectedManualDeviceSetPath) {
+                Text("Choose an approved device set").tag(Optional<String>.none)
+                ForEach(model.approvedManualDeviceSets, id: \.canonicalPath) { root in
+                    Text(root.canonicalPath).tag(Optional(root.canonicalPath))
+                }
+            }
+            .disabled(model.isLoadingManualDeviceSets)
+            .accessibilityIdentifier("manualServices.deviceSet")
+            Text("Approve /usr/bin/xcrun, the selected simctl executable, its developer directory and an existing device set in Local Consent before refreshing. Container removal is unavailable while local Docker provider acceptance is incomplete.")
+                .font(.caption).foregroundStyle(.secondary)
+            ManualServiceReviewView(model: manualServices)
         }
     }
 
