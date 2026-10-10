@@ -24,7 +24,17 @@ python3 scripts/verification/privacy-api-inventory.py \
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 875 \
+  --require-case 'occupied slots cannot extend mutation admission or hide shared app cancellation' \
+  --require-case 'rejected-spawn proof survives publication before its terminal event without becoming native acceptance' \
+  --require-case 'foreignOwnershipDoesNotConsumeAndOwnedAttemptIsOneUse' \
+  --require-case 'fixture retirement never closes a production obligation; publication gaps mint no receipt' \
+  --require-case 'rawJournalCannotPersistSyntacticallyValidUnownedChildTuple' \
+  --require-case 'rawStoreCannotCaptureUnownedTupleOrIntroduceChildAtSubmissionBoundary' \
+  --require-case 'proofPublicationGapReopensWithoutReplayingAndPreservesFixtureOrigin' \
+  --require-case 'capZeroNeverBecomesAvailableButDeadlineRemovesWaiter' \
+  --require-case 'possessionOfReapReceiptCannotReleaseOwnedMutationWithoutObligation' \
+  --require-case 'compiled Docker receipts recover publication before terminal events' \
   --require-case 'reviewed optional history clearing preserves future retention and rejects stale previews' \
   --require-case 'reviewed index clearing removes records and watch cursors but rejects changed content' \
   --require-case 'bounded catalog discovery never enters mandatory cloud roots' \
@@ -84,7 +94,11 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 146 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 174 \
+  --require-case 'testAppReservationPrecedesAwaitJoinsExactReviewAndClearsAfterRealDenial' \
+  --require-case 'testGlobalCancelBeforeTaskEntryReleasesReservationWithoutEffect' \
+  --require-case 'testLateInventoryCannotRepopulateAfterScopeInvalidation' \
+  --require-case 'testRealOwnerBoundReviewCanBeCancelledAndReopenedWithoutDispatch' \
   --require-case 'testOptionalDataClearingPreservesUnresolvedRecoveryAndLocalAuthority' \
   --require-case 'testOptionalDataClearingRejectsReservedScanWithoutCancellingIt' \
   --require-case 'testClosedAssistanceWindowRoutesEveryDestinationOnce' \
@@ -140,7 +154,8 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES \
   2>&1 | tee "$EVIDENCE/production-native-ui.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/production-native-ui.xcresult" \
-  --minimum 13 \
+  --minimum 14 \
+  --require-case 'testProductionManualServiceReviewRemainsUnavailableAndResetsChoices' \
   --require-case 'testProductionDiagnosticExportSavesOnlyMetadataInSyntheticHome' \
   --require-case 'testProductionOptionalDataReviewCancelClearAndDiagnosticPanel' \
   --require-case 'testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit' \

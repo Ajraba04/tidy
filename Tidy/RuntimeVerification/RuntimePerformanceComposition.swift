@@ -333,7 +333,7 @@ enum RuntimePerformanceCoordinator {
             await subscription.cancel()
         }
         defer { watchdog.cancel() }
-        let fixtureName = services.paths.home.deletingLastPathComponent().lastPathComponent
+        let reviewedHome = services.paths.home.path
         var firstRegistryProgress: UInt64?
         var firstRenderableUsefulResult: UInt64?
         var terminalTime: UInt64?
@@ -345,7 +345,7 @@ enum RuntimePerformanceCoordinator {
             }
             if firstRenderableUsefulResult == nil,
                let current = await services.latestScanResult(sessionID: handle.sessionID),
-               hasUsefulFixtureRow(current, fixtureName: fixtureName) {
+               hasUsefulFixtureRow(current, reviewedHome: reviewedHome) {
                 firstRenderableUsefulResult = try nanoseconds(since: origin)
             }
             if let value = event.terminal {
@@ -371,7 +371,7 @@ enum RuntimePerformanceCoordinator {
               terminalTime <= workersSettled else {
             throw RuntimePerformanceError.counterOverflow
         }
-        let usefulPath = hasUsefulFixtureRow(result, fixtureName: fixtureName)
+        let usefulPath = hasUsefulFixtureRow(result, reviewedHome: reviewedHome)
         let allDenied = RuntimeTestComposition.authorizationState == "all-denied"
         let witness = witnessUnchanged(paths: services.paths)
         let usefulLatency = firstRenderableUsefulResult - request
@@ -595,9 +595,13 @@ enum RuntimePerformanceCoordinator {
     }
 
     private static func hasUsefulFixtureRow(_ result: CoreScanResult,
-                                            fixtureName: String) -> Bool {
+                                            reviewedHome: String) -> Bool {
+        // Scoped production scans intentionally publish one aggregate per
+        // authorized root; they do not use the legacy per-child HomeSurvey
+        // ranking. Match the exact reviewed fixture root, not a guessed child.
         result.report.topLevelHomeRanking.contains {
-            $0.path.contains("/\(fixtureName)/home/SyntheticWorkspace")
+            PathGuard.canonicalize($0.path) == PathGuard.canonicalize(reviewedHome)
+                && $0.bytes > 0
         }
     }
 

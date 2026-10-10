@@ -4,6 +4,46 @@ import XCTest
 /// the compile-scoped synthetic composition in TidyProductionRuntimeHost.
 final class ProductionSceneRuntimeUITests: XCTestCase {
     @MainActor
+    func testProductionManualServiceReviewRemainsUnavailableAndResetsChoices() throws {
+        continueAfterFailure = false
+        let app = launchReadyApp()
+        let witness = URL(fileURLWithPath: try XCTUnwrap(app.staticTexts["runtime.synthetic.witness"].value as? String))
+        let witnessBefore = try Data(contentsOf: witness)
+        app.buttons["runtime.open.manual.fixture"].click()
+        let developer = app.windows["Developer Workspace"]
+        XCTAssertTrue(developer.waitForExistence(timeout: 10))
+        let tab = developer.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Manual Operations")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), developer.debugDescription)
+        tab.click()
+        let selected = developer.checkBoxes["manualService.selected"]
+        let acknowledged = developer.checkBoxes["manualService.acknowledged"]
+        let dismiss = developer.buttons["manualService.dismiss"]
+        func reveal(_ element: XCUIElement) {
+            let viewport = developer.scrollViews.firstMatch
+            for _ in 0..<12 {
+                if element.isHittable && viewport.frame.contains(element.frame) { break }
+                viewport.scroll(byDeltaX: 0, deltaY: -180)
+            }
+            XCTAssertTrue(element.isHittable, developer.debugDescription)
+        }
+        reveal(selected)
+        XCTAssertEqual((selected.value as? NSNumber)?.intValue ?? Int(selected.value as? String ?? ""), 0)
+        selected.click()
+        reveal(acknowledged)
+        XCTAssertEqual((acknowledged.value as? NSNumber)?.intValue ?? Int(acknowledged.value as? String ?? ""), 0)
+        acknowledged.click()
+        XCTAssertTrue(developer.descendants(matching: .any).matching(identifier: "manualService.unavailable").firstMatch.exists)
+        XCTAssertFalse(developer.buttons["Execute"].exists)
+        reveal(dismiss); dismiss.click()
+        XCTAssertFalse(selected.exists)
+        app.buttons["runtime.open.manual.fixture"].click()
+        reveal(selected)
+        XCTAssertEqual((selected.value as? NSNumber)?.intValue ?? Int(selected.value as? String ?? ""), 0)
+        XCTAssertEqual((acknowledged.value as? NSNumber)?.intValue ?? Int(acknowledged.value as? String ?? ""), 0)
+        XCTAssertEqual(try Data(contentsOf: witness), witnessBefore)
+    }
+
+    @MainActor
     func testProductionDiagnosticExportSavesOnlyMetadataInSyntheticHome() throws {
         continueAfterFailure = false
         let app = launchReadyApp()

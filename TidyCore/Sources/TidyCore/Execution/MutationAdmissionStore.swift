@@ -114,6 +114,7 @@ final class MutationAdmissionStore {
         case .append:
             guard !ledger.unfinished.contains(where: { $0.operationID == intent.operationID }),
                   Self.validIntent(intent),
+                  intent.schemaVersion != 3 || Self.serviceChildFieldsAbsent(intent),
                   Self.validChildTuple(intent, allowAbsent: true) else {
                 throw JournalError.invalidTransition
             }
@@ -124,7 +125,8 @@ final class MutationAdmissionStore {
                 $0.operationID == intent.operationID && $0.runID == intent.runID
             }) else { throw JournalError.invalidTransition }
             let prior = ledger.unfinished[index]
-            guard Self.validChildTuple(intent, allowAbsent: false),
+            guard prior.schemaVersion == 1, intent.schemaVersion == 1,
+                  Self.validIntent(intent), Self.validChildTuple(intent, allowAbsent: false),
                   prior.adapterID == intent.adapterID, prior.bootID == intent.bootID,
                   prior.executablePath == intent.executablePath,
                   prior.executableDevice == intent.executableDevice, prior.executableInode == intent.executableInode,
@@ -132,6 +134,39 @@ final class MutationAdmissionStore {
             if prior == intent { return }
             guard prior.childPID == nil, prior.childStartSeconds == nil,
                   prior.childStartMicroseconds == nil else { throw JournalError.invalidTransition }
+            ledger.unfinished[index] = intent
+        case .serviceChildCapture:
+            // A syntactically valid tuple is data, not an owned observation.
+            throw JournalError.invalidTransition
+        case .ownedServiceChildCapture(let receipt):
+            try receipt.requireStore(self)
+            guard intent == receipt.intent(phase: intent.phase) else { throw JournalError.invalidTransition }
+            guard ledger.unfinished.filter({ $0.operationID == intent.operationID }).count == 1,
+                  let index = ledger.unfinished.firstIndex(where: {
+                      $0.operationID == intent.operationID && $0.runID == intent.runID
+                  }) else { throw JournalError.invalidTransition }
+            let prior = ledger.unfinished[index]
+            guard prior.schemaVersion == 3, intent.schemaVersion == 3,
+                  prior.binding == intent.binding, prior.adapterID == intent.adapterID,
+                  [.submitted, .uncertainAndPossiblyRunning].contains(prior.phase), prior.phase == intent.phase,
+                  Self.validIntent(intent), Self.validChildTuple(intent, allowAbsent: false) else {
+                throw JournalError.invalidTransition
+            }
+            if prior == intent { return }
+            guard Self.serviceChildFieldsAbsent(prior) else { throw JournalError.invalidTransition }
+            ledger.unfinished[index] = intent
+        case .serviceSubmission:
+            guard let index = ledger.unfinished.firstIndex(where: {
+                $0.operationID == intent.operationID && $0.runID == intent.runID
+            }) else { throw JournalError.invalidTransition }
+            let prior = ledger.unfinished[index]
+            guard prior.schemaVersion == 3, intent.schemaVersion == 3,
+                  prior.phase == .prepared, intent.phase == .submitted,
+                  Self.serviceChildFieldsAbsent(prior), Self.serviceChildFieldsAbsent(intent),
+                  prior.binding == intent.binding, prior.adapterID == intent.adapterID,
+                  Self.validIntent(intent), Self.validChildTuple(intent, allowAbsent: true) else {
+                throw JournalError.invalidTransition
+            }
             ledger.unfinished[index] = intent
         }
         try publishLedger(ledger)
@@ -175,6 +210,12 @@ final class MutationAdmissionStore {
         return pid > 0 && seconds >= 0 && (0..<1_000_000).contains(micros)
     }
 
+    private static func serviceChildFieldsAbsent(_ intent: PendingEffectIntent) -> Bool {
+        intent.bootID == nil && intent.executablePath == nil && intent.executableDevice == nil
+            && intent.executableInode == nil && intent.childPID == nil
+            && intent.childStartSeconds == nil && intent.childStartMicroseconds == nil
+    }
+
     private static func validIntent(_ intent: PendingEffectIntent) -> Bool {
         guard !intent.adapterID.isEmpty else { return false }
         switch intent.schemaVersion {
@@ -190,6 +231,20 @@ final class MutationAdmissionStore {
                 && intent.executableDevice == nil && intent.executableInode == nil
                 && intent.childPID == nil && intent.childStartSeconds == nil
                 && intent.childStartMicroseconds == nil
+        case 3:
+            guard case .service(let binding)? = intent.binding,
+                  (try? binding.validate()) != nil,
+                  [.prepared, .submitted, .uncertainAndPossiblyRunning].contains(intent.phase) else { return false }
+            guard intent.adapterID == binding.operation.adapter.rawValue else { return false }
+            if serviceChildFieldsAbsent(intent) { return true }
+            guard binding.operation.adapter == .appleSimulatorShutdownV1,
+                  case .appleSimulator(let producer) = binding.operation.producer,
+                  [.submitted, .uncertainAndPossiblyRunning].contains(intent.phase),
+                  intent.bootID != nil, validChildTuple(intent, allowAbsent: false),
+                  intent.executablePath == producer.simctl.canonicalPath,
+                  intent.executableDevice == producer.simctl.device,
+                  intent.executableInode == producer.simctl.inode else { return false }
+            return true
         default:
             return false
         }
@@ -319,6 +374,18 @@ struct PendingEffectIntent: Codable, Equatable, Sendable {
         self.phase = phase
     }
 
+    init(runID: UUID, operationID: UUID, service binding: ManualServiceEffectBinding,
+         phase: SubmissionPhase = .prepared, child: ProcessInstanceIdentity? = nil) {
+        schemaVersion = 3
+        self.runID = runID; self.operationID = operationID
+        adapterID = binding.operation.adapter.rawValue
+        self.binding = .service(binding)
+        bootID = child?.bootID; executablePath = child?.executablePath
+        executableDevice = child?.executableDevice; executableInode = child?.executableInode
+        childPID = child?.pid; childStartSeconds = child?.startSeconds; childStartMicroseconds = child?.startMicroseconds
+        self.phase = phase
+    }
+
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, runID, operationID, adapterID, binding, bootID
         case executablePath, executableDevice, executableInode
@@ -346,4 +413,8 @@ enum SubmissionPhase: String, Codable, Sendable {
     case prepared, releaseArmed, submitted, uncertainAndPossiblyRunning
 }
 
-enum IntentPersistence: Sendable { case append, capturedChild }
+enum IntentPersistence: Sendable {
+    case append, capturedChild, serviceSubmission
+    case serviceChildCapture // Retired raw route: always rejected.
+    case ownedServiceChildCapture(OwnedServiceChildCaptureReceipt)
+}

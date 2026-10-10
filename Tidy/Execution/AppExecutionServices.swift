@@ -109,6 +109,14 @@ private struct AppConfirmedExecution: Sendable {
     let completion: AppExecutionCompletionLatch
 }
 
+private struct AppManualServiceExecution: Sendable {
+    let id: UUID
+    let reviewID: UUID
+    let bindingDigest: Data
+    let task: Task<ManualServiceExecutionReport, Error>
+    let completion: AppExecutionCompletionLatch
+}
+
 private final class AppExecutionCompletionLatch: @unchecked Sendable {
     private struct Waiter {
         let continuation: CheckedContinuation<Bool, Never>
@@ -215,6 +223,9 @@ final class AppExecutionServices {
         Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var confirmedExecution:
         AppConfirmedExecution?
+    @ObservationIgnored nonisolated(unsafe) private var manualServiceExecution:
+        AppManualServiceExecution?
+    private(set) var isManualServiceExecutionActive = false
     private(set) var executionProgress: ExecutionProgressSnapshot?
     private(set) var liveRecoveryAdmission: MutationAdmission
     private(set) var lastRecoveryReport: RecoveryReconciliationReport?
@@ -248,7 +259,7 @@ final class AppExecutionServices {
     private var optionalDataWorkIsBusy: Bool {
         isClearingOptionalData || scanTransition != nil || scanCleanup != nil
             || activeScanResources != nil || activeScanSessionID != nil
-            || confirmedExecution != nil || policyUpdatePending
+            || confirmedExecution != nil || isManualServiceExecutionActive || policyUpdatePending
     }
 
     func cancelOptionalDataReview(_ id: UUID) {
@@ -426,6 +437,7 @@ final class AppExecutionServices {
         monitorVolumeObservationTask?.cancel()
         executionProgressTask?.cancel()
         confirmedExecution?.task.cancel()
+        manualServiceExecution?.task.cancel()
         coordinator.cancelCurrentRun()
         guard let token = monitorPolicyObserverToken else { return }
         let configStore = configStore
@@ -449,6 +461,38 @@ final class AppExecutionServices {
     /// The sole T08.1b bounded explicit-session façade this app consumes. No alternate
     /// scheduler/session authority is created anywhere in the app layer.
     var explicitSessions: BridgeExplicitSessions { policyBridge.explicitSessions }
+
+    /// Explicit approved service inventory shares the app's scheduler. It never
+    /// creates a simulator set or an accepted mutation capability.
+    func readManualSimulatorCandidates(deviceSet: LocalRootApproval,
+                                       authority: LocalAuthoritySnapshot) async throws -> [ManualServiceOperationBinding] {
+        let revision = configStore.acknowledgedSettingsRevision
+        guard let policy = configStore.acknowledgedEffectivePolicy,
+              policy.allowedFeatures.contains("ecosystems"),
+              policy.fields[.init(rawValue: "ecosystem.apple.inventory")]?.value == .stored(.bool(true)),
+              !configStore.hasPendingSettingsWrites, authority.isCurrent else {
+            throw ManualServiceReviewError.policyDisabled
+        }
+        await explicitSessions.awaitInitialInstall()
+        let session = try await explicitSessions.beginSession(requirements: try SchedulerRequirements(features: [.ecosystems]))
+        do {
+            let result = try await explicitSessions.withPermit(session: session) { probe in
+                try await probe.checkCancellation()
+                let candidates = try await ManualSimulatorCandidateService.read(deviceSet: deviceSet, authority: authority)
+                try await probe.checkCancellation()
+                return candidates
+            }
+            await explicitSessions.finish(session: session)
+            guard revision == configStore.acknowledgedSettingsRevision,
+                  !configStore.hasPendingSettingsWrites, authority.isCurrent else {
+                throw ManualServiceReviewError.stalePolicy
+            }
+            return result
+        } catch {
+            await explicitSessions.finish(session: session)
+            throw error
+        }
+    }
 
     /// Begins (or attaches nothing — always a fresh session/generation) one explicit T08.4 scan
     /// against the shared registry and this app's one explicit-session façade. The session this
@@ -474,6 +518,7 @@ final class AppExecutionServices {
     func beginScan(environment: CleanEnvironment, request: AppScanRequest = .policyDefault,
                    ownerID: UUID) async throws -> CoreScanHandle {
         guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        guard !isManualServiceExecutionActive else { throw ManualServiceReviewError.busy }
         if let scanTransition { return try await resolveScanTransition(scanTransition) }
         if let scanCleanup { await resolveScanCleanup(scanCleanup) }
         if let activeScanSessionID, let activeScanHandle,
@@ -486,6 +531,7 @@ final class AppExecutionServices {
         }
         if let scanCleanup { await resolveScanCleanup(scanCleanup) }
         guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        guard !isManualServiceExecutionActive else { throw ManualServiceReviewError.busy }
         pendingDataClear = nil
         let transitionID = UUID()
         let task = Task { @MainActor [self] in
@@ -566,6 +612,7 @@ final class AppExecutionServices {
 
     func continueActiveScan() async throws -> CoreScanHandle {
         guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        guard !isManualServiceExecutionActive else { throw ManualServiceReviewError.busy }
         pendingDataClear = nil
         if let scanTransition { return try await resolveScanTransition(scanTransition) }
         let transitionID = UUID()
@@ -920,6 +967,7 @@ final class AppExecutionServices {
     /// optional history is recorded exactly once inside it.
     func startConfirmedExecution(binding: ReviewBinding) throws -> Task<RunReport, Error> {
         guard !isClearingOptionalData else { throw AppDataClearError.busy }
+        guard !isManualServiceExecutionActive else { throw ConfirmationError.busy }
         pendingDataClear = nil
         if let confirmedExecution {
             guard confirmedExecution.binding == binding else {
@@ -950,7 +998,61 @@ final class AppExecutionServices {
         try await startConfirmedExecution(binding: binding).value
     }
 
-    var hasActiveConfirmedExecution: Bool { confirmedExecution != nil }
+    var canStartManualServiceExecution: Bool {
+        isExecutionEnabled && !policyUpdatePending && !storageUpdatePending
+            && !optionalDataWorkIsBusy
+    }
+
+    /// Reserve synchronously on the app actor, then confirm and execute using
+    /// the exact retained review owner. A view only observes the returned task.
+    func startManualServiceExecution(facade: BridgeManualServices,
+                                     review: ManualServiceReview) throws -> Task<ManualServiceExecutionReport, Error> {
+        let summary = review.summary
+        let digest = try summary.binding.canonicalDigest()
+        guard digest == summary.bindingDigest else { throw ManualServiceReviewError.bindingMismatch }
+        if let active = manualServiceExecution {
+            guard active.reviewID == summary.reviewID, active.bindingDigest == digest else {
+                throw ManualServiceReviewError.busy
+            }
+            return active.task
+        }
+        guard !optionalDataWorkIsBusy else { throw ManualServiceReviewError.busy }
+        guard isExecutionEnabled else { throw ManualServiceReviewError.recoveryBlocked }
+        guard !policyUpdatePending, !storageUpdatePending else { throw ManualServiceReviewError.stalePolicy }
+        pendingDataClear = nil
+        let id = UUID()
+        let completion = AppExecutionCompletionLatch()
+        let task = Task { @MainActor [self] () throws -> ManualServiceExecutionReport in
+            defer {
+                if manualServiceExecution?.id == id {
+                    manualServiceExecution = nil
+                    isManualServiceExecutionActive = false
+                }
+                completion.finish()
+            }
+            do {
+                try Task.checkCancellation()
+                let token = try await facade.confirm(review)
+                // Always hand an issued token back to its facade. Core owns
+                // cancellation and reservation retirement after confirmation.
+                let report = try await facade.execute(token)
+                liveRecoveryAdmission = await coordinator.mutationAdmission()
+                executionProgress = await coordinator.executionProgress()
+                return report
+            } catch {
+                try? await facade.cancelReview(review)
+                liveRecoveryAdmission = await coordinator.mutationAdmission()
+                executionProgress = await coordinator.executionProgress()
+                throw error
+            }
+        }
+        manualServiceExecution = AppManualServiceExecution(id: id, reviewID: summary.reviewID,
+            bindingDigest: digest, task: task, completion: completion)
+        isManualServiceExecutionActive = true
+        return task
+    }
+
+    var hasActiveConfirmedExecution: Bool { confirmedExecution != nil || isManualServiceExecutionActive }
 
     func awaitActiveConfirmedExecution() async -> RunReport? {
         guard let active = confirmedExecution else { return nil }
@@ -959,6 +1061,7 @@ final class AppExecutionServices {
 
     func cancelConfirmedExecution() {
         confirmedExecution?.task.cancel()
+        manualServiceExecution?.task.cancel()
         coordinator.cancelCurrentRun()
     }
 
@@ -975,10 +1078,16 @@ final class AppExecutionServices {
     func cancelAndDrainExecutionForTermination(
         timeout: Duration = .seconds(5)
     ) async -> AppExecutionDrainResult {
-        guard let active = confirmedExecution else { return .noExecution }
-        active.task.cancel()
+        let completion: AppExecutionCompletionLatch
+        if let active = confirmedExecution {
+            active.task.cancel()
+            completion = active.completion
+        } else if let active = manualServiceExecution {
+            active.task.cancel()
+            completion = active.completion
+        } else { return .noExecution }
         coordinator.cancelCurrentRun()
-        return await active.completion.wait(timeout: timeout)
+        return await completion.wait(timeout: timeout)
             ? .completed : .durablyUncertain
     }
 }
@@ -1056,6 +1165,10 @@ final class AppReviewSession {
         selection?.invalidate(policyEnabled: false)
         selection = nil
         return lifetime.enqueue { [self] request in
+            if services.isManualServiceExecutionActive {
+                phase = .failed("A manual producer operation is in progress. Use the app's execution controls to cancel it or wait for completion.")
+                return
+            }
             if services.hasActiveConfirmedExecution {
                 phase = .executing
                 if let report = await services.awaitActiveConfirmedExecution(),

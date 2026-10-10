@@ -98,6 +98,7 @@ targets:
       - path: Tidy/Assistance/MaintenanceInventoryConsumer.swift
       - path: Tidy/Budgets/NotificationBroker.swift
       - path: Tidy/Developer/DeveloperWorkspaceModel.swift
+      - path: Tidy/Developer/ManualServiceReviewModel.swift
     dependencies:
       - package: TidyCore
     settings:
