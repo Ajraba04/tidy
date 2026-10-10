@@ -26,3 +26,7 @@ dist/
 
 # Local implementation/review coordination
 /.superpowers/
+
+# Python verification bytecode
+__pycache__/
+*.py[cod]

@@ -1,7 +1,8 @@
 # Tidy active source checkpoint — 2026-10-10
 
-Resumed authorized host work; no pause is active. This file accompanies the local
-verified source commit. Use `git rev-parse HEAD` to identify that commit.
+Resumed authorized host work; no pause is active. The verified Core/App commit is
+`89ca2ec97d679bf74cafb997a4d03a94c83f1087`. Subsequent preparation-only commits
+do not change that production source.
 
 - Checkout: `/Users/mac/.codex/worktrees/tidy-completion/tidy`
 - Branch: `CAJ/tidy-completion-20261010`; shared main checkout preserved.
@@ -12,7 +13,7 @@ verified source commit. Use `git rev-parse HEAD` to identify that commit.
 - Manual confirmation/execution ownership, queue deadline/app cancellation, durable service proofs/recovery, and native verified-retirement handoff are implemented. Both production provider acceptances stay denied; catalog mutations denied, unattended allowlist empty.
 - Latest signed synthetic native host builds/signatures passed; no latest UI test result. The unsigned attempt was stopped; the signed test was interrupted for the owner's urgent GUI resource handoff. Owned test invocation ended; scoped fixture-process check found no host/runner. GUI lease released. Do not retry without renewed exclusive grant.
 - No real SDK/device/Docker effects, CoTeam VM/daemon access, user-data cleanup, Git push/merge/deployment/release.
-- Remaining source preparation: SDK-semantics experiment script/Python tests are separate uncommitted work, undergoing dataless/anchored-directory fixes. They do not qualify Tidy's production launcher/bridge/journal or enable a producer. Obtain exact live-effect authority only after concrete preparation is reviewed.
+- SDK-semantics preparation:10 pure tests pass; dataless/anchored-directory/publication races are fixed and source-reviewed. The owner approved the disposable experiment. Wait for Ghawazi's device/GUI lease release and fresh outside-witness revalidation before execution. Do not ask that same live permission again. This experiment does not qualify Tidy's production launcher/bridge/journal or enable a producer.
 - Remaining acceptance: Docker qualified production provider/factory/dispatch; real SDK/Tidy positive acceptance; fresh native UI; unchanged compact accessibility failure; human VoiceOver/reference hardware; privacy-purpose/distribution/capability-matrix approval. Full app/release remains incomplete/NO-GO.
 
 Detailed evidence: `docs/verification/completion-20261010.md`. Approved manual plan:
