@@ -115,3 +115,143 @@ context, keys, socket or backend from another project. The retained Unix peer
 must then be bound to that named versioned backend arrangement; the installed
 CLI versions and self-reported daemon JSON cannot establish that binding.
 No VM creation, download, socket connection or Docker effect ran here.
+
+## Prepared SDK command-semantics driver
+
+`scripts/verification/manual-simulator-acceptance.py` is preparation for a
+separate owner-authorized SDK experiment. It does **not** exercise Tidy's native
+owned launcher, policy bridge, journal, proof verifier or durable process-gate
+retirement. Its successful result cannot qualify a producer or activate the
+compiled registry. The production providers remain **DENIED**. A later Tidy
+app-owned positive acceptance procedure remains a separate gate.
+
+The default invocation prints a plan without invoking simctl or codesign. It
+reads bounded filesystem witnesses only and creates no resource unless `--plan`
+explicitly requests one new mode0600 JSON file directly inside the existing,
+caller-owned mode0700 `--output-root`. It neither creates the output root nor
+creates devices in planning mode. The coordinator must inspect the script and
+plan and obtain the owner's remaining authority before using `--execute`.
+
+```sh
+python3 scripts/verification/manual-simulator-acceptance.py \
+  --output-root /absolute/caller-owned/evidence \
+  --plan /absolute/caller-owned/evidence/reviewed.json
+```
+
+The printed review includes the exact pinned executable/environment, supported
+version tuple, installed-runtime requirement, command templates, fresh UUID
+private parent/set, names, output-root identity, default-set filesystem witness,
+limits and cleanup scope. Execution additionally requires that existing plan's
+exact canonical path, reviewed SHA256 and exact output root. These arguments
+bind the reviewed procedure; they are not a substitute for owner approval.
+Changed commands/types/limits, replaced roots, existing fixture paths or a
+changed host filesystem witness are refused before resource creation.
+
+Execution validates Xcode27.0/27A266a metadata, Apple signature and pinned actual
+simctl CoreSimulator1171.7. Complete bounded runtime JSON must establish that
+the exact iOS27 runtime is available and supports the exact iPhone17 type before
+the driver creates either device. There is no download/install command. Default
+device/runtimes/pairs JSON is retained as an outside witness; device_set.plist,
+device.plist configuration hashes and filesystem inventory are bound separately.
+All simctl calls use an explicit set path and fixed PATH/HOME/DEVELOPER_DIR.
+
+The driver creates two disposable devices in the fresh private set, records each
+full UUID once, keeps the witness Shutdown, boots only the target, and submits
+one exact shutdown of that recorded target. It retains its own observed Popen
+wait result (success additionally requires exit code0) and complete same-set
+postcondition. Exact target/runtime/type/name,
+availability, witness state, unpaired set, outside default-set hash and an
+independent private-file witness are required. All evidence is semantics data,
+never a Tidy native receipt or terminal proof.
+
+Resource bounds are 180 seconds total, 15 seconds per child, at most80 commands,
+eight finite Booted observations, 1MiB per captured stdout/stderr stream and a
+192MiB maximum evidence envelope derived from command/capture/report bounds.
+No mutation is force-killed or retried. Timeout, nonzero/abnormal wait, malformed
+or missing IDs, unknown state, output overflow, changed witnesses or identity
+substitution stops the procedure, preserves fixtures and reports uncertainty.
+An incomplete child wait does not establish quiescence or permission to retry.
+
+Deletion occurs only after verified shutdown/postconditions and original
+witness checks. Before each deletion, the complete private set must contain
+exactly the remaining recorded devices, all available and Shutdown, with no
+pairs; private set/parent identity and outside witnesses are rechecked. Only
+those two individually recorded full UUIDs are deletion arguments. No all,
+booted, unavailable, erase, default-set mutation or recursive filesystem cleanup
+exists. Evidence and the private set/parent remain for inspection after success
+as well as failure. There is no automatic uncertain-fixture cleanup.
+
+Focused Python tests live in
+`scripts/verification/tests/test_manual_simulator_acceptance.py`; they use pure
+data and caller-owned temporary files, replace Popen with a mock, and cover the
+no-SDK planning boundary, plan/host tampering, runtime availability/type checks,
+exact target/witness postconditions, selector rejection and symbolic-file
+refusal. No script execution, tests, SDK probe or live effects were performed by
+the implementation helper. The coordinator owns inspection and verification.
+
+### Dataless and retained-directory boundaries
+
+The driver refuses SF_DATALESS0x40000000 on files and directories using metadata
+before any corresponding file open/content read or directory enumeration.
+Ancestors are checked without following aliases. Opened file and directory
+descriptors are rechecked for this flag; no content read may hydrate a dataless
+resource. Complete device-set filesystem enumeration uses a retained directory
+descriptor, and device configuration reads are relative to that same chain.
+
+The existing output root, evidence directory, /private/tmp, fresh private parent
+and explicit device set use retained O_DIRECTORY|O_NOFOLLOW descriptor chains.
+Owned children are created with mkdir(dir_fd=...), then captured and verified.
+Every evidence file is written to a new private temporary leaf relative to the
+held evidence descriptor, fsynced and published as a complete new hard link
+without overwriting an existing leaf. The held and named identities of every
+ancestor are checked before publication and before each SDK command. A renamed,
+replaced or symbolic root/evidence/ancestor therefore refuses publication and
+cannot redirect writes. Descriptors remain open for the whole execution and
+close from child to parent afterward. Directory depth is capped at32; the
+procedure's concurrent descriptor chains fit within128 owned directory FDs.
+The bounded executable/source hash reads are also included in the reviewed
+resource limits. A refused evidence namespace still preserves owned fixtures
+and reports uncertainty on stdout; it does not retry publication elsewhere.
+
+The coordinator's initial five pure Python tests passed. The four added P2
+regressions then produced the expected RED (two failures and two missing-API
+errors) before implementation. Implementation of the boundaries above is now
+source-only, pending the coordinator's new verification; no SDK command or live
+effect was executed by the helper.
+
+After hard-link publication, the no-follow final leaf and staging name are
+checked against the still-held staging descriptor: regular type, current owner,
+mode0600, exact device/inode and exact written size must match; dataless flags
+are checked again. A mismatched final leaf is refused and never blindly
+unlinked. Staging cleanup likewise removes only a leaf still matching that held
+owned inode and metadata. The coordinator observed the added publication-race
+test fail for both a symlink substitution and a same-size foreign regular inode
+before this fix. Its post-fix verification remains coordinator-owned. This
+publication evidence still establishes SDK experiment data only and grants no
+Tidy native proof or production acceptance.
+
+
+### Coordinator verification and remaining execution boundary
+
+The coordinator observed the dataless/parent-substitution RED (9 tests,
+2 failures and2 missing-API errors), then9-test GREEN. A final publication
+race review exposed staging-name substitution immediately before linking;
+both symlink/foreign-regular regressions failed before the fix. The final
+10-test suite passed in0.024s after held-descriptor/final-leaf validation and
+preservation of unexpected leaves. Independent source review found those
+P2 findings resolved and no new actionable P0/P1/P2 findings in that correction.
+No SDK command or device effect occurred in these checks.
+
+The reviewed plan is
+`/private/tmp/Tidy-SDK-Review-C305ECA5-93BC-4852-B706-4F31E69F1D7A/reviewed.json`,
+SHA256 `9fd07f3086605c1320659a249536b13ee8a10073294ec6a010e379ef8059e00e`.
+Its private set parent is
+`/private/tmp/Tidy-SDK-Semantics-8A9B5C5F-DC20-410B-93C3-15AA2A878AD8`.
+Planning read bounded metadata only: zero SDK commands/device effects.
+The owner explicitly approved this disposable SDK experiment in the current
+chat. Do not ask that permission again for the same operation/resource scope.
+The shared native/device slot remains held by Ghawazi; this authorization does
+not override its lease. Revalidate the default-set witness after that lease is
+released, refresh the review baseline if it changed without broadening any
+approved effects, and wait for the coordinated exclusive SDK slot. Production
+adapters remain denied and this experiment cannot qualify Tidy's bridge/journal.

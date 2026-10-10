@@ -409,3 +409,24 @@ as `manual-final-native-ui*` and `manual-final-native-signed-build.log`.
 The GUI lease is explicitly released, and no further retry is authorized by the
 current resource queue. Original data/services and other tasks' devices were
 preserved. The earlier 17.120-second synthetic journey remains historical evidence.
+
+
+### Local source/package and SDK preparation checkpoint
+
+The verified Core/App batch was committed locally as
+`89ca2ec97d679bf74cafb997a4d03a94c83f1087`. No push or merge occurred.
+Fresh packages live in `dist/verification/completion-20261010/manual-final-packages/`:
+version1.5.0/build1, strict ad-hoc signatures, both architectures, matching six-file
+app payloads in ZIP and readonly DMG. The owned copy/replace/remove rehearsal
+preserved its outside witness. `inspection.json` records source and checksums.
+No app was launched or installed into the user's Applications; no notarization,
+publication or real install acceptance is claimed.
+
+The separate SDK semantics preparation has10 pure/local-file tests passing,
+with dataless, anchored-directory and staging-name substitution failures retained.
+Its independent source reviews report those P2 findings resolved; no production
+code changed. The owner approved the exact disposable experiment after inspecting
+its preparation. Execution still waits for the shared native/device lease and
+fresh outside-witness revalidation. Production provider activation and actual
+Tidy positive-effect acceptance remain separate; the experiment creates no Tidy
+receipt, proof or bridge/journal qualification.
