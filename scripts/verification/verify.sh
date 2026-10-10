@@ -18,6 +18,7 @@ python3 scripts/verification/check-personal-data.py --self-test
 python3 scripts/verification/check-personal-data.py
 python3 scripts/verification/privacy-api-inventory.py --self-test
 python3 scripts/verification/run-r13-observation.py --self-test
+python3 -m unittest discover -s scripts/verification/tests -p test_manual_simulator_acceptance.py
 python3 scripts/verification/privacy-api-inventory.py \
   --check-document docs/verification/privacy-api-inventory.md
 (
