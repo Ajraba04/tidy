@@ -1842,23 +1842,19 @@ private struct RegistrySettingRow: View {
     }
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 3) {
-            semanticText(row.help, role: SettingsVisualContract.metadataRole)
-            semanticText("Default: " + row.defaultText, role: SettingsVisualContract.metadataRole)
-            semanticText("Effective: " + row.effectiveText, role: SettingsVisualContract.metadataRole)
-            semanticText("Source: " + row.sourceText, role: SettingsVisualContract.metadataRole)
-            semanticText("Rule: " + row.ruleText, role: SettingsVisualContract.metadataRole)
-            semanticText(row.consequence, role: SettingsVisualContract.metadataRole)
+            ForEach(Array(SettingsAccessibility.primaryMetadataLines(for: row).enumerated()), id: \.offset) { line in
+                semanticText(line.element, role: SettingsVisualContract.metadataRole)
+                    .accessibilityIdentifier("settings.metadata." + row.id.rawValue + ".primary." + String(line.offset))
+            }
             semanticText(row.availabilityText, role:
                 row.availability == .editable ? SettingsVisualContract.metadataRole :
                     SettingsVisualContract.unavailableRole)
+                .accessibilityIdentifier("settings.metadata." + row.id.rawValue + ".availability")
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isStaticText)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.metadata." + row.id.rawValue)
         .accessibilityLabel(row.accessibilityLabel)
-        .accessibilityValue(SettingsAccessibility.value(for: row))
-        .accessibilityHint(SettingsAccessibility.help(for: row))
     }
 }
 
@@ -1919,13 +1915,10 @@ private struct SettingsIntegerEditor: View {
 }
 
 enum SettingsAccessibility {
-    static func value(for row: SettingsSurfaceRow) -> String {
-        "Default: " + row.defaultText + ". Effective: " + row.effectiveText +
-            ". Source: " + row.sourceText + ". Rule: " + row.ruleText
-    }
-
-    static func help(for row: SettingsSurfaceRow) -> String {
-        row.help + " " + row.consequence + " " + row.availabilityText
+    static func primaryMetadataLines(for row: SettingsSurfaceRow) -> [String] {
+        [row.help, "Default: " + row.defaultText,
+         "Effective: " + row.effectiveText, "Source: " + row.sourceText,
+         "Rule: " + row.ruleText, row.consequence]
     }
 }
 

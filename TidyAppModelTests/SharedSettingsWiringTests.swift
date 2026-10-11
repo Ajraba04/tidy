@@ -4701,14 +4701,16 @@ extension SharedSettingsWiringTests {
             let rows = SettingsSurfaceModel(store: services.configStore, bundle: bundle)
                 .rows(query: "", showsAdvanced: true)
             for row in rows {
-                let value = SettingsAccessibility.value(for: row)
-                let help = SettingsAccessibility.help(for: row)
-                XCTAssertTrue(value.contains(row.defaultText))
-                XCTAssertTrue(value.contains(row.effectiveText))
-                XCTAssertTrue(value.contains(row.sourceText))
-                XCTAssertTrue(value.contains(row.ruleText))
-                XCTAssertTrue(help.contains(row.consequence))
-                XCTAssertTrue(help.contains(row.availabilityText))
+                let lines = SettingsAccessibility.primaryMetadataLines(for: row)
+                XCTAssertEqual(lines.count, 6)
+                XCTAssertTrue(lines.allSatisfy { !$0.isEmpty })
+                XCTAssertEqual(lines, [row.help, "Default: " + row.defaultText,
+                    "Effective: " + row.effectiveText, "Source: " + row.sourceText,
+                    "Rule: " + row.ruleText, row.consequence],
+                    "Primary metadata helpers must supply the six real rendered Text children")
+                XCTAssertEqual(lines.last, row.consequence)
+                XCTAssertFalse(row.availabilityText.isEmpty,
+                    "Availability remains a separate real text with its semantic warning role")
             }
             for row in rows where row.setting.definition.layers.isEmpty {
                 XCTAssertTrue(row.availabilityText.contains("none; local authority only"))
