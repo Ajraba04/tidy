@@ -3579,7 +3579,15 @@ extension SharedSettingsWiringTests {
             let loadResult = await services.settings.load()
             let loaded = try XCTUnwrap(loadResult.envelope)
             XCTAssertEqual(loaded.activeProfileID, profileID)
+            // A real relaunch has no live monitoring callbacks from the
+            // previous process. Settle the in-process fixture's owned readers
+            // before a new settings actor attempts its exclusive read lock.
+            services.disposeMonitoring()
+            await services.awaitPolicyMaintenance()
             let reopened = await AppExecutionServices.bootstrap(paths: s.paths)
+            defer { reopened.disposeMonitoring() }
+            XCTAssertEqual(reopened.settingsLoad.disposition, .loaded,
+                           String(describing: reopened.settingsLoad.recoveryReason))
             XCTAssertEqual(reopened.configStore.activeProfileID, profileID)
             XCTAssertEqual(reopened.configStore.effectivePolicy?
                 .fields[self.t07ID("ui.units")]?.value, .stored(.choice("decimal")))

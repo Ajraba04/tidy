@@ -135,8 +135,9 @@ import Testing
         #expect(SessionProfiles.factoryKeys == ["xcode", "android", "flutter", "web", "localAI", "battery"])
         let factory = try SessionProfiles.createFactory(key: "battery", id: b, name: "Battery",
             inherited: .init(), in: [])
+        let expectedFactoryValues = try PolicyDefaults.factory("battery")
         #expect(factory == [SavedProfile(id: b, name: "Battery",
-            values: try PolicyDefaults.factory("battery"))])
+            values: expectedFactoryValues)])
     }
 
     @Test func diffIsStableAndUsesDefinitionMetadataWithoutCopy() throws {
@@ -359,8 +360,9 @@ import Testing
                 "20000000-0000-0000-0000-%012d", index))!
             profiles = try SessionProfiles.createFactory(key: key, id: profileID,
                 name: "  \(key)  ", inherited: .init(), in: profiles)
+            let expectedFactoryValues = try PolicyDefaults.factory(key)
             #expect(profiles.last == SavedProfile(id: profileID, name: key,
-                values: try PolicyDefaults.factory(key)))
+                values: expectedFactoryValues))
         }
         #expect(throws: SessionProfileError.invalidFactory("missing")) {
             try SessionProfiles.createFactory(key: "missing", id: UUID(), name: "Missing",

@@ -43,7 +43,8 @@ struct ManualServiceReviewTests {
         let review = try await facade.prepare(binding: f.binding)
         #expect(review.requiresProducerReinspection)
         #expect(review.summary.binding == f.binding)
-        #expect(review.summary.bindingDigest == (try f.binding.canonicalDigest()))
+        let expectedBindingDigest = try f.binding.canonicalDigest()
+        #expect(review.summary.bindingDigest == expectedBindingDigest)
         #expect(review.summary.expiresAtMonotonicNanoseconds - review.summary.issuedAtMonotonicNanoseconds <= 60_000_000_000)
         await #expect(throws: ManualServiceReviewError.providerUnavailable) {
             _ = try await facade.confirm(review)

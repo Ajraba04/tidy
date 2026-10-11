@@ -83,7 +83,8 @@ struct ManualSimulatorClientTests {
             #expect(request.environment.keys.sorted() == ["DEVELOPER_DIR", "HOME", "PATH"])
         }
         let candidates = try await client.candidates()
-        #expect(candidates == [try fixture.binding])
+        let expectedBinding = try fixture.binding
+        #expect(candidates == [expectedBinding])
     }
 
     @Test("duplicate or foreign identities cannot pass preflight", arguments: [false, true])
@@ -137,8 +138,10 @@ struct ManualSimulatorClientTests {
             #expect(receipt.runID == runID && receipt.operationID == operationID)
             #expect(receipt.invocationOrigin == .cooperativeFixture)
             #expect(receipt.invocationDigest == launch.invocation.invocationDigest)
-            #expect(receipt.childSessionID == (try launch.session.reapedMutationReceipt()).sessionID)
-            #expect(receipt.childIdentity == (try launch.session.reapedMutationReceipt()).identity)
+            let expectedChildSessionID = try launch.session.reapedMutationReceipt().sessionID
+            #expect(receipt.childSessionID == expectedChildSessionID)
+            let expectedChildIdentity = try launch.session.reapedMutationReceipt().identity
+            #expect(receipt.childIdentity == expectedChildIdentity)
             #expect(receipt.rawWaitStatus == 0)
             #expect(receipt.observedDevice.state == .shutdown)
             #expect(receipt.postconditionDigest.count == 32)
