@@ -1483,25 +1483,53 @@ struct SettingsWorkflowSurface: View {
     ) -> some View {
         Text(SettingsCopy.resolve("settings.reset.preview", bundle: bundle)).font(.headline)
         Text("\(SettingsCopy.resolve("settings.workflow.revision", bundle: bundle)): \(preview.baseRevision)")
-        ForEach(preview.globalChanges, id: \.id) { change in
-            Text(change.id.rawValue + ": " + describe(change.oldValue) + " → " +
-                 describe(change.newValue) + " · Default: " + describe(change.defaultValue))
-        }
+        resetGlobalChangeDetails(preview.globalChanges)
         if let profile = preview.profileReset {
-            Text(profile.profileID.uuidString).textSelection(.enabled)
-            ForEach(profile.changes, id: \.id) { change in
-                Text(change.id.rawValue + ": " + describe(change.oldValue) + " → " +
-                     describe(change.newValue) + " · " + describe(change.defaultValue))
-                Text(describe(change.rule) + " · " + describe(change.effect) + " · " +
-                     String(describing: change.oldSource) + " → " +
-                     String(describing: change.newSource))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            resetProfileDetails(profile)
         }
-        ForEach(preview.immutableBoundaries.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) {
-            Text(SettingsCopy.resolve("settings.reset.boundary." + $0.rawValue, bundle: bundle))
-        }
+        resetBoundaryDetails(preview.immutableBoundaries)
         Text(describe(preview.effect)).font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func resetGlobalChangeDetails(_ changes: [ProfileFieldDiff]) -> some View {
+        ForEach(changes, id: \.id) { change in
+            Text(resetChangeValueDescription(change) + " · Default: " + describe(change.defaultValue))
+        }
+    }
+
+    @ViewBuilder private func resetProfileDetails(_ profile: ProfileResetPreview) -> some View {
+        Text(profile.profileID.uuidString).textSelection(.enabled)
+        ForEach(profile.changes, id: \.id) { change in
+            resetProfileFieldDetails(change)
+        }
+    }
+
+    @ViewBuilder private func resetProfileFieldDetails(_ change: ProfileFieldDiff) -> some View {
+        Text(resetChangeValueDescription(change) + " · " + describe(change.defaultValue))
+        Text(resetProfileFieldMetadataDescription(change))
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func resetBoundaryDetails(_ boundaries: Set<SettingsResetBoundary>) -> some View {
+        let ordered = boundaries.sorted { $0.rawValue < $1.rawValue }
+        return ForEach(ordered, id: \.self) { boundary in
+            Text(SettingsCopy.resolve("settings.reset.boundary." + boundary.rawValue, bundle: bundle))
+        }
+    }
+
+    private func resetChangeValueDescription(_ change: ProfileFieldDiff) -> String {
+        var text = change.id.rawValue + ": "
+        text += describe(change.oldValue)
+        text += " → " + describe(change.newValue)
+        return text
+    }
+
+    private func resetProfileFieldMetadataDescription(_ change: ProfileFieldDiff) -> String {
+        var text = describe(change.rule) + " · "
+        text += describe(change.effect) + " · "
+        text += String(describing: change.oldSource) + " → "
+        text += String(describing: change.newSource)
+        return text
     }
 
     private func beginProfileEditor(target: SettingsWorkflowEditorTarget,
