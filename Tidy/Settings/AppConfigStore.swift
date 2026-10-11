@@ -283,7 +283,8 @@ final class AppConfigStore {
             case .legacy(let delta):
                 envelope = applying(delta, to: envelope)
             case .global(let delta):
-                var values = envelope.preferences ?? PolicyPreferences()
+                var values = envelope.preferences
+                    ?? PolicyPreferences.project(legacy: envelope.config, saved: nil)
                 let prior = values.global
                 values.global.fields[delta.id] = delta.editedValue
                 let config = LegacyCompatibilityProjection.reverseProject(envelope.config,

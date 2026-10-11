@@ -102,6 +102,12 @@ private struct AppBootstrapWorkerResult: Sendable {
     let journalAdmission: MutationAdmission
 }
 
+private enum AppHistoryPolicyValidation {
+    case authorized(OptionalRunHistoryPolicy)
+    case unavailable
+    case acknowledgementRefreshRequired
+}
+
 private struct AppConfirmedExecution: Sendable {
     let id: UUID
     let binding: ReviewBinding
@@ -207,7 +213,18 @@ final class AppExecutionServices {
     let engine: CleanEngine
     let runLogURL: URL
     let optionalRunHistory: OptionalRunHistoryStore?
-    private(set) var historyPersistenceError: String?
+    @ObservationIgnored private let observeBeforeHistoryAcknowledgement: @Sendable (UInt64) -> Void
+    private var historyMaintenanceError: String?
+    private var historyRecordingWarning: String?
+    private(set) var historyPersistenceError: String? {
+        get {
+            guard let warning = historyRecordingWarning else { return historyMaintenanceError }
+            if let error = historyMaintenanceError, error != warning { return warning + "\n" + error }
+            return warning
+        }
+        set { historyMaintenanceError = newValue }
+    }
+    private static let maximumHistoryPolicyValidationAttempts = 8
     /// The app's one T10 headroom monitor, constructed once at bootstrap.
     /// Every window that shows disk/memory/swap/thermal/power signals
     /// (menu bar popover, Headroom window) observes this shared instance
@@ -217,6 +234,7 @@ final class AppExecutionServices {
     /// The task and UUID are Sendable; the lifetime is internally locked.
     @ObservationIgnored private let monitoringLifetime = AppMonitoringLifetime()
     @ObservationIgnored nonisolated(unsafe) private var monitorPolicyObserverToken: UUID?
+    @ObservationIgnored private var policyMaintenanceTask: (id: UUID, task: Task<Void, Never>)?
     @ObservationIgnored nonisolated(unsafe) private var monitorVolumeObservationTask:
         Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var executionProgressTask:
@@ -341,10 +359,13 @@ final class AppExecutionServices {
 
     private init(paths: AppStoragePaths, settings: SettingsStore,
                  worker: AppBootstrapWorkerResult,
+                 observePolicyMaintenance: @escaping @Sendable (UInt64) -> Void,
+                 observeBeforeHistoryAcknowledgement: @escaping @Sendable (UInt64) -> Void,
                  scanLifecycleHook: (@Sendable (AppScanLifecycleEvent) async -> Void)?,
                  scanTraversalLimits: TraversalLimits? = nil) {
         self.paths = paths
         self.settings = settings
+        self.observeBeforeHistoryAcknowledgement = observeBeforeHistoryAcknowledgement
         self.settingsLoad = worker.load
         self.initialJournalAdmission = worker.journalAdmission
         self.liveRecoveryAdmission = worker.journalAdmission
@@ -381,29 +402,71 @@ final class AppExecutionServices {
         self.monitorPolicyObserverToken = configStore.observeAcknowledgedPolicy { [weak self] revision, policy in
             guard monitoringLifetime.isActive else { return }
             let configuration = SystemMonitor.Configuration.resolve(policy)
-            let historyPolicy = OptionalRunHistoryPolicy.resolve(policy)
-            Task { @MainActor [weak self] in
+            let maintenanceID = UUID()
+            let maintenance = Task { @MainActor [weak self] in
                 guard monitoringLifetime.isActive else { return }
                 let applied = await monitor.applyConfiguration(configuration,
                     acknowledgedRevision: revision)
                 guard monitoringLifetime.isActive, applied else { return }
-                if let optionalRunHistory {
-                    do {
-                        _ = try await optionalRunHistory.reconcile(policy: historyPolicy,
-                            acknowledgedRevision: revision)
-                        guard monitoringLifetime.isActive,
-                              self?.configStore.acknowledgedSettingsRevision == revision else { return }
-                        self?.historyPersistenceError = nil
-                    } catch {
-                        guard monitoringLifetime.isActive,
-                              self?.configStore.acknowledgedSettingsRevision == revision else { return }
-                        self?.historyPersistenceError =
-                            "Optional run history could not apply revision \(revision): \(error)"
+                // Read-only observation seam. It does not supply policy,
+                // influence admission or schedule additional maintenance.
+                observePolicyMaintenance(revision)
+                // A saved acknowledgement can arrive while a later save is
+                // still pending. A failed/conflicting later save emits no new
+                // acknowledgement, so defer this owned task rather than drop it.
+                // Retain the bridge across suspension, not the service: the
+                // service's latest-task handle must not form a self-cycle.
+                guard let bridge = self?.policyBridge else { return }
+                for _ in 0..<Self.maximumHistoryPolicyValidationAttempts {
+                    if bridge.storageUpdatePending || bridge.policyUpdatePending {
+                        await bridge.drain()
                     }
-                } else if monitoringLifetime.isActive {
-                    self?.historyPersistenceError = "Optional run history storage is unavailable."
+                    // This iteration's owner is released before the next queue
+                    // wait. Superseded/disposed tasks never retry or publish.
+                    guard monitoringLifetime.isActive, !Task.isCancelled, let owner = self,
+                          owner.policyMaintenanceTask?.id == maintenanceID else { return }
+                    let settledRevision = owner.configStore.acknowledgedSettingsRevision
+                    let expectedEnvelope = bridge.acknowledgedEnvelope
+                    let validation = await owner.revalidatedHistoryPolicy(revision: settledRevision)
+                    guard monitoringLifetime.isActive, !Task.isCancelled,
+                          owner.policyMaintenanceTask?.id == maintenanceID else { return }
+                    if owner.historyAcknowledgementChanged(from: settledRevision, envelope: expectedEnvelope) { continue }
+                    guard case .authorized(let historyPolicy) = validation else {
+                        if case .acknowledgementRefreshRequired = validation {
+                            owner.historyPersistenceError = Self.historyAcknowledgementRefreshMessage
+                        }
+                        return
+                    }
+                    if let optionalRunHistory {
+                        do {
+                            let outcome = try await optionalRunHistory.reconcile(policy: historyPolicy,
+                                acknowledgedRevision: settledRevision)
+                            guard monitoringLifetime.isActive, !Task.isCancelled,
+                                  owner.policyMaintenanceTask?.id == maintenanceID else { return }
+                            if outcome == .stalePolicy {
+                                if owner.historyAcknowledgementChanged(from: settledRevision, envelope: expectedEnvelope) { continue }
+                                owner.historyPersistenceError = Self.historyAcknowledgementRefreshMessage
+                                return
+                            }
+                            guard owner.configStore.acknowledgedSettingsRevision == settledRevision else { return }
+                            owner.historyPersistenceError = nil
+                        } catch {
+                            guard monitoringLifetime.isActive,
+                                  owner.policyMaintenanceTask?.id == maintenanceID,
+                                  owner.configStore.acknowledgedSettingsRevision == settledRevision else { return }
+                            owner.historyPersistenceError =
+                                "Optional run history could not apply revision \(settledRevision): \(error)"
+                        }
+                    } else {
+                        owner.historyPersistenceError = "Optional run history storage is unavailable."
+                    }
+                    return
                 }
+                guard monitoringLifetime.isActive, !Task.isCancelled, let owner = self,
+                      owner.policyMaintenanceTask?.id == maintenanceID else { return }
+                owner.historyPersistenceError = "History retention was skipped because settings kept changing."
             }
+            self?.policyMaintenanceTask = (maintenanceID, maintenance)
         }
         self.monitorVolumeObservationTask = Task { @MainActor [weak configStore] in
             let stream = await monitor.subscribe()
@@ -428,6 +491,52 @@ final class AppExecutionServices {
                 self.liveRecoveryAdmission = snapshot.recovery
             }
         }
+    }
+
+    /// Awaits only the most recent already-owned policy maintenance work. A
+    /// replacement while suspended is awaited too; this creates no new work.
+    func awaitPolicyMaintenance() async {
+        while let pending = policyMaintenanceTask {
+            await pending.task.value
+            if policyMaintenanceTask?.id == pending.id { return }
+        }
+    }
+
+    /// Revision-zero migration/defaults and recovery display fallbacks cannot
+    /// authorize destructive retention. These bridge acknowledgements originate
+    /// only in the actual SettingsStore bootstrap or a successful durable save;
+    /// displayed policy alone is insufficient. Never substitute "disabled",
+    /// since disabled history deliberately removes the existing optional file.
+    private func durablyAcknowledgedHistoryPolicy(revision: UInt64) -> OptionalRunHistoryPolicy? {
+        guard revision > 0, policyBridge.isExecutionEnabled,
+              !policyBridge.storageUpdatePending, !policyBridge.policyUpdatePending,
+              policyBridge.durableSettingsRevision == revision,
+              policyBridge.acknowledgedEnvelope?.revision == revision,
+              configStore.acknowledgedSettingsRevision == revision,
+              let policy = configStore.acknowledgedEffectivePolicy else { return nil }
+        return OptionalRunHistoryPolicy.resolve(policy)
+    }
+
+    private static let historyAcknowledgementRefreshMessage =
+        "Tidy could not verify the current saved settings, so it kept history unchanged. Reopen Tidy to reload settings."
+
+    private func revalidatedHistoryPolicy(revision: UInt64) async -> AppHistoryPolicyValidation {
+        guard let policy = durablyAcknowledgedHistoryPolicy(revision: revision),
+              let envelope = policyBridge.acknowledgedEnvelope else { return .unavailable }
+        // Observation only; the normal app uses a no-op. Neither its callback
+        // nor display state supplies the actor/disk acknowledgement below.
+        observeBeforeHistoryAcknowledgement(revision)
+        // Recognize an edit already admitted at this boundary before awaiting
+        // the actor. A known raced attempt cannot become a stable busy/mismatch
+        // denial merely because that edit settles during the read.
+        guard policyBridge.acknowledgedEnvelope == envelope,
+              durablyAcknowledgedHistoryPolicy(revision: revision) == policy else { return .unavailable }
+        let matchesStore = await settings.acknowledgesPersistedEnvelope(envelope)
+        // A bridge acknowledgement may advance while the settings actor is
+        // being read. Recheck the complete envelope and current app revision.
+        guard policyBridge.acknowledgedEnvelope == envelope,
+              durablyAcknowledgedHistoryPolicy(revision: revision) == policy else { return .unavailable }
+        return matchesStore ? .authorized(policy) : .acknowledgementRefreshRequired
     }
 
     deinit {
@@ -899,6 +1008,8 @@ final class AppExecutionServices {
 
     static func bootstrap(paths: AppStoragePaths, settings: SettingsStore,
                           observe: @escaping @Sendable (AppBootstrapStage) -> Void,
+                          observePolicyMaintenance: @escaping @Sendable (UInt64) -> Void = { _ in },
+                          observeBeforeHistoryAcknowledgement: @escaping @Sendable (UInt64) -> Void = { _ in },
                           scanLifecycleHook:
                             (@Sendable (AppScanLifecycleEvent) async -> Void)? = nil,
                           scanTraversalLimits: TraversalLimits? = nil) async
@@ -920,6 +1031,8 @@ final class AppExecutionServices {
                 coordinator: coordinator, journalAdmission: admission)
         }.value
         let services = AppExecutionServices(paths: paths, settings: settings, worker: worker,
+            observePolicyMaintenance: observePolicyMaintenance,
+            observeBeforeHistoryAcknowledgement: observeBeforeHistoryAcknowledgement,
             scanLifecycleHook: scanLifecycleHook, scanTraversalLimits: scanTraversalLimits)
         // Do not publish an editable store while the loaded scheduler policy still owns its
         // admission transition; an immediate settings edit must reach the persistence path.
@@ -942,24 +1055,66 @@ final class AppExecutionServices {
     }
 
     func recordCompletedRun(_ report: RunReport) async {
-        let revision = configStore.acknowledgedSettingsRevision
-        do {
-            guard let optionalRunHistory else {
-                historyPersistenceError = "Optional run history storage is unavailable."
+        // This once-only app-owned call must not discard a completed report
+        // just because a presentation save is still pending. Await existing
+        // bridge work, then derive authority from the current acknowledgement.
+        // Monitoring disposal is a separate lifetime and does not gate reports.
+        // The owner already has a terminal RunReport. Its cancellation does
+        // not erase that fact or revoke acknowledged optional history policy.
+        for _ in 0..<Self.maximumHistoryPolicyValidationAttempts {
+            if policyBridge.storageUpdatePending || policyBridge.policyUpdatePending {
+                await policyBridge.drain()
+            }
+            let revision = configStore.acknowledgedSettingsRevision
+            let envelope = policyBridge.acknowledgedEnvelope
+            let validation = await revalidatedHistoryPolicy(revision: revision)
+            // A real edit can start during the settings actor read, after the
+            // initial drain. Retry only this raced state, never stable denial.
+            if historyAcknowledgementChanged(from: revision, envelope: envelope) { continue }
+            guard case .authorized(let policy) = validation else {
+                if case .acknowledgementRefreshRequired = validation {
+                    historyPersistenceError = Self.historyAcknowledgementRefreshMessage
+                }
                 return
             }
-            let policy = OptionalRunHistoryPolicy.resolve(configStore.acknowledgedEffectivePolicy)
-            let outcome = try await optionalRunHistory.record(report, policy: policy,
-                acknowledgedRevision: revision)
-            guard configStore.acknowledgedSettingsRevision == revision,
-                  outcome != .stalePolicy else { return }
-            historyPersistenceError = outcome == .entryExceedsLimit
-                ? "The completed run was larger than the optional history limit and was not stored."
-                : nil
-        } catch {
-            guard configStore.acknowledgedSettingsRevision == revision else { return }
-            historyPersistenceError = "Optional run history could not be updated: \(error)"
+            do {
+                guard let optionalRunHistory else {
+                    historyPersistenceError = "Optional run history storage is unavailable."
+                    return
+                }
+                let outcome = try await optionalRunHistory.record(report, policy: policy,
+                    acknowledgedRevision: revision)
+                if outcome == .stalePolicy {
+                    // This result performs no write. A concurrent acknowledged
+                    // policy may therefore be retried without appending twice.
+                    if historyAcknowledgementChanged(from: revision, envelope: envelope) { continue }
+                    historyPersistenceError = Self.historyAcknowledgementRefreshMessage
+                    return
+                }
+                // Every other result is final for this once-only call. Never
+                // retry after a successful append, even if policy advanced.
+                historyRecordingWarning = nil
+                guard configStore.acknowledgedSettingsRevision == revision else { return }
+                historyPersistenceError = outcome == .entryExceedsLimit
+                    ? "The completed run was larger than the optional history limit and was not stored."
+                    : nil
+                return
+            } catch {
+                guard configStore.acknowledgedSettingsRevision == revision else { return }
+                historyPersistenceError = "Optional run history could not be updated: \(error)"
+                return
+            }
         }
+        // Keep this explicit recording warning separate from ambient retention
+        // status, so an unrelated maintenance success cannot erase report loss.
+        historyRecordingWarning = "The completed report was not stored because settings kept changing."
+    }
+
+    private func historyAcknowledgementChanged(from revision: UInt64,
+                                              envelope: SettingsEnvelope?) -> Bool {
+        policyBridge.storageUpdatePending || policyBridge.policyUpdatePending
+            || configStore.acknowledgedSettingsRevision != revision
+            || policyBridge.acknowledgedEnvelope != envelope
     }
 
     /// Starts one app-owned confirmed execution or joins the same binding's

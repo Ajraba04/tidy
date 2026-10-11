@@ -544,7 +544,8 @@ public final class ExecutionPolicyBridge {
                 try PolicyValidator.validateStructure(
                     PolicyValues(fields: [delta.id: base]), at: .global)
             }
-            var complete = predictedSubmittedEnvelope.preferences?.global ?? PolicyValues()
+            var complete = predictedSubmittedEnvelope.preferences?.global
+                ?? PolicyPreferences.project(legacy: predictedSubmittedEnvelope.config, saved: nil).global
             complete.fields[delta.id] = delta.editedValue
             try PolicyValidator.validateStructure(complete, at: .global)
         } catch {
@@ -1195,7 +1196,8 @@ public final class ExecutionPolicyBridge {
 
     private func applyingGlobalPrediction(_ delta: GlobalPreferenceDelta,
                                           to envelope: SettingsEnvelope) -> SettingsEnvelope {
-        var preferences = envelope.preferences ?? PolicyPreferences()
+        var preferences = envelope.preferences
+            ?? PolicyPreferences.project(legacy: envelope.config, saved: nil)
         let prior = preferences.global
         preferences.global.fields[delta.id] = delta.editedValue
         let config = LegacyCompatibilityProjection.reverseProject(envelope.config,

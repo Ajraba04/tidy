@@ -63,8 +63,8 @@ The scanner reports direct tokens from Swift, C, Objective-C, and Objective-C++ 
 | `Tidy/Budgets/NotificationBroker.swift` | Disk space | `fstatfs`@300,313 |
 | `Tidy/Developer/DeveloperWorkspaceModel.swift` | File timestamp | `fgetattrlist`@730; `fstat`@666,677,693; `fstatat`@685,700 |
 | `Tidy/Developer/DeveloperWorkspaceModel.swift` | Disk space | `fgetattrlist`@730; `fstatfs`@696 |
-| `Tidy/Execution/AppExecutionServices.swift` | File timestamp | `lstat`@327,336 |
-| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@876 |
+| `Tidy/Execution/AppExecutionServices.swift` | File timestamp | `lstat`@345,354 |
+| `Tidy/Execution/AppExecutionServices.swift` | System boot time | `ProcessInfo.systemUptime`@985 |
 | `Tidy/RuntimeVerification/RuntimeObservationCoordinator.swift` | File timestamp | `fstat`@412,439; `lstat`@390 |
 | `Tidy/RuntimeVerification/RuntimePerformanceComposition.swift` | File timestamp | `fstat`@659; `lstat`@279,546,634 |
 | `Tidy/RuntimeVerification/RuntimeTestComposition.swift` | File timestamp | `lstat`@174 |
