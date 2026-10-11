@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select the installed Swift Testing toolchain
+        run: |
+          set -euo pipefail
+          test -d /Applications/Xcode_16.2.app
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
+          swift --version
       - name: Install verified XcodeGen
         run: |
           bash scripts/verification/install-xcodegen.sh "$RUNNER_TEMP/tidy-tools"

@@ -3,12 +3,14 @@ import TidyCore
 
 struct DeveloperWorkspaceView: View {
     @Bindable private var model: DeveloperWorkspaceModel
+    @Bindable private var manualServices: ManualServiceReviewModel
     private let localAuthority: LocalAuthoritySnapshot?
     private let policy: EffectivePolicy?
 
-    init(model: DeveloperWorkspaceModel, localAuthority: LocalAuthoritySnapshot?,
+    init(model: DeveloperWorkspaceModel, manualServices: ManualServiceReviewModel, localAuthority: LocalAuthoritySnapshot?,
          policy: EffectivePolicy?) {
         self.model = model
+        self.manualServices = manualServices
         self.localAuthority = localAuthority
         self.policy = policy
     }
@@ -41,10 +43,40 @@ struct DeveloperWorkspaceView: View {
                 projectsTab.tabItem { Text("Projects") }
                 ecosystemsTab.tabItem { Text("Ecosystems") }
                 buildPrepTab.tabItem { Text("Build Prep") }
+                manualOperationsTab.tabItem { Text("Manual Operations") }
             }
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 480)
+        .onAppear {
+            model.updateBuildPrepVolumeOptions(localAuthority: localAuthority)
+            model.updateManualDeviceSets(localAuthority: localAuthority)
+        }
+        .onChange(of: localAuthority) { _, updated in
+            model.invalidateBuildPrepCapacity()
+            model.updateBuildPrepVolumeOptions(localAuthority: updated)
+            model.updateManualDeviceSets(localAuthority: updated)
+            manualServices.invalidateCandidates()
+        }
+        .onChange(of: model.selectedManualDeviceSetPath) { _, _ in
+            manualServices.invalidateCandidates()
+        }
+    }
+
+    private var manualOperationsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Approved simulator device set", selection: $model.selectedManualDeviceSetPath) {
+                Text("Choose an approved device set").tag(Optional<String>.none)
+                ForEach(model.approvedManualDeviceSets, id: \.canonicalPath) { root in
+                    Text(root.canonicalPath).tag(Optional(root.canonicalPath))
+                }
+            }
+            .disabled(model.isLoadingManualDeviceSets)
+            .accessibilityIdentifier("manualServices.deviceSet")
+            Text("Approve /usr/bin/xcrun, the selected simctl executable, its developer directory and an existing device set in Local Consent before refreshing. Container removal is unavailable while local Docker provider acceptance is incomplete.")
+                .font(.caption).foregroundStyle(.secondary)
+            ManualServiceReviewView(model: manualServices)
+        }
     }
 
     private var projectsTab: some View {
@@ -183,6 +215,36 @@ struct DeveloperWorkspaceView: View {
     private var buildPrepTab: some View {
         List {
             Section("Headroom target") {
+                Picker("Target volume", selection: Binding(
+                    get: { model.selectedBuildPrepVolumeID },
+                    set: { id in
+                        if let id { model.selectBuildPrepVolume(id, localAuthority: localAuthority) }
+                    })) {
+                    if model.selectedBuildPrepVolumeID == nil {
+                        Text("No available home volume").tag(Optional<UUID>.none)
+                    }
+                    ForEach(model.buildPrepVolumeOptions) { target in
+                        Text(target.label).tag(Optional(target.id))
+                    }
+                    if let selected = model.selectedBuildPrepVolumeID,
+                       !model.buildPrepVolumeOptions.contains(where: { $0.id == selected }) {
+                        Text("Selected volume unavailable — \(selected.uuidString)")
+                            .tag(Optional(selected))
+                    }
+                }
+                .disabled(model.isScanning || model.isRefreshingBuildPrepCapacity)
+                .accessibilityIdentifier("buildPrep.targetVolume")
+                Button(model.isRefreshingBuildPrepCapacity ? "Refreshing capacity…" : "Refresh Capacity") {
+                    model.refreshBuildPrepCapacity(localAuthority: localAuthority)
+                }
+                .disabled(model.isScanning || model.isRefreshingBuildPrepCapacity
+                    || policy?.allowedFeatures.contains("buildPrep") != true)
+                .accessibilityIdentifier("buildPrep.refreshCapacity")
+                Text("Only the selected home or locally approved volume is measured. Choosing a volume does not enable cleanup or background monitoring.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let message = model.buildPrepCapacityMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(headroomStatus)
                 if let plan = model.snapshot?.headroomPlan {
                     Text("Target: \(ByteFormat.human(plan.targetBytes)); strictly available: "

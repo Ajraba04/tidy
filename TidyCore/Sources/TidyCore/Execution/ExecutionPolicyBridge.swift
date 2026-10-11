@@ -146,6 +146,91 @@ public struct BridgeExplicitSessions: Sendable {
     }
 }
 
+/// Vended by the real bridge and bound to one window owner and one verified
+/// authority actor. No caller supplies effective policy, snapshots or acceptance.
+public struct BridgeManualServices: Sendable {
+    fileprivate let bridge: ExecutionPolicyBridge
+    fileprivate let authority: LocalAuthorityStore
+    fileprivate let ownerID: UUID
+
+    fileprivate init(bridge: ExecutionPolicyBridge, authority: LocalAuthorityStore) {
+        self.bridge = bridge; self.authority = authority; ownerID = UUID()
+    }
+
+    public func prepare(binding: ManualServiceOperationBinding) async throws -> ManualServiceReview {
+        try await bridge.prepareManualService(binding: binding, authority: authority, ownerID: ownerID)
+    }
+    public func confirm(_ review: ManualServiceReview) async throws -> ConfirmedManualServiceOperation {
+        try await bridge.confirmManualService(review, authority: authority, ownerID: ownerID)
+    }
+    public func cancelReview(_ review: ManualServiceReview) async throws {
+        try await bridge.cancelManualService(review, ownerID: ownerID)
+    }
+    public func execute(_ token: ConfirmedManualServiceOperation) async throws -> ManualServiceExecutionReport {
+        try await bridge.executeManualService(token, authority: authority, ownerID: ownerID)
+    }
+}
+
+/// The initializer is private to the bridge source, so display/portable data
+/// cannot create this grant. A presentation save may change settings revision
+/// while the coordinator's invalidating policy revision remains unchanged.
+internal struct ManualServicePolicyGrant: Sendable {
+    let coordinatorID: UUID
+    let bridgeID: UUID
+    let policyRevision: UInt64
+    let authority: LocalAuthoritySnapshot
+    let adapter: ManualServiceAdapterID
+    let bindingDigest: Data
+    private let coordinator: ExecutionCoordinator
+
+    fileprivate init(coordinator: ExecutionCoordinator, bridgeID: UUID,
+                     policyRevision: UInt64, authority: LocalAuthoritySnapshot,
+                     binding: ManualServiceOperationBinding) throws {
+        self.coordinator = coordinator; coordinatorID = coordinator.manualServiceCoordinatorID
+        self.bridgeID = bridgeID; self.policyRevision = policyRevision; self.authority = authority
+        adapter = binding.adapter; bindingDigest = try binding.canonicalDigest()
+    }
+
+    func checkCurrent() throws {
+        guard coordinator.policyAdmission() == .ready(revision: policyRevision) else {
+            throw ManualServiceReviewError.stalePolicy
+        }
+        guard authority.isCurrent else { throw ManualServiceReviewError.authorityDenied }
+    }
+
+    func validateScope(for binding: ManualServiceOperationBinding) throws {
+        try binding.validate(); try checkCurrent()
+        guard binding.adapter == adapter, try binding.canonicalDigest() == bindingDigest else {
+            throw ManualServiceReviewError.bindingMismatch
+        }
+        do {
+            switch binding.producer {
+            case .appleSimulator(let producer):
+                for executable in [producer.resolver, producer.simctl] {
+                    guard authority.permits(.localExecutable(executable)),
+                          try LocalExecutableApproval.verify(executable: URL(fileURLWithPath: executable.canonicalPath)) == executable else {
+                        throw ManualServiceReviewError.authorityDenied
+                    }
+                }
+                for root in [producer.developerDirectory, producer.deviceSet] {
+                    guard authority.permits(.localRoot(root)),
+                          try LocalRootApproval.verify(directory: URL(fileURLWithPath: root.canonicalPath)) == root else {
+                        throw ManualServiceReviewError.authorityDenied
+                    }
+                }
+            case .docker(let producer):
+                guard authority.permits(.localSocket(producer.socket)),
+                      authority.permits(.localExecutable(producer.peerExecutable)),
+                      try LocalSocketApproval.verify(socket: URL(fileURLWithPath: producer.socket.canonicalPath)) == producer.socket,
+                      try LocalExecutableApproval.verify(executable: URL(fileURLWithPath: producer.peerExecutable.canonicalPath)) == producer.peerExecutable else {
+                    throw ManualServiceReviewError.authorityDenied
+                }
+            }
+        } catch { throw ManualServiceReviewError.authorityDenied }
+        try checkCurrent()
+    }
+}
+
 @Observable @MainActor
 public final class ExecutionPolicyBridge {
     public private(set) var updateGeneration = UUID()
@@ -163,6 +248,7 @@ public final class ExecutionPolicyBridge {
     internal private(set) var pendingSnapshotBytes = 0
 
     private let coordinator: ExecutionCoordinator
+    private let manualBridgeID = UUID()
     private let settings: SettingsStore
     private let homeDirectory: String
     private let detectedTools: Set<ToolchainID>
@@ -331,6 +417,91 @@ public final class ExecutionPolicyBridge {
         schedulerController.readValidity()
     }
 
+    public func manualServices(authority: LocalAuthorityStore) -> BridgeManualServices {
+        BridgeManualServices(bridge: self, authority: authority)
+    }
+
+    private func manualPolicyAllows(_ adapter: ManualServiceAdapterID) throws {
+        guard isExecutionEnabled, let envelope = acknowledgedEnvelope else { throw ManualServiceReviewError.policyUnavailable }
+        let profiles = envelope.preferences?.profiles ?? []
+        let profile = envelope.activeProfileID.flatMap { active in profiles.first { $0.id == active } }
+        guard envelope.activeProfileID == nil || profile != nil else { throw ManualServiceReviewError.policyUnavailable }
+        var layers: [PolicyLayer: PolicyValues] = [.global: envelope.preferences?.global ?? .init()]
+        if let profile { layers[.profile] = profile.values }
+        let policy = try PolicyResolver.resolve(.init(layers: layers, selectedVolumeID: nil,
+            approvedVolumeIDs: [], capacityBytes: nil, logicalCPUCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
+            lowPower: false, seriousThermal: false, critical: false,
+            mandatoryExclusions: Set(CleanEnvironment.defaultProtectedRoots(homeDirectory: homeDirectory))))
+        let ecosystem = adapter == .appleSimulatorShutdownV1 ? "apple" : "docker"
+        guard policy.allowedFeatures.contains("ecosystems"),
+              policy.fields[.init(rawValue: "ecosystem.\(ecosystem).inventory")]?.value == .stored(.bool(true)),
+              policy.fields[.init(rawValue: "ecosystem.\(ecosystem).manualActions")]?.value == .stored(.bool(true)) else {
+            throw ManualServiceReviewError.policyDisabled
+        }
+    }
+
+    private func manualGrant(binding: ManualServiceOperationBinding,
+                             authority: LocalAuthorityStore) async throws -> ManualServicePolicyGrant {
+        guard !policyUpdatePending, case .ready = coordinator.policyAdmission() else { throw ManualServiceReviewError.stalePolicy }
+        // Presentation-only writes preserve the barrier; await their durable
+        // acknowledgement instead of invalidating an otherwise live review.
+        if storageUpdatePending { await drain() }
+        try manualPolicyAllows(binding.adapter)
+        let loaded = await settings.load()
+        let snapshot = try await authority.snapshot()
+        let expectedInstallation = try await coordinator.expectedManualAuthorityInstallation()
+        guard snapshot.installation == expectedInstallation else { throw ManualServiceReviewError.wrongInstallation }
+        guard !policyUpdatePending, case .ready(let revision) = coordinator.policyAdmission() else { throw ManualServiceReviewError.stalePolicy }
+        guard loaded.disposition != .recoveryReadOnly, loaded.envelope == acknowledgedEnvelope else {
+            throw ManualServiceReviewError.policyUnavailable
+        }
+        try manualPolicyAllows(binding.adapter)
+        let grant = try ManualServicePolicyGrant(coordinator: coordinator, bridgeID: manualBridgeID,
+            policyRevision: revision, authority: snapshot, binding: binding)
+        try grant.validateScope(for: binding)
+        return grant
+    }
+
+    fileprivate func prepareManualService(binding: ManualServiceOperationBinding,
+                                         authority: LocalAuthorityStore, ownerID: UUID) async throws -> ManualServiceReview {
+        let grant = try await manualGrant(binding: binding, authority: authority)
+        return try await coordinator.issueManualServiceReview(grant: grant, binding: binding,
+            ownerID: ownerID)
+    }
+
+    fileprivate func confirmManualService(_ review: ManualServiceReview,
+                                         authority: LocalAuthorityStore, ownerID: UUID) async throws -> ConfirmedManualServiceOperation {
+        guard review.coordinatorID == coordinator.manualServiceCoordinatorID else { throw ManualServiceReviewError.wrongCoordinator }
+        guard review.ownerID == ownerID, review.bridgeID == manualBridgeID else { throw ManualServiceReviewError.wrongOwner }
+        guard coordinator.policyAdmission() == .ready(revision: review.policyRevision) else { throw ManualServiceReviewError.stalePolicy }
+        let grant = try await manualGrant(binding: review.summary.binding, authority: authority)
+        return try await coordinator.mintConfirmedManualServiceOperation(grant: grant, review: review,
+            ownerID: ownerID)
+    }
+
+    fileprivate func cancelManualService(_ review: ManualServiceReview, ownerID: UUID) async throws {
+        try await coordinator.cancelManualServiceReview(review, ownerID: ownerID, bridgeID: manualBridgeID)
+    }
+
+    fileprivate func executeManualService(_ token: ConfirmedManualServiceOperation,
+                                         authority: LocalAuthorityStore,
+                                         ownerID: UUID) async throws -> ManualServiceExecutionReport {
+        guard token.coordinatorID == coordinator.manualServiceCoordinatorID else { throw ManualServiceReviewError.wrongCoordinator }
+        guard token.ownerID == ownerID, token.bridgeID == manualBridgeID else { throw ManualServiceReviewError.wrongOwner }
+        let grant: ManualServicePolicyGrant
+        do {
+            grant = try await manualGrant(binding: token.binding, authority: authority)
+        } catch {
+            if (error as? ManualServiceReviewError) == .busy { throw ManualServiceReviewError.busy }
+            // A revoked real-store grant cannot leave an owned confirmed
+            // attempt replayable. This route never creates replacement authority.
+            try await coordinator.rejectManualServiceExecution(token, ownerID: ownerID, bridgeID: manualBridgeID)
+            if error is CancellationError { throw CancellationError() }
+            throw (error as? ManualServiceReviewError) ?? .authorityDenied
+        }
+        return try await coordinator.executeManualService(token, grant: grant, ownerID: ownerID)
+    }
+
     public func observeOutcomes(
         _ observer: @escaping @MainActor (SettingsIntentOutcome) -> Void
     ) -> UUID {
@@ -373,7 +544,8 @@ public final class ExecutionPolicyBridge {
                 try PolicyValidator.validateStructure(
                     PolicyValues(fields: [delta.id: base]), at: .global)
             }
-            var complete = predictedSubmittedEnvelope.preferences?.global ?? PolicyValues()
+            var complete = predictedSubmittedEnvelope.preferences?.global
+                ?? PolicyPreferences.project(legacy: predictedSubmittedEnvelope.config, saved: nil).global
             complete.fields[delta.id] = delta.editedValue
             try PolicyValidator.validateStructure(complete, at: .global)
         } catch {
@@ -1024,7 +1196,8 @@ public final class ExecutionPolicyBridge {
 
     private func applyingGlobalPrediction(_ delta: GlobalPreferenceDelta,
                                           to envelope: SettingsEnvelope) -> SettingsEnvelope {
-        var preferences = envelope.preferences ?? PolicyPreferences()
+        var preferences = envelope.preferences
+            ?? PolicyPreferences.project(legacy: envelope.config, saved: nil)
         let prior = preferences.global
         preferences.global.fields[delta.id] = delta.editedValue
         let config = LegacyCompatibilityProjection.reverseProject(envelope.config,
@@ -1136,6 +1309,7 @@ public final class ExecutionPolicyBridge {
         case .nominal: raw = .nominal
         case .constrained: raw = .constrained
         case .critical: raw = .critical
+        case .signals(let power, let heat): raw = .signals(lowPower: power, seriousThermal: heat)
         }
         let effective: SchedulerObservation
         if raw == .critical {

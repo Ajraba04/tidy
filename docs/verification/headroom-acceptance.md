@@ -1,5 +1,11 @@
 # Headroom remediation acceptance
 
+Latest local work: [10 October macOS continuation](completion-20261010.md).
+It closes additional optional-data, target-volume and notification-routing source
+gaps with fresh Core/model/build evidence. The detailed rows below are historical
+unless superseded there. Production cleanup, compact accessibility and external
+acceptance remain open; the full-program verdict is unchanged.
+
 Current code continuation: [22 September source checkpoint](code-continuation-20260922.md). The historical evidence below remains scoped to its named commits; GUI and real-system checks are deferred by the user.
 
 

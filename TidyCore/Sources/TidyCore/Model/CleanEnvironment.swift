@@ -48,7 +48,9 @@ public struct CleanEnvironment: Sendable {
         self.homeDirectory = homeDirectory
         self.detectedTools = detectedTools
         self.gitRoots = gitRoots
-        self.protectedRoots = protectedRoots
+        var seen = Set<String>()
+        self.protectedRoots = (protectedRoots + Self.defaultProtectedRoots(homeDirectory: homeDirectory))
+            .filter { seen.insert($0).inserted }
         self.keepCookieDomains = keepCookieDomains
         self.simulatorsApprovedForDeletion = simulatorsApprovedForDeletion
         self.staleNodeModulesThresholdDays = staleNodeModulesThresholdDays

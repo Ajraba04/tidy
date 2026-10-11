@@ -39,10 +39,24 @@ enum JournalSequence {
         return next
     }
 }
+
+/// Transient evidence of this journal completing every durable terminal phase.
+/// Decoding an archive, publishing a proof alone, or reconciling after restart
+/// cannot construct this capability. Its archive remains data, not a new proof.
+struct DurablyRetiredManualServiceReceipt: Sendable {
+    let archive: EffectTerminalProofArchive
+    let proofReference: EffectProofReference
+
+    fileprivate init(archive: EffectTerminalProofArchive, proofReference: EffectProofReference) {
+        self.archive = archive; self.proofReference = proofReference
+    }
+}
+
 final class RunJournal {
     private let store: MutationAdmissionStore
     private let storage: any JournalStorage
     private let artifacts: ReviewedManifestStore
+    var serviceChildCaptureStoreIdentity: ObjectIdentifier { ObjectIdentifier(store) }
     private var historyEnabled = true
     private var historyDays = 30
     private var historyBytes = 10_485_760
@@ -173,10 +187,62 @@ final class RunJournal {
     }
     func recordChild(_ intent: PendingEffectIntent) throws {
         try checkLock()
+        guard intent.schemaVersion == 1 else { throw JournalError.invalidTransition }
         _ = try load(runID: intent.runID)
         do { try store.persistIntentWhileLocked(intent, update: .capturedChild) }
         catch let error as JournalError { throw error }
         catch { throw JournalError.unavailable }
+    }
+
+    /// The retired raw-data route is explicitly inert, including for well-formed
+    /// tuples. It is retained only to make rejection fixtures exercise the boundary.
+    func recordManualServiceChild(_: PendingEffectIntent) throws {
+        throw JournalError.invalidTransition
+    }
+
+    /// Capture authority must come from this exact journal's submission owner;
+    /// this receipt is forensic evidence, never a compiled terminal proof.
+    func recordOwnedServiceChild(_ receipt: OwnedServiceChildCaptureReceipt) throws {
+        try checkLock()
+        try receipt.requireJournal(self)
+        let intent = receipt.intent(phase: .submitted)
+        let previous = try load(runID: intent.runID)
+        guard intent.schemaVersion == 3,
+              [.submitted, .uncertainAndPossiblyRunning].contains(intent.phase),
+              previous.filter({ $0.phase == .started && $0.operationID == intent.operationID }).count == 1,
+              !previous.contains(where: { $0.phase == .finished
+                  || ($0.phase == .itemTerminal && $0.operationID == intent.operationID) }) else {
+            throw JournalError.invalidTransition
+        }
+        let matches = try store.unfinishedIntentsWhileLocked().filter {
+            $0.runID == intent.runID && $0.operationID == intent.operationID
+        }
+        guard matches.count == 1, let prior = matches.first, prior.schemaVersion == 3,
+              prior.binding == intent.binding, prior.adapterID == intent.adapterID,
+              [.submitted, .uncertainAndPossiblyRunning].contains(prior.phase),
+              prior.binding == .service(receipt.binding) else { throw JournalError.invalidTransition }
+        // Late forensic capture must preserve an already-uncertain submission;
+        // writing identity never moves its durable disposition backwards.
+        let preservingPhase = receipt.intent(phase: prior.phase)
+        do { try store.persistIntentWhileLocked(preservingPhase, update: .ownedServiceChildCapture(receipt)) }
+        catch let error as JournalError { throw error }
+        catch { throw JournalError.unavailable }
+    }
+
+    func requireExactManualServiceIntent(_ intent: PendingEffectIntent) throws {
+        try checkLock()
+        guard intent.schemaVersion == 3, intent.phase == .prepared,
+              try store.unfinishedIntentsWhileLocked().filter({ $0 == intent }).count == 1 else {
+            throw JournalError.invalidTransition
+        }
+    }
+
+    func markManualServiceSubmission(_ intent: PendingEffectIntent) throws {
+        try requireExactManualServiceIntent(intent)
+        guard case .service(let binding)? = intent.binding else { throw JournalError.invalidTransition }
+        let submitted = PendingEffectIntent(runID: intent.runID, operationID: intent.operationID,
+            service: binding, phase: .submitted)
+        try store.persistIntentWhileLocked(submitted, update: .serviceSubmission)
     }
     func finish(runID: UUID) throws {
         try checkLock()
@@ -187,10 +253,65 @@ final class RunJournal {
         try retain(now: Date())
     }
 
+    /// The process gate may consume only the receipt returned after this entire
+    /// transaction succeeds. Each publication retains the existing crash-safe
+    /// recovery behavior; a failure at any phase returns no close capability.
+    func finishManualService(proof: VerifiedEffectTerminalProof) throws -> DurablyRetiredManualServiceReceipt {
+        try checkLock()
+        let archive = proof.archive
+        let matching = try store.unfinishedIntentsWhileLocked().filter {
+            $0.operationID == archive.operationID
+        }
+        guard matching.count == 1, let intent = matching.first,
+              intent.schemaVersion == 3, case .service? = intent.binding,
+              CompiledEffectTerminalVerifier.validate(archive, intent: intent) else {
+            throw JournalError.invalidTransition
+        }
+        let events = try load(runID: archive.runID)
+        guard events.filter({ $0.phase == .started && $0.operationID == archive.operationID }).count == 1,
+              !events.contains(where: { $0.phase == .finished
+                  || ($0.phase == .itemTerminal && $0.operationID == archive.operationID) }) else {
+            throw JournalError.invalidTransition
+        }
+        let reference: EffectProofReference
+        if let existing = try artifacts.findServiceProof(for: intent) {
+            reference = existing
+        } else {
+            reference = try persistTerminalProof(proof)
+        }
+        guard try artifacts.proof(reference, for: intent) == archive else { throw JournalError.invalidTransition }
+        let terminal = JournalEvent(runID: archive.runID,
+            sequence: try JournalSequence.next(after: events.last?.sequence ?? 0),
+            phase: .itemTerminal, operationID: archive.operationID,
+            status: archive.terminalStatus, reason: nil, proof: reference)
+        try append(terminal)
+        let published = try load(runID: archive.runID)
+        guard published.last == terminal else { throw JournalError.invalidTransition }
+        try finish(runID: archive.runID)
+        try checkLock()
+        guard try !store.unfinishedIntentsWhileLocked().contains(where: {
+            $0.operationID == archive.operationID
+        }) else { throw JournalError.invalidTransition }
+        // Optional history retention may already have removed the finished
+        // archive. All mandatory publication/retirement calls above succeeded;
+        // there is no reconstruction from optional historical data here.
+        return DurablyRetiredManualServiceReceipt(archive: archive, proofReference: reference)
+    }
+
     func reconcileTerminalRun(runID: UUID) throws -> Bool {
         try checkLock()
-        let events = try load(runID: runID)
+        var events = try load(runID: runID)
         guard events.contains(where: { $0.phase == .started }) else { return false }
+        for intent in try store.unfinishedIntentsWhileLocked() where intent.runID == runID && intent.schemaVersion == 3 {
+            guard !events.contains(where: { $0.phase == .itemTerminal && $0.operationID == intent.operationID }) else { continue }
+            guard let reference = try artifacts.findServiceProof(for: intent) else { return false }
+            let archive = try artifacts.proof(reference, for: intent)
+            let event = JournalEvent(runID: runID, sequence: try JournalSequence.next(after: events.last?.sequence ?? 0),
+                phase: .itemTerminal, operationID: intent.operationID, status: archive.terminalStatus,
+                reason: nil, proof: reference)
+            try append(event)
+            events.append(event)
+        }
         try validateHistoricalProofs(events)
         if events.last?.phase != .finished {
             try finish(runID: runID)
@@ -201,10 +322,16 @@ final class RunJournal {
     }
 
     private func retireTerminalIntents(_ events: [JournalEvent]) throws {
+        try validateHistoricalProofs(events)
+        let liveIDs = Set(try store.unfinishedIntentsWhileLocked().map(\.operationID))
         for terminal in events where terminal.phase == .itemTerminal {
             guard let operationID = terminal.operationID, let proof = terminal.proof else {
                 throw JournalError.invalidTransition
             }
+            // Finished publication precedes retirement. A crash may have
+            // retired some/all intents already; validated history is replayed
+            // idempotently without removing any other outstanding operation.
+            guard liveIDs.contains(operationID) else { continue }
             _ = try store.retireIntentWhileLocked(operationID: operationID,
                 proof: proof, artifacts: artifacts)
         }
@@ -326,15 +453,14 @@ final class RunJournal {
                 throw JournalError.corrupt
             }
             let archive = try artifacts.historicalProof(proof)
-            guard let manifest = archive.manifest else { throw JournalError.corrupt }
-            _ = try artifacts.load(manifest)
             let (withProof, proofOverflow) = total.addingReportingOverflow(proof.encodedBytes)
             guard !proofOverflow else { throw JournalError.capacity }
             total = withProof
             let (withProofCount, proofCountOverflow) = count.addingReportingOverflow(1)
             guard !proofCountOverflow else { throw JournalError.capacity }
             count = withProofCount
-            if manifestIDs.insert(manifest.id).inserted {
+            if let manifest = archive.manifest, manifestIDs.insert(manifest.id).inserted {
+                _ = try artifacts.load(manifest)
                 let (withManifest, manifestOverflow) = total.addingReportingOverflow(
                     manifest.encodedBytes)
                 guard !manifestOverflow else { throw JournalError.capacity }

@@ -4,6 +4,7 @@ import Foundation
 enum PersistedEffectKind: String, Codable, Sendable {
     case filesystem
     case process
+    case service
 }
 
 struct ReviewedManifestReference: Codable, Equatable, Sendable {
@@ -113,11 +114,13 @@ struct ProcessEffectBinding: Codable, Equatable, Sendable {
 enum PersistedEffectBinding: Codable, Equatable, Sendable {
     case filesystem(FilesystemEffectBinding)
     case process(ProcessEffectBinding)
+    case service(ManualServiceEffectBinding)
 
     var kind: PersistedEffectKind {
         switch self {
         case .filesystem: return .filesystem
         case .process: return .process
+        case .service: return .service
         }
     }
 }
@@ -154,6 +157,7 @@ struct EffectTerminalProofArchive: Codable, Equatable, Sendable {
     let schedulingStop: SchedulingStop?
     let verifiedAt: Date
     let verifier: String
+    var service: ManualServiceTerminalArchive? = nil
 
 }
 
@@ -206,6 +210,136 @@ struct VerifiedEffectTerminalProof: Sendable {
 enum CompiledEffectTerminalVerifier {
     private static let filesystemVerifier = "tidy.sync-filesystem.v1"
     private static let neverSubmittedVerifier = "tidy.sync-filesystem.never-submitted.v1"
+    private static let serviceNeverSubmittedVerifier = "tidy.manual-service.never-submitted.v1"
+    private static let simulatorNeverSpawnedVerifier = "tidy.manual-service.simulator-never-spawned.v1"
+    private static let simulatorFixtureNeverSpawnedVerifier = "tidy.manual-service.simulator-fixture-never-spawned.v1"
+    private static let simulatorNativeVerifier = "tidy.manual-service.simulator-native.v1"
+
+    private static let simulatorFixtureVerifier = "tidy.manual-service.simulator-owned-fixture.v1"
+    private static let dockerRemovalVerifier = "tidy.manual-service.docker-removal.v1"
+
+    static func manualNeverSubmitted(_ receipt: ManualNeverSubmittedReceipt) throws -> VerifiedEffectTerminalProof {
+        let digest = try receipt.binding.canonicalDigest()
+        var archive = EffectTerminalProofArchive(schema: EffectTerminalProofArchive.schemaVersion,
+            proofID: receipt.operationID, runID: receipt.runID, operationID: receipt.operationID,
+            adapterID: receipt.binding.operation.adapter.rawValue, adapterVersion: "manual-service-v1",
+            manifest: nil, terminalStatus: .cancelled, outcomeDigest: digest, outcomeCount: 0,
+            schedulingStop: .cancelled, verifiedAt: Date(), verifier: serviceNeverSubmittedVerifier)
+        archive.service = .init(schema: 1, binding: receipt.binding, bindingDigest: digest, kind: .neverSubmitted)
+        return VerifiedEffectTerminalProof(archive: archive)
+    }
+
+    static func manualDockerReceipt(_ receipt: BoundDockerServiceReceipt) throws -> VerifiedEffectTerminalProof {
+        let evidence = DockerServiceTerminalEvidence(receipt: receipt)
+        guard evidence.validate(binding: receipt.binding),
+              case .container(let object) = receipt.binding.operation.object else { throw JournalError.invalidTransition }
+        let absent = "No such container: \(object.id)"
+        switch receipt.kind {
+        case .removed:
+            guard receipt.responseMessage == nil, receipt.postconditionMessage == absent else { throw JournalError.invalidTransition }
+        case .alreadyAbsent:
+            guard receipt.responseMessage == absent, receipt.postconditionMessage == nil else { throw JournalError.invalidTransition }
+        case .refused:
+            guard let message = receipt.responseMessage, !message.isEmpty, message.utf8.count <= 4096,
+                  receipt.postconditionMessage == nil else { throw JournalError.invalidTransition }
+        }
+        let digest = try receipt.binding.canonicalDigest()
+        var archive = EffectTerminalProofArchive(schema: EffectTerminalProofArchive.schemaVersion,
+            proofID: receipt.operationID, runID: receipt.runID, operationID: receipt.operationID,
+            adapterID: receipt.binding.operation.adapter.rawValue, adapterVersion: "manual-service-v1",
+            manifest: nil, terminalStatus: evidence.terminalStatus, outcomeDigest: digest,
+            outcomeCount: evidence.outcomeCount, schedulingStop: nil, verifiedAt: Date(), verifier: dockerRemovalVerifier)
+        archive.service = .init(schema: 1, binding: receipt.binding, bindingDigest: digest,
+            kind: .dockerRemoval, docker: evidence)
+        return VerifiedEffectTerminalProof(archive: archive)
+    }
+
+    static func manualSimulatorNeverSpawned(_ receipt: ManualSimulatorNeverSpawnedReceipt) throws -> VerifiedEffectTerminalProof {
+        let evidence = SimulatorNeverSpawnedEvidence(receipt: receipt)
+        guard evidence.validate(binding: receipt.binding) else { throw JournalError.invalidTransition }
+        let digest = try receipt.binding.canonicalDigest()
+        var archive = EffectTerminalProofArchive(schema: EffectTerminalProofArchive.schemaVersion,
+            proofID: receipt.operationID, runID: receipt.runID, operationID: receipt.operationID,
+            adapterID: receipt.binding.operation.adapter.rawValue, adapterVersion: "manual-service-v1",
+            manifest: nil, terminalStatus: .failed, outcomeDigest: digest, outcomeCount: 0,
+            schedulingStop: nil, verifiedAt: Date(),
+            verifier: evidence.isFixture ? simulatorFixtureNeverSpawnedVerifier : simulatorNeverSpawnedVerifier)
+        archive.service = .init(schema: 1, binding: receipt.binding, bindingDigest: digest,
+            kind: .simulatorNeverSpawned, rejectedSpawn: evidence)
+        return VerifiedEffectTerminalProof(archive: archive)
+    }
+
+    static func manualSimulatorNativeReceipt(_ receipt: NativeSimulatorServiceReceipt) throws -> VerifiedEffectTerminalProof {
+        try AppleSimulatorOperation.requireAcceptedProducer(for: receipt.binding.operation)
+        guard receipt.terminalVerificationLease.sessionID == receipt.childSessionID,
+              receipt.terminalVerificationLease.ownedIdentity == receipt.childIdentity,
+              receipt.terminalVerificationLease.rawStatus == receipt.rawWaitStatus else { throw JournalError.invalidTransition }
+        try receipt.terminalVerificationLease.checkValidity()
+        let evidence = SimulatorNativeTerminalEvidence(receipt: receipt)
+        guard evidence.validate(binding: receipt.binding) else { throw JournalError.invalidTransition }
+        let digest = try receipt.binding.canonicalDigest()
+        var archive = EffectTerminalProofArchive(schema: EffectTerminalProofArchive.schemaVersion,
+            proofID: receipt.operationID, runID: receipt.runID, operationID: receipt.operationID,
+            adapterID: receipt.binding.operation.adapter.rawValue, adapterVersion: "manual-service-v1",
+            manifest: nil, terminalStatus: .succeeded, outcomeDigest: digest, outcomeCount: 1,
+            schedulingStop: nil, verifiedAt: Date(), verifier: simulatorNativeVerifier)
+        archive.service = .init(schema: 1, binding: receipt.binding, bindingDigest: digest,
+            kind: .simulatorNative, nativeSimulator: evidence)
+        return VerifiedEffectTerminalProof(archive: archive)
+    }
+
+    static func manualSimulatorFixtureReceipt(_ receipt: BoundSimulatorServiceReceipt) throws -> VerifiedEffectTerminalProof {
+        guard receipt.invocationOrigin == .cooperativeFixture,
+              receipt.terminalVerificationLease.sessionID == receipt.childSessionID,
+              receipt.terminalVerificationLease.ownedIdentity == receipt.childIdentity,
+              receipt.terminalVerificationLease.rawStatus == receipt.rawWaitStatus else {
+            throw JournalError.invalidTransition
+        }
+        let evidence = SimulatorFixtureTerminalEvidence(receipt: receipt)
+        guard evidence.validate(binding: receipt.binding) else { throw JournalError.invalidTransition }
+        let digest = try receipt.binding.canonicalDigest()
+        var archive = EffectTerminalProofArchive(schema: EffectTerminalProofArchive.schemaVersion,
+            proofID: receipt.operationID, runID: receipt.runID, operationID: receipt.operationID,
+            adapterID: receipt.binding.operation.adapter.rawValue, adapterVersion: "manual-service-v1",
+            manifest: nil, terminalStatus: .succeeded, outcomeDigest: digest,
+            outcomeCount: 1, schedulingStop: nil, verifiedAt: Date(), verifier: simulatorFixtureVerifier)
+        archive.service = .init(schema: 1, binding: receipt.binding, bindingDigest: digest,
+            kind: .simulatorOwnedFixture, simulator: evidence)
+        return VerifiedEffectTerminalProof(archive: archive)
+    }
+
+    private static func validServiceArchive(_ archive: EffectTerminalProofArchive) -> Bool {
+        guard let service = archive.service, service.validate(),
+              archive.schema == EffectTerminalProofArchive.schemaVersion,
+              archive.proofID == archive.operationID, archive.manifest == nil,
+              archive.adapterVersion == "manual-service-v1",
+              archive.adapterID == service.binding.operation.adapter.rawValue,
+              archive.outcomeDigest == service.bindingDigest else { return false }
+        switch service.kind {
+        case .neverSubmitted:
+            return archive.outcomeCount == 0 && archive.terminalStatus == .cancelled
+                && archive.schedulingStop == .cancelled && archive.verifier == serviceNeverSubmittedVerifier
+        case .dockerRemoval:
+            guard let evidence = service.docker else { return false }
+            return archive.verifier == dockerRemovalVerifier && archive.schedulingStop == nil
+                && archive.outcomeCount == evidence.outcomeCount && archive.terminalStatus == evidence.terminalStatus
+        case .simulatorOwnedFixture:
+            guard let evidence = service.simulator else { return false }
+            return archive.verifier == simulatorFixtureVerifier && archive.schedulingStop == nil
+                && archive.outcomeCount == 1 && archive.terminalStatus == .succeeded
+                && evidence.runID == archive.runID && evidence.operationID == archive.operationID
+        case .simulatorNeverSpawned:
+            guard let evidence = service.rejectedSpawn else { return false }
+            return archive.verifier == (evidence.isFixture ? simulatorFixtureNeverSpawnedVerifier : simulatorNeverSpawnedVerifier)
+                && archive.schedulingStop == nil && archive.outcomeCount == 0 && archive.terminalStatus == .failed
+                && evidence.runID == archive.runID && evidence.operationID == archive.operationID
+        case .simulatorNative:
+            guard let evidence = service.nativeSimulator else { return false }
+            return archive.verifier == simulatorNativeVerifier && archive.schedulingStop == nil
+                && archive.outcomeCount == 1 && archive.terminalStatus == .succeeded
+                && evidence.runID == archive.runID && evidence.operationID == archive.operationID
+        }
+    }
 
     fileprivate static func synchronousFilesystem(runID: UUID, operationID: UUID,
                                                   binding: FilesystemEffectBinding,
@@ -243,7 +377,20 @@ enum CompiledEffectTerminalVerifier {
 
     static func validate(_ archive: EffectTerminalProofArchive,
                          intent: PendingEffectIntent) -> Bool {
+        if case .service(let binding)? = intent.binding {
+            let expectedPhase: SubmissionPhase = archive.service?.kind == .neverSubmitted ? .prepared : .submitted
+            let childMatches = archive.service?.kind != .simulatorOwnedFixture
+                || archive.service?.simulator?.matchesChild(intent) == true
+            let noChild = archive.service?.kind != .simulatorNeverSpawned
+                || archive.service?.rejectedSpawn?.matchesUnspawnedIntent(intent) == true
+            let nativeChildMatches = archive.service?.kind != .simulatorNative
+                || archive.service?.nativeSimulator?.matchesChild(intent) == true
+            return childMatches && nativeChildMatches && noChild && intent.schemaVersion == 3 && intent.phase == expectedPhase
+                && archive.runID == intent.runID && archive.operationID == intent.operationID
+                && archive.service?.binding == binding && validServiceArchive(archive)
+        }
         guard archive.schema == EffectTerminalProofArchive.schemaVersion,
+              archive.service == nil,
               archive.runID == intent.runID, archive.operationID == intent.operationID,
               archive.outcomeCount >= 0,
               archive.outcomeDigest.count == SHA256.Digest.byteCount,
@@ -264,6 +411,10 @@ enum CompiledEffectTerminalVerifier {
 
     static func validateHistorical(_ archive: EffectTerminalProofArchive,
                                    reference: EffectProofReference) -> Bool {
+        if archive.service != nil {
+            return archive.proofID == reference.id && archive.operationID == reference.operationID
+                && validServiceArchive(archive)
+        }
         let base = archive.schema == EffectTerminalProofArchive.schemaVersion
             && archive.proofID == reference.id
             && archive.operationID == reference.operationID
@@ -315,8 +466,28 @@ public struct ExecutionProgressSnapshot: Equatable, Sendable {
 final class EffectCancellationToken: @unchecked Sendable {
     private let lock = NSLock()
     private var requested = false
-    func cancel() { lock.withLock { requested = true } }
+    private var observers: [UUID: @Sendable () -> Void] = [:]
+    func cancel() {
+        let callbacks: [@Sendable () -> Void] = lock.withLock {
+            requested = true
+            let values = Array(observers.values)
+            observers.removeAll()
+            return values
+        }
+        // Never invoke a gate callback while holding the token's lock.
+        for callback in callbacks { callback() }
+    }
     var isCancelled: Bool { lock.withLock { requested } }
+    func observeCancellation(_ callback: @escaping @Sendable () -> Void) throws -> UUID? {
+        let id: UUID? = try lock.withLock {
+            if requested { return nil }
+            guard observers.count < 16 else { throw POSIXError(.EAGAIN) }
+            let id = UUID(); observers[id] = callback; return id
+        }
+        if id == nil { callback() }
+        return id
+    }
+    func removeCancellationObserver(_ id: UUID) { _ = lock.withLock { observers.removeValue(forKey: id) } }
 }
 
 final class ExecutionCancellationRelay: @unchecked Sendable {

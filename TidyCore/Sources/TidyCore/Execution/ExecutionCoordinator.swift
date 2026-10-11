@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 
 /// Sole admission authority. No registered review or token can install an adapter.
 public actor ExecutionCoordinator {
@@ -24,8 +25,11 @@ public actor ExecutionCoordinator {
     private var environment: CleanEnvironment
     private let admissionStore: MutationAdmissionStore?
     private let journalDirectory: URL
+    private let manualServiceNowNanoseconds: @Sendable () -> UInt64
     private var state: State = .idle
     private var reviews: [UUID: Registration] = [:]
+    private var manualReviews = ManualServiceReviewLedger()
+    private var manualConfirmed = ManualServiceConfirmedLedger()
     private var tokens: [UUID: ReviewBinding] = [:]
     private var rejections: [UUID: Rejection] = [:]
     private var rejectionOrder: [UUID] = []
@@ -46,6 +50,289 @@ public actor ExecutionCoordinator {
         self.environment = environment
         self.journalDirectory = journalDirectory
         self.admissionStore = try? MutationAdmissionStore(directory: journalDirectory)
+        self.manualServiceNowNanoseconds = { DispatchTime.now().uptimeNanoseconds }
+    }
+
+    /// Internal deterministic clock seam only. The public app constructor always
+    /// uses the native monotonic clock; this cannot alter provider acceptance.
+    internal init(environment: CleanEnvironment, journalDirectory: URL,
+                  manualServiceNowNanoseconds: @escaping @Sendable () -> UInt64) {
+        let id = UUID()
+        self.id = id
+        self.barrier = PolicyInvalidationBarrier(coordinatorID: id)
+        self.environment = environment
+        self.journalDirectory = journalDirectory
+        self.admissionStore = try? MutationAdmissionStore(directory: journalDirectory)
+        self.manualServiceNowNanoseconds = manualServiceNowNanoseconds
+    }
+
+    internal nonisolated var manualServiceCoordinatorID: UUID { id }
+
+    /// The app's authority ledger is a sibling of this coordinator's execution
+    /// journal. Verify that existing installation read-only; never create it or
+    /// accept an arbitrary actor's installation elsewhere on the machine.
+    internal func expectedManualAuthorityInstallation() throws -> LocalInstallationIdentity {
+        let directory = journalDirectory.deletingLastPathComponent()
+            .appendingPathComponent("authority", isDirectory: true)
+        do { return try LocalInstallationIdentity.verify(directory: directory) }
+        catch { throw ManualServiceReviewError.wrongInstallation }
+    }
+
+    private func requireManualAdmission() throws {
+        switch mutationAdmission() {
+        case .ready: return
+        case .busy: throw ManualServiceReviewError.busy
+        case .uncertainAndPossiblyRunning: throw ManualServiceReviewError.recoveryBlocked
+        case .storageUnavailable: throw ManualServiceReviewError.storageUnavailable
+        }
+    }
+
+    internal func registerManualServiceReview(grant: ManualServicePolicyGrant,
+                                              binding: ManualServiceOperationBinding,
+                                              ownerID: UUID) throws -> ManualServiceReviewLedger.Record {
+        guard grant.coordinatorID == id else { throw ManualServiceReviewError.wrongCoordinator }
+        try requireManualAdmission()
+        guard try expectedManualAuthorityInstallation() == grant.authority.installation else {
+            throw ManualServiceReviewError.wrongInstallation
+        }
+        // Scope identity I/O precedes the short synchronous policy commit.
+        try grant.validateScope(for: binding)
+        do {
+            return try barrier.withCurrentPolicy(revision: grant.policyRevision) {
+                guard grant.authority.isCurrent else { throw ManualServiceReviewError.authorityDenied }
+                // Sample after the actor hop, admission and scope checks. A
+                // bridge timestamp cannot determine the authority lifetime.
+                let issuedAt = manualServiceNowNanoseconds()
+                return try manualReviews.insert(binding: binding, ownerID: ownerID, coordinatorID: id,
+                    bridgeID: grant.bridgeID, policyRevision: grant.policyRevision,
+                    authority: grant.authority, now: issuedAt)
+            }
+        } catch let error as ConfirmationError where error == .stalePolicy {
+            throw ManualServiceReviewError.stalePolicy
+        }
+    }
+
+    internal func reserveManualServiceConfirmation(grant: ManualServicePolicyGrant,
+                                                   review: ManualServiceReview,
+                                                   ownerID: UUID) throws
+        -> ManualServiceConfirmedLedger.Entry {
+        guard grant.coordinatorID == id, review.coordinatorID == id else { throw ManualServiceReviewError.wrongCoordinator }
+        guard review.ownerID == ownerID, review.bridgeID == grant.bridgeID else { throw ManualServiceReviewError.wrongOwner }
+        try requireManualAdmission()
+        guard try expectedManualAuthorityInstallation() == grant.authority.installation else {
+            throw ManualServiceReviewError.wrongInstallation
+        }
+        try grant.validateScope(for: review.summary.binding)
+        do {
+            return try barrier.withCurrentPolicy(revision: review.policyRevision) {
+                guard grant.authority.isCurrent else { throw ManualServiceReviewError.authorityDenied }
+                // Final consumption uses a fresh actor-owned sample. Queuing
+                // and filesystem validation must not extend a review's expiry.
+                let consumedAt = manualServiceNowNanoseconds()
+                let record = try manualReviews.take(reviewID: review.summary.reviewID,
+                    ownerID: ownerID, coordinatorID: id, bridgeID: grant.bridgeID,
+                    policyRevision: grant.policyRevision, now: consumedAt)
+                guard record.summary == review.summary,
+                      record.authority.installation == grant.authority.installation,
+                      record.authority.revision == grant.authority.revision,
+                      try record.summary.binding.canonicalDigest() == review.summary.bindingDigest else {
+                    throw ManualServiceReviewError.bindingMismatch
+                }
+                // Parsing, local consent and a consumed data review never
+                // establish native producer acceptance. Both current compiled
+                // production contracts return a denial here.
+                guard ManualServiceAcceptanceRegistry.denial(for: record.summary.binding) == nil else {
+                    throw ManualServiceReviewError.providerUnavailable
+                }
+                return try manualConfirmed.insert(record, now: manualServiceNowNanoseconds())
+            }
+        } catch let error as ConfirmationError where error == .stalePolicy {
+            throw ManualServiceReviewError.stalePolicy
+        }
+    }
+
+    internal func cancelManualServiceReview(_ review: ManualServiceReview,
+                                            ownerID: UUID, bridgeID: UUID) throws {
+        guard review.coordinatorID == id else { throw ManualServiceReviewError.wrongCoordinator }
+        guard review.ownerID == ownerID, review.bridgeID == bridgeID else { throw ManualServiceReviewError.wrongOwner }
+        // Cancellation needs ownership, not renewed consent or an open barrier.
+        try manualReviews.cancel(reviewID: review.summary.reviewID, ownerID: ownerID,
+            coordinatorID: id, bridgeID: bridgeID)
+    }
+
+    private func ownedManualConfirmation(_ token: ConfirmedManualServiceOperation,
+                                         ownerID: UUID, bridgeID: UUID) throws -> ManualServiceReviewLedger.Record {
+        guard token.coordinatorID == id else { throw ManualServiceReviewError.wrongCoordinator }
+        guard token.ownerID == ownerID, token.bridgeID == bridgeID else { throw ManualServiceReviewError.wrongOwner }
+        let record = try manualConfirmed.owned(nonce: token.nonce, ownerID: ownerID,
+            coordinatorID: id, bridgeID: bridgeID)
+        guard token.binding == record.summary.binding, token.bindingDigest == record.summary.bindingDigest,
+              token.reviewID == record.summary.reviewID, token.policyRevision == record.policyRevision,
+              token.expiresAtMonotonicNanoseconds == record.summary.expiresAtMonotonicNanoseconds else {
+            throw ManualServiceReviewError.bindingMismatch
+        }
+        return record
+    }
+
+    /// A failed genuine-store grant reload is still an owned one-use attempt.
+    /// A foreign facade cannot discard a token, and genuine admission contention
+    /// preserves it just as the existing catalog execution path does.
+    internal func rejectManualServiceExecution(_ token: ConfirmedManualServiceOperation,
+                                               ownerID: UUID, bridgeID: UUID) throws {
+        _ = try ownedManualConfirmation(token, ownerID: ownerID, bridgeID: bridgeID)
+        if case .running = state { throw ManualServiceReviewError.busy }
+        if mutationAdmission() == .busy { throw ManualServiceReviewError.busy }
+        try manualConfirmed.discardOwned(nonce: token.nonce, ownerID: ownerID,
+            coordinatorID: id, bridgeID: bridgeID)
+    }
+
+    internal func executeManualService(_ token: ConfirmedManualServiceOperation,
+                                      grant: ManualServicePolicyGrant,
+                                      ownerID: UUID) async throws -> ManualServiceExecutionReport {
+        if case .running = state { throw ManualServiceReviewError.busy }
+        _ = try ownedManualConfirmation(token, ownerID: ownerID, bridgeID: grant.bridgeID)
+        let runID = UUID()
+        state = .running(runID: runID)
+        progressPhase = .preparing; completedEffects = 0; scheduledEffects = 0
+        let runCancellation = EffectCancellationToken()
+        cancellation = runCancellation; cancellationRelay.install(runCancellation)
+        publishProgress()
+        defer {
+            admissionStore?.release()
+            cancellationRelay.clear(runCancellation)
+            state = .idle; progressPhase = .idle
+            completedEffects = 0; scheduledEffects = 0; cancellation = nil
+            if let admissionStore {
+                cachedRecovery = admissionStore.acquire(); admissionStore.release()
+            } else { cachedRecovery = .storageUnavailable }
+            publishProgress()
+        }
+        let admission = admissionStore?.acquire() ?? .storageUnavailable
+        cachedRecovery = admission; publishProgress()
+        if admission == .busy { throw ManualServiceReviewError.busy }
+        let anchor = ContinuousClock.now
+        let consumedAt = manualServiceNowNanoseconds()
+        let record = try manualConfirmed.take(nonce: token.nonce, ownerID: ownerID, coordinatorID: id,
+            bridgeID: grant.bridgeID, bindingDigest: token.bindingDigest,
+            policyRevision: grant.policyRevision, authority: grant.authority, now: consumedAt)
+        switch admission {
+        case .ready: break
+        case .busy: throw ManualServiceReviewError.busy
+        case .storageUnavailable: throw ManualServiceReviewError.storageUnavailable
+        case .uncertainAndPossiblyRunning: throw ManualServiceReviewError.recoveryBlocked
+        }
+        guard grant.coordinatorID == id else { throw ManualServiceReviewError.wrongCoordinator }
+        guard try expectedManualAuthorityInstallation() == grant.authority.installation else {
+            throw ManualServiceReviewError.wrongInstallation
+        }
+        try grant.validateScope(for: record.summary.binding)
+        do {
+            try barrier.withCurrentPolicy(revision: record.policyRevision) {
+                // The barrier has already checked policy revision while holding
+                // its lock. Do not re-enter it through grant.checkCurrent().
+                guard grant.authority.isCurrent,
+                      grant.authority.revision == record.authority.revision else {
+                    throw ManualServiceReviewError.authorityDenied
+                }
+            }
+        }
+        catch let error as ConfirmationError where error == .stalePolicy { throw ManualServiceReviewError.stalePolicy }
+        guard ManualServiceAcceptanceRegistry.denial(for: record.summary.binding) == nil,
+              record.summary.binding.adapter == .appleSimulatorShutdownV1 else {
+            // There is no Docker production factory or catalog/CLI fallback.
+            throw ManualServiceReviewError.providerUnavailable
+        }
+        try Task.checkCancellation()
+        guard !runCancellation.isCancelled else { throw CancellationError() }
+        let lifetime = min(record.summary.expiresAtMonotonicNanoseconds - consumedAt, 30_000_000_000)
+        let deadline = anchor.advanced(by: .nanoseconds(Int64(lifetime)))
+        let client = try ManualSimulatorClient.acceptedNative(binding: record.summary.binding, grant: grant)
+        let observed = try await client.preflightNative(record.summary.binding, deadline: deadline)
+        try validateManualBoundary(record: record, grant: grant, cancellation: runCancellation, deadline: deadline)
+        if observed.state == .shutdown {
+            return ManualServiceExecutionReport(runID: nil, status: .skipped, binding: record.summary.binding,
+                message: "The exact reviewed simulator is already shut down. No operation was submitted.")
+        }
+        guard observed.state == .booted else { throw ManualServiceReviewError.bindingMismatch }
+        guard let admissionStore else { throw ManualServiceReviewError.storageUnavailable }
+        let journal = try RunJournal(store: admissionStore, storage: DurableJournalStorage(directory: journalDirectory))
+        let operationID = UUID()
+        var submission: ManualServiceSubmission?
+        scheduledEffects = 1; progressPhase = .executing; publishProgress()
+        func outcome(_ status: EffectStatus, _ message: String) -> ManualServiceExecutionReport {
+            ManualServiceExecutionReport(runID: runID, status: status, binding: record.summary.binding, message: message)
+        }
+        do {
+            try journal.append(.init(runID: runID, sequence: 1, phase: .planned, operationID: nil, status: nil, reason: nil))
+            try journal.append(.init(runID: runID, sequence: 2, phase: .confirmed, operationID: nil, status: nil, reason: nil))
+            let binding = try ManualServiceEffectBinding(reviewID: record.summary.reviewID, coordinatorID: id,
+                policyRevision: record.policyRevision, authorityRevision: grant.authority.revision,
+                installation: grant.authority.installation, operation: record.summary.binding)
+            try validateManualBoundary(record: record, grant: grant, cancellation: runCancellation, deadline: deadline)
+            let prepared = try ManualServiceSubmission.prepare(runID: runID, operationID: operationID,
+                binding: binding, journal: journal)
+            submission = prepared
+            let launch = try await AppleSimulatorOperation.launch(submission: prepared, grant: grant,
+                deadline: deadline, cancellation: runCancellation)
+            switch launch {
+            case .notSpawned(let receipt):
+                let proof = try CompiledEffectTerminalVerifier.manualSimulatorNeverSpawned(receipt)
+                _ = try journal.finishManualService(proof: proof)
+                completedEffects = 1; publishProgress()
+                return outcome(.failed, "The simulator operation could not start. No child was spawned.")
+            case .launched(let owned):
+                // Retain the launched session's bounded collection independently
+                // of the initiating view/task. No cancellation kills a mutation.
+                let terminal = Task.detached { try await client.terminalReceipt(launch: owned) }
+                do { try prepared.recordOwnedChild(owned) }
+                catch {
+                    _ = try? await terminal.value
+                    return outcome(.uncertain, "The submitted operation requires recovery. Its terminal state was not durably established.")
+                }
+                progressPhase = .reconciling; publishProgress()
+                let receipt = try await terminal.value
+                let proof = try CompiledEffectTerminalVerifier.manualSimulatorNativeReceipt(receipt)
+                let retirement = try journal.finishManualService(proof: proof)
+                try await ProcessJobGate.shared.closeTerminalVerification(receipt.terminalVerificationLease, retirement: retirement)
+                completedEffects = 1; publishProgress()
+                return outcome(.succeeded, "The exact reviewed simulator was shut down and its terminal state was verified.")
+            }
+        } catch {
+            if let submission, let proof = try? submission.cancelBeforeSubmission() {
+                do {
+                    _ = try journal.finishManualService(proof: proof)
+                    completedEffects = 1; publishProgress()
+                    return outcome(.cancelled, "The operation ended before submission. No producer mutation was submitted.")
+                } catch { /* Failed durable completion retains recovery admission. */ }
+            }
+            progressPhase = .blocked; publishProgress()
+            return outcome(.uncertain, "The operation requires recovery. Its terminal state was not durably established.")
+        }
+    }
+
+    private func validateManualBoundary(record: ManualServiceReviewLedger.Record,
+                                        grant: ManualServicePolicyGrant,
+                                        cancellation: EffectCancellationToken,
+                                        deadline: ContinuousClock.Instant) throws {
+        try Task.checkCancellation()
+        guard !cancellation.isCancelled else { throw CancellationError() }
+        let now = manualServiceNowNanoseconds()
+        guard ContinuousClock.now < deadline, now >= record.summary.issuedAtMonotonicNanoseconds,
+              now < record.summary.expiresAtMonotonicNanoseconds else {
+            throw ManualServiceReviewError.expiredReview
+        }
+        guard try expectedManualAuthorityInstallation() == grant.authority.installation else {
+            throw ManualServiceReviewError.wrongInstallation
+        }
+        try grant.validateScope(for: record.summary.binding)
+        do {
+            try barrier.withCurrentPolicy(revision: record.policyRevision) {
+                guard grant.authority.isCurrent,
+                      grant.authority.revision == record.authority.revision else {
+                    throw ManualServiceReviewError.authorityDenied
+                }
+            }
+        } catch let error as ConfirmationError where error == .stalePolicy { throw ManualServiceReviewError.stalePolicy }
     }
 
     public func prepareReview(engine: CleanEngine, tier: Tier, selectDefaults: Bool) async throws -> RegisteredReview {
@@ -506,10 +793,15 @@ public actor ExecutionCoordinator {
         for runID in Set(intents.map(\.runID)) {
             let runIntents = intents.filter { $0.runID == runID }
             guard runIntents.allSatisfy({ intent in
-                guard intent.schemaVersion == 2,
-                      case .filesystem(let binding)? = intent.binding else { return false }
-                return binding.adapterID == AppleDerivedDataInventory.adapterID
-                    && binding.adapterVersion == AppleDerivedDataInventory.contractVersion
+                switch intent.binding {
+                case .filesystem(let binding):
+                    return intent.schemaVersion == 2
+                        && binding.adapterID == AppleDerivedDataInventory.adapterID
+                        && binding.adapterVersion == AppleDerivedDataInventory.contractVersion
+                case .service(let binding):
+                    return intent.schemaVersion == 3 && (try? binding.validate()) != nil
+                default: return false
+                }
             }) else {
                 blocked = true
                 continue

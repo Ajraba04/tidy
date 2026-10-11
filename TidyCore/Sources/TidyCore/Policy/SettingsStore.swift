@@ -74,6 +74,23 @@ public actor SettingsStore {
         }
     }
 
+    /// Revalidates an acknowledgement without adopting newer settings or
+    /// invalidating any preview/bootstrap evidence. A caller retaining an old
+    /// envelope must not authorize destructive optional-data retention from it.
+    public func acknowledgesPersistedEnvelope(_ expected: SettingsEnvelope) -> Bool {
+        guard expected.revision > 0, recoveryReason == nil,
+              loadedEnvelope == expected, let image = loadedImage else { return false }
+        do {
+            // Compare the complete image, including identities, backup, lock
+            // and store metadata. Equal decoded values alone are insufficient.
+            return try SettingsFiles.load(url) == image
+        } catch {
+            // Observation failure is not a settings operation: preserve actor
+            // state and let the caller retain optional data until refreshed.
+            return false
+        }
+    }
+
     public func update(expectedRevision: UInt64, change: SettingsChange) throws -> SettingsEnvelope {
         guard invalidateSchedulerBootstrapBeforeAccess() else {
             throw SettingsStoreError.unavailable
@@ -112,10 +129,13 @@ public actor SettingsStore {
             guard delta.baseRevision <= current.revision else {
                 throw SettingsStoreError.staleRevision
             }
-            var replacement = preferences ?? PolicyPreferences()
-            guard replacement.global.fields[delta.id] == delta.baseValue else {
+            guard preferences?.global.fields[delta.id] == delta.baseValue else {
                 throw SettingsStoreError.staleRevision
             }
+            // Compare against the stored raw value before materializing the
+            // first typed document. Preserve every existing legacy preference
+            // when an unrelated global field causes that first materialization.
+            var replacement = preferences ?? PolicyPreferences.project(legacy: current.config, saved: nil)
             let prior = replacement.global
             replacement.global.fields[delta.id] = delta.editedValue
             preferences = replacement

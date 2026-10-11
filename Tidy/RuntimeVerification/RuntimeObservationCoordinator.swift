@@ -245,7 +245,7 @@ enum RuntimeObservationCoordinator {
             throw RuntimeObservationError.invalidSettings("revision 1 is not settled")
         }
         let enabled = policy.allowedFeatures.contains("headroom")
-        let backgroundUnavailable = authorityUnavailable(policy, "monitor.backgroundEnabled")
+        let backgroundState = authorityState(policy, "monitor.backgroundEnabled")
         let suppressHidden = bool(policy, "monitor.suppressHiddenSampling")
         let hiddenInterval = integer(policy, "monitor.hiddenIntervalSeconds")
         let expected: (enabled: Bool, suppressHidden: Bool)
@@ -253,17 +253,19 @@ enum RuntimeObservationCoordinator {
         case .hiddenOff: expected = (false, true)
         case .hiddenNoAuthority: expected = (true, false)
         }
-        guard enabled == expected.enabled, backgroundUnavailable,
+        guard enabled == expected.enabled, backgroundState != "unexpected",
               suppressHidden == expected.suppressHidden, hiddenInterval == 60 else {
             throw RuntimeObservationError.invalidSettings("fixed hidden policy does not match")
         }
     }
 
-    private static func authorityUnavailable(_ policy: EffectivePolicy, _ rawID: String) -> Bool {
-        guard let field = policy.fields[SettingID(rawValue: rawID)] else { return false }
+    private static func authorityState(_ policy: EffectivePolicy, _ rawID: String) -> String {
+        guard let field = policy.fields[SettingID(rawValue: rawID)],
+              field.sources == [.localAuthority] else { return "unexpected" }
+        if field.value == .stored(.bool(false)), field.reason == .localConsent { return "denied" }
         return field.value == .unavailable(.authorityUnavailable)
             && field.reason == .authorityUnavailable
-            && field.sources == [.localAuthority]
+            ? "unavailable" : "unexpected"
     }
 
     private static func bool(_ policy: EffectivePolicy, _ rawID: String) -> Bool? {
@@ -303,12 +305,12 @@ enum RuntimeObservationCoordinator {
         let allDenied = CleanCatalog.allItems.allSatisfy {
             CapabilityRegistry.denialReason(for: $0.action, itemID: $0.id) != nil
         }
-        let backgroundUnavailable = services.configStore.acknowledgedEffectivePolicy.map {
-            authorityUnavailable($0, "monitor.backgroundEnabled")
-        } ?? false
+        let backgroundState = services.configStore.acknowledgedEffectivePolicy.map {
+            authorityState($0, "monitor.backgroundEnabled")
+        } ?? "unexpected"
         return RuntimeObservationDocument(schema: 1, scenario: scenario.rawValue,
             pid: Int(getpid()), settingsRevision: services.configStore.acknowledgedSettingsRevision,
-            backgroundAuthority: backgroundUnavailable ? "unavailable" : "unexpected",
+            backgroundAuthority: backgroundState,
             applicationHidden: NSApp.isHidden, timerRunning: timerRunning, sceneLeases: sceneLeases,
             explicitWorkLeases: explicitWorkLeases, scanSessions: scan.sessions,
             scanActiveWork: scan.activeWork, allMutationsDenied: allDenied,
@@ -319,7 +321,7 @@ enum RuntimeObservationCoordinator {
     private static func validateReady(_ value: RuntimeObservationDocument,
                                       scenario: RuntimeObservationScenario) throws {
         guard value.schema == 1, value.scenario == scenario.rawValue, value.pid == Int(getpid()),
-              value.settingsRevision == 1, value.backgroundAuthority == "unavailable",
+              value.settingsRevision == 1, ["unavailable", "denied"].contains(value.backgroundAuthority),
               value.applicationHidden, value.sceneLeases == 0,
               value.explicitWorkLeases == 0, value.scanSessions == 0,
               value.scanActiveWork == 0, value.allMutationsDenied else {
@@ -341,7 +343,7 @@ enum RuntimeObservationCoordinator {
             .addingReportingOverflow(scenario.durationNanoseconds)
         guard value.schema == ready.schema, value.scenario == ready.scenario,
               value.pid == ready.pid, value.settingsRevision == ready.settingsRevision,
-              value.backgroundAuthority == "unavailable",
+              ["unavailable", "denied"].contains(value.backgroundAuthority),
               value.backgroundAuthority == ready.backgroundAuthority,
               value.applicationHidden, value.applicationHidden == ready.applicationHidden,
               value.sceneLeases == ready.sceneLeases,

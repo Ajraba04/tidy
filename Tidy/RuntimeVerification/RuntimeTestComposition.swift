@@ -38,6 +38,25 @@ enum RuntimeTestComposition {
         return .acknowledged
     }
 
+    /// Display-only fixture: no native service or accepted effect token exists.
+    static func manualServiceCandidate(home: URL) throws -> ManualServiceOperationBinding {
+        let root = try LocalRootApproval.verify(directory: home)
+        let tool = try LocalExecutableApproval.verify(executable: URL(fileURLWithPath: "/bin/cat"))
+        func json<T: Encodable>(_ value: T) throws -> Any {
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
+        }
+        let value: [String: Any] = ["schemaVersion": 1, "adapter": "appleSimulatorShutdownV1",
+            "object": ["simulator": ["_0": ["udid": "11111111-2222-3333-4444-555555555555",
+                "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+                "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+                "name": "Owned synthetic review candidate", "state": "Booted", "isAvailable": true]]],
+            "producer": ["appleSimulator": ["_0": ["resolver": try json(tool), "simctl": try json(tool),
+                "developerDirectory": try json(root), "deviceSet": try json(root),
+                "xcodeVersion": "27.0", "xcodeBuild": "27A266a", "coreSimulatorVersion": "1171.7"]]]]
+        return try JSONDecoder().decode(ManualServiceOperationBinding.self,
+            from: JSONSerialization.data(withJSONObject: value))
+    }
+
     static func makePaths(scenario: RuntimeTestScenario = .acknowledged,
                           cleanupOnTermination: Bool = false) -> AppStoragePaths? {
         let fileManager = FileManager.default
@@ -425,6 +444,7 @@ final class RuntimeTestAppDelegate: NSObject, NSApplicationDelegate {
 struct RuntimeTestControlView: View {
     let services: AppExecutionServices
     let scenario: RuntimeTestScenario
+    var manualServices: ManualServiceReviewModel? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var queuedCancellationBlocker: RuntimeTestQueuedCancellationBlocker?
     @State private var queuedCancellationState = "not-required"
@@ -460,6 +480,15 @@ struct RuntimeTestControlView: View {
                 .accessibilityIdentifier("runtime.cancel.release")
             }
             cleanupButton
+            Button("Inspect Manual Review Fixture") {
+                guard let manualServices,
+                      let binding = try? RuntimeTestComposition.manualServiceCandidate(home: services.paths.home) else { return }
+                manualServices.inspect(binding)
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: WindowID.developer)
+            }
+            .disabled(manualServices == nil)
+            .accessibilityIdentifier("runtime.open.manual.fixture")
             HStack {
                 openButton("Open Scan", id: WindowID.scan,
                            identifier: "runtime.open.scan")

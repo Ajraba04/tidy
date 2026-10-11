@@ -58,6 +58,7 @@ public enum StaleNodeModulesScanner: Sendable {
         root: String,
         olderThanDays: Int,
         maxDepth: Int = 5,
+        protectedRoots: [String] = CleanEnvironment.defaultProtectedRoots(homeDirectory: NSHomeDirectory()),
         sessions: BridgeExplicitSessions,
         session: WorkSession,
         sessionID: UUID,
@@ -74,6 +75,7 @@ public enum StaleNodeModulesScanner: Sendable {
             sessionID: sessionID,
             generation: generation,
             options: TraversalOptions(
+                protectedRoots: protectedRoots,
                 recordSelection: .directory(named: "node_modules", modifiedBefore: threshold),
                 pruneMatchedDirectories: true
             )

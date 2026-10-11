@@ -366,6 +366,30 @@ struct CoreOrchestrationTests {
         await rig.cleanup()
     }
 
+    @Test("bounded catalog discovery never enters mandatory cloud roots")
+    @MainActor
+    func catalogDiscoveryProtectsCloudRootsEvenWithAnEmptyCallerList() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        let cloud = rig.root.appendingPathComponent("Library/CloudStorage")
+        let project = cloud.appendingPathComponent("fixture")
+        let build = project.appendingPathComponent("dist")
+        let modules = project.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: modules, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90 * 86_400)],
+            ofItemAtPath: modules.path)
+        let context = try await CoreOrchestrationContext.make(sessions: rig.sessions,
+            session: rig.session, sessionID: UUID())
+        let environment = CleanEnvironment(homeDirectory: rig.root.path,
+            gitRoots: [cloud.path], protectedRoots: [])
+        #expect(environment.protectedRoots.contains(cloud.path))
+        let outputs = await CleanCatalog.discoverBuildOutputs(environment: environment, orchestration: context)
+        let dependencies = await CleanCatalog.discoverStaleNodeModules(environment: environment, orchestration: context)
+        #expect(outputs.targets.isEmpty)
+        #expect(dependencies.targets.isEmpty)
+        await rig.cleanup()
+    }
+
     @Test("Flutter SDK cache discovery fails closed once its session invalidates mid-command")
     @MainActor
     func flutterSDKCacheDiscoveryFailsClosedOnInvalidSession() async throws {

@@ -29,6 +29,23 @@ struct ScanObservationTests {
         #expect(await sessions.snapshot().effectiveWorkers > 0)
     }
 
+    @Test("live power and thermal inputs apply only their matching pause rule")
+    @MainActor
+    func independentPowerAndThermalRules() async throws {
+        for pauseLowPower in [true, false] {
+            let rig = try await ObservationBridgeRig.make(pauseLowPower: pauseLowPower,
+                pauseThermal: !pauseLowPower)
+            defer { rig.remove() }
+            let sessions = rig.bridge.explicitSessions
+            #expect(await sessions.updateLiveObservation(epoch: 1, monotonicNanoseconds: 1,
+                observation: .signals(lowPower: true, seriousThermal: false)) == .applied)
+            #expect(await sessions.snapshot().effectiveWorkers == (pauseLowPower ? 0 : 1))
+            #expect(await sessions.updateLiveObservation(epoch: 2, monotonicNanoseconds: 2,
+                observation: .signals(lowPower: false, seriousThermal: true)) == .applied)
+            #expect(await sessions.snapshot().effectiveWorkers == (pauseLowPower ? 1 : 0))
+        }
+    }
+
     @Test("constrained live observation enforces the one-worker ceiling")
     @MainActor
     func constrainedCeiling() async throws {
@@ -46,7 +63,8 @@ private struct ObservationBridgeRig {
     let bridge: ExecutionPolicyBridge
 
     @MainActor
-    static func make(workers: Int = 4) async throws -> Self {
+    static func make(workers: Int = 4, pauseLowPower: Bool = false,
+                     pauseThermal: Bool = false) async throws -> Self {
         let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
             .appendingPathComponent("TidyR06Observation-\(UUID().uuidString)", isDirectory: true)
         let home = root.appendingPathComponent("home", isDirectory: true)
@@ -57,6 +75,8 @@ private struct ObservationBridgeRig {
         let values = PolicyValues(fields: [
             SettingID(rawValue: "scan.preset"): .choice("custom"),
             SettingID(rawValue: "scan.requestedWorkers"): .integer(Int64(workers)),
+            SettingID(rawValue: "scan.onLowPower"): .choice(pauseLowPower ? "pauseAll" : "pauseDiscretionary"),
+            SettingID(rawValue: "scan.onSeriousThermal"): .choice(pauseThermal ? "pauseAll" : "pauseDiscretionary"),
             SettingID(rawValue: "scan.resumeAfterCriticalSeconds"): .integer(120)
         ])
         _ = try await settings.update(expectedRevision: 0,

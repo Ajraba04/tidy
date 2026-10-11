@@ -15,7 +15,7 @@ struct CleanResultsView: View {
                     LabeledContent("Disk and memory", value: presentation.memoryText)
                 } else {
                     HStack {
-                        Text("Freed")
+                        Text("Removed allocation")
                         Spacer()
                         Text(ByteFormat.human(report.totalFreedBytes)).bold()
                     }
@@ -55,9 +55,9 @@ struct CleanResultsView: View {
 
                     if report.freedFigureNeedsReconciling {
                         Text("""
-                             Freed and measured disagree. That usually means a running app is still \
-                             holding deleted files open, or an APFS snapshot still references them. \
-                             The space typically appears after quitting those apps or restarting.
+                             Removed allocation and observed free space differ. Open files, APFS sharing, \
+                             snapshots, and concurrent disk activity can affect these numbers. \
+                             Neither figure proves physical space reclaimed by this cleanup.
                              """)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -73,9 +73,14 @@ struct CleanResultsView: View {
                 ForEach(report.results) { result in
                     HStack {
                         Image(systemName: result.succeeded ? "checkmark.circle" : "xmark.circle")
-                            .foregroundStyle(result.succeeded ? .green : .red)
+                            .foregroundStyle(result.succeeded ? .green : .orange)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(result.title)
+                            if let status = result.effectStatus {
+                                Text(status.rawValue.capitalized)
+                                    .font(.caption)
+                                    .accessibilityIdentifier("result.status.\(result.id)")
+                            }
                             if let message = result.message {
                                 Text(message)
                                     .font(.caption)

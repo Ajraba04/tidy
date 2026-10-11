@@ -48,6 +48,37 @@ struct RunLogTests {
 
 @Suite("Optional completed-run history")
 struct OptionalRunHistoryTests {
+    @Test("reviewed optional history clearing preserves future retention and rejects stale previews")
+    func reviewedHistoryClearing() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/OptionalHistory-Clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try OptionalRunHistoryStore(directory: root)
+        let policy = OptionalRunHistoryPolicy(enabled: true, retentionDays: 30, maxMiB: 1)
+        let witness = root.appendingPathComponent("mandatory-witness")
+        try Data("preserve".utf8).write(to: witness)
+        _ = try await store.record(report(finishedAt: Date()), policy: policy, acknowledgedRevision: 1)
+        let first = try await store.previewClearing()
+        #expect(first.byteCount > 0)
+        #expect(first.storagePaths.map(PathGuard.canonicalize)
+            == [PathGuard.canonicalize(root.appendingPathComponent("runs.jsonl").path)])
+        _ = try await store.record(report(finishedAt: Date()), policy: policy, acknowledgedRevision: 1)
+        await #expect(throws: OptionalRunHistoryStore.Error.stalePreview) {
+            try await store.clear(first)
+        }
+        let current = try await store.previewClearing()
+        try await store.clear(current)
+        #expect(try await store.read(policy: policy).isEmpty)
+        #expect(try Data(contentsOf: witness) == Data("preserve".utf8))
+        await #expect(throws: OptionalRunHistoryStore.Error.stalePreview) { try await store.clear(current) }
+        _ = try await store.record(report(finishedAt: Date()), policy: policy, acknowledgedRevision: 1)
+        #expect(try await store.read(policy: policy).count == 1)
+        try await store.clear(store.previewClearing())
+        let empty = try await store.previewClearing()
+        #expect(empty.byteCount == 0)
+        try await store.clear(empty)
+    }
     private func report(finishedAt: Date, titleBytes: Int = 1) -> RunReport {
         RunReport(tier: .safe,
             results: [ItemResult(id: UUID().uuidString,

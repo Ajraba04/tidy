@@ -92,7 +92,7 @@ final class ProductionObservationRuntimeUITests: XCTestCase {
         XCTAssertEqual(string(document, "scenario"), scenario)
         XCTAssertGreaterThan(integer(document, "pid"), 0)
         XCTAssertEqual(integer(document, "settingsRevision"), 1)
-        XCTAssertEqual(string(document, "backgroundAuthority"), "unavailable")
+        XCTAssertTrue(["unavailable", "denied"].contains(string(document, "backgroundAuthority")))
         XCTAssertEqual(boolean(document, "applicationHidden"), true)
         XCTAssertEqual(integer(document, "sceneLeases"), 0)
         XCTAssertEqual(integer(document, "explicitWorkLeases"), 0)
