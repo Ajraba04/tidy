@@ -9,7 +9,11 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         let app = launchReadyApp()
         let witness = URL(fileURLWithPath: try XCTUnwrap(app.staticTexts["runtime.synthetic.witness"].value as? String))
         let witnessBefore = try Data(contentsOf: witness)
-        app.buttons["runtime.open.manual.fixture"].click()
+        let controls = try XCTUnwrap(Self.foregroundVerificationControls(in: app))
+        let openFixture = controls.buttons["runtime.open.manual.fixture"]
+        XCTAssertTrue(Self.waitForHittability(openFixture), controls.debugDescription)
+        XCTAssertTrue(openFixture.isHittable)
+        openFixture.click()
         let developer = app.windows["Developer Workspace"]
         XCTAssertTrue(developer.waitForExistence(timeout: 10))
         let tab = developer.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Manual Operations")).firstMatch
@@ -36,7 +40,10 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
         XCTAssertFalse(developer.buttons["Execute"].exists)
         reveal(dismiss); dismiss.click()
         XCTAssertFalse(selected.exists)
-        app.buttons["runtime.open.manual.fixture"].click()
+        _ = try XCTUnwrap(Self.foregroundVerificationControls(in: app))
+        XCTAssertTrue(Self.waitForHittability(openFixture), controls.debugDescription)
+        XCTAssertTrue(openFixture.isHittable)
+        openFixture.click()
         reveal(selected)
         XCTAssertEqual((selected.value as? NSNumber)?.intValue ?? Int(selected.value as? String ?? ""), 0)
         XCTAssertEqual((acknowledged.value as? NSNumber)?.intValue ?? Int(acknowledged.value as? String ?? ""), 0)
@@ -180,10 +187,14 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
 
         let row = app.descendants(matching: .any)["settings.row.feature.headroom"]
         let editor = app.checkBoxes["settings.control.feature.headroom"]
-        let metadata = app.staticTexts["settings.metadata.feature.headroom"]
+        let metadata = app.descendants(matching: .any)
+            .matching(identifier: "settings.metadata.feature.headroom").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), row.debugDescription)
         XCTAssertTrue(editor.exists)
         XCTAssertTrue(metadata.exists)
+        XCTAssertNotEqual(metadata.elementType, .staticText)
+        XCTAssertNotEqual(metadata.identifier, editor.identifier)
+        XCTAssertEqual(metadata.staticTexts.count, 7)
 
         let search = app.textFields["settings.search"]
         XCTAssertTrue(search.exists)
@@ -401,6 +412,40 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     }
 
     @MainActor
+    private static func waitForHittability(_ element: XCUIElement,
+                                          timeout: TimeInterval = 5) -> Bool {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            element.exists && element.isHittable
+        }, object: element)
+        return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private static func foregroundVerificationControls(in app: XCUIApplication) -> XCUIElement? {
+        app.activate()
+        let windowMenu = app.menuBars.menuBarItems["Window"]
+        guard waitForHittability(windowMenu) else {
+            XCTFail("The supported Window menu was not hittable: \(app.debugDescription)")
+            return nil
+        }
+        windowMenu.click()
+        let title = "Tidy Production Runtime Verification"
+        let controlsItem = app.menuItems[title]
+        guard waitForHittability(controlsItem) else {
+            XCTFail("The verification window's Window menu item was not hittable: \(app.debugDescription)")
+            return nil
+        }
+        controlsItem.click()
+        let controls = app.windows[title]
+        guard controls.waitForExistence(timeout: 5), waitForHittability(controls) else {
+            XCTFail("The verification control window was not visible after menu selection: \(app.debugDescription)")
+            return nil
+        }
+        XCTAssertTrue(controls.isHittable)
+        return controls
+    }
+
+    @MainActor
     private static func terminateAndCleanup(_ app: XCUIApplication) {
         let homeElement = app.staticTexts["runtime.synthetic.home"]
         let homePath = homeElement.exists ? homeElement.value as? String : nil
@@ -422,13 +467,23 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
             XCTFail("Refused unsafe fixture cleanup target: \(rootPath)")
             return
         }
-        let cleanup = app.buttons["runtime.fixture.cleanupAndQuit"]
-        guard cleanup.exists else {
+        if let controls = foregroundVerificationControls(in: app) {
+            let cleanup = controls.buttons["runtime.fixture.cleanupAndQuit"]
+            guard cleanup.exists else {
+                app.terminate()
+                XCTFail("Dedicated runtime host did not expose fixture cleanup")
+                return
+            }
+            if waitForHittability(cleanup) {
+                XCTAssertTrue(cleanup.isHittable)
+                cleanup.click()
+            } else {
+                XCTFail("Dedicated runtime fixture cleanup was not hittable: \(controls.debugDescription)")
+                app.terminate()
+            }
+        } else {
             app.terminate()
-            XCTFail("Dedicated runtime host did not expose fixture cleanup")
-            return
         }
-        cleanup.click()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
         let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             !FileManager.default.fileExists(atPath: rootPath)
