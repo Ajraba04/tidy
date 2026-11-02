@@ -22,6 +22,147 @@ private struct FixedProbe: SystemProbing {
     func isLowPowerModeEnabled() -> Bool? { false }
 }
 
+final class BuildPrepVolumeSelectionTests: XCTestCase {
+    private let homeID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+    private let externalID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+
+    func testUnselectedTargetDefaultsToHomeIdentityRatherThanFirstAvailableVolume() {
+        let selection = BuildPrepVolumeSelection()
+        XCTAssertEqual(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [externalID, homeID]), homeID)
+    }
+
+    func testExplicitTargetKeepsItsIdentityWhenAvailableVolumeOrderChanges() {
+        var selection = BuildPrepVolumeSelection()
+        selection.select(externalID)
+        XCTAssertEqual(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [homeID, externalID]), externalID)
+        XCTAssertEqual(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [externalID, homeID]), externalID)
+    }
+
+    func testMissingSelectedTargetDoesNotFallBackToHomeOrAnotherVolume() {
+        var selection = BuildPrepVolumeSelection()
+        selection.select(externalID)
+        XCTAssertNil(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [homeID]))
+        XCTAssertEqual(selection.selectedID, externalID)
+        XCTAssertEqual(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [externalID, homeID]), externalID)
+    }
+
+    func testMissingHomeIdentityCannotUseAnUnrelatedMeasurementAsDefault() {
+        let selection = BuildPrepVolumeSelection()
+        XCTAssertNil(selection.resolvedID(homeVolumeID: nil,
+            availableVolumeIDs: [externalID]))
+        XCTAssertNil(selection.resolvedID(homeVolumeID: homeID,
+            availableVolumeIDs: [externalID]))
+    }
+}
+
+@MainActor
+final class BuildPrepCapacityTests: XCTestCase {
+    private struct Fixture: Sendable {
+        let directory: URL
+        let target: BuildPrepVolumeTarget
+        let authority: LocalAuthorityStore
+        let snapshot: LocalAuthoritySnapshot
+        let disk: DiskStats
+    }
+
+    private func fixture() async throws -> Fixture {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BuildPrepCapacity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let ledger = directory.appendingPathComponent("authority")
+        let approved = directory.appendingPathComponent("approved")
+        for url in [ledger, approved] {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+        }
+        let root = try LocalRootApproval.verify(directory: approved)
+        let authority = try LocalAuthorityStore(directory: ledger,
+            installation: LocalInstallationIdentity.verify(directory: ledger))
+        let owner = LocalAuthorityOwner()
+        let scope = LocalAuthorityScope.localRoot(root)
+        let token = try await authority.beginReview(scope: scope, owner: owner,
+            nowMonotonicNanoseconds: 1)
+        let snapshot = try await authority.confirm(token, owner: owner,
+            nowMonotonicNanoseconds: 2)
+        return Fixture(directory: directory, target: BuildPrepVolumeTarget(root: root, scope: scope),
+            authority: authority, snapshot: snapshot,
+            disk: DiskStats(totalBytes: 1_000, availableBytes: 100,
+                availableForImportantUsageBytes: 200, volumeIdentifier: root.volumeID.uuidString))
+    }
+
+    func testApprovedTargetMeasuresOnlyItsExactPathAndPreservesStrictCapacity() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let target = fixture.target, disk = fixture.disk
+        let measured = try await target.measure(authority: fixture.snapshot) { url in
+            XCTAssertEqual(url.path, target.root.canonicalPath)
+            return disk
+        }
+        XCTAssertEqual(measured.volumeIdentifier, target.id.uuidString)
+        XCTAssertEqual(measured.availableBytes, 100)
+        XCTAssertEqual(measured.availableForImportantUsageBytes, 200)
+    }
+
+    func testUnapprovedTargetNeverInvokesCapacityProbe() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        do {
+            _ = try await fixture.target.measure(authority: nil) { _ in
+                XCTFail("Capacity probe ran without the matching local authority")
+                return fixture.disk
+            }
+            XCTFail("Unapproved volume was accepted")
+        } catch BuildPrepVolumeTarget.Error.authorityChanged {}
+    }
+
+    func testRevocationDuringCapacityProbeRejectsLateResult() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let authority = fixture.authority, target = fixture.target, disk = fixture.disk
+        do {
+            _ = try await target.measure(authority: fixture.snapshot) { _ in
+                _ = try await authority.revoke(.localRoot(target.root))
+                return disk
+            }
+            XCTFail("Revoked volume measurement was accepted")
+        } catch BuildPrepVolumeTarget.Error.authorityChanged {}
+    }
+
+    func testProbeCannotSubstituteAnotherVolumeIdentity() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        do {
+            _ = try await fixture.target.measure(authority: fixture.snapshot) { _ in
+                DiskStats(totalBytes: 1_000, availableBytes: 900,
+                    availableForImportantUsageBytes: 900, volumeIdentifier: UUID().uuidString)
+            }
+            XCTFail("Another volume's capacity was accepted")
+        } catch BuildPrepVolumeTarget.Error.measurementUnavailable {}
+    }
+
+    func testReplacedApprovedRootDuringProbeRejectsLateResult() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let target = fixture.target, disk = fixture.disk
+        let displaced = fixture.directory.appendingPathComponent("displaced")
+        do {
+            _ = try await target.measure(authority: fixture.snapshot) { url in
+                try FileManager.default.moveItem(at: url, to: displaced)
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false,
+                    attributes: [.posixPermissions: 0o700])
+                return disk
+            }
+            XCTFail("Replaced root measurement was accepted")
+        } catch BuildPrepVolumeTarget.Error.identityChanged {}
+    }
+}
+
 private struct NoOpPressureObserving: MemoryPressureObserving {
     func start(onChange: @escaping @Sendable (MemoryPressureLevel) -> Void) -> MemoryPressureSubscription {
         NoOpSubscription()

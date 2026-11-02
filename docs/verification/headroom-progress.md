@@ -2,6 +2,23 @@
 
 Full scope: the approved [T01–T24 program](../superpowers/plans/2026-08-26-developer-headroom-execution-plan.md) and its binding design/registry. This ledger distinguishes implementation from tests, UI evidence and physical-device acceptance. Missing evidence means incomplete, not passed.
 
+## Reconciled audit checkpoint 10 October 2026
+
+The Linux audit checkpoint `418ec00` was compared with main at `9da3196` and
+selectively reconciled on `codex/audit-reconciled-20261010`. Main's newer scoped
+scans, reviewed-resource persistence/recovery, Developer Workspace, assistance,
+optional history, and verification tooling are retained. The additional source
+fixes and disposition of all audit finding groups are in the
+[local handover](local-handover-2026-10-10.md).
+
+This reconciliation has source inspection and whitespace checks only. Its new
+regression cases are unrun. No compilation, tests, app launch, generators,
+packaging, or release ran in Linux. Previous passing results apply to their
+recorded revisions, not this patch. Production mutations remain quarantined;
+full-program and release acceptance remain incomplete. Later source checkpoints
+on main, including the September 20 and 22 records linked in the handover, take
+precedence over historical pending-feature claims below.
+
 ## Workspace and baseline
 
 - Base application revision: `db4707f` (v1.5.0).

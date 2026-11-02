@@ -65,7 +65,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.tint)
             Text("Welcome to Tidy")
                 .font(.title.bold())
-            Text("Tidy reclaims disk space and memory: caches, browser data, Xcode and simulator files, and more. Nothing is ever deleted without a plan you review and confirm first, and Tidy makes zero network calls, ever.")
+            Text("Tidy shows local disk inventory and system signals, and helps review developer resources. Cleanup remains unavailable until each adapter's safety contract is verified. Detecting a tool does not grant permission to delete its files.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 24)
@@ -77,7 +77,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Detected on this Mac")
                 .font(.headline)
-            Text("Tidy only shows cleanup items for tools it finds installed.")
+            Text("Detected tools provide inventory context. Cleanup actions remain unavailable.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             ScrollView {

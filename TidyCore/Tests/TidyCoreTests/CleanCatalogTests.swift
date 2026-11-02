@@ -34,15 +34,22 @@ struct CleanCatalogTests {
 
     @Test("every located filesystem target falls under that item's declared root")
     func everyLocatedFilesystemTargetFallsUnderDeclaredRoot() throws {
-        // Run against the real home directory so fixed-path items that
-        // actually exist here are exercised, not just the empty case.
-        // Approve nothing for simulator deletion (the default) so that
-        // code path stays inert here too.
+        let scratch = URL(fileURLWithPath: "/private/tmp/Catalog-Roots-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: scratch) }
         let environment = CleanEnvironment(
-            homeDirectory: NSHomeDirectory(),
+            homeDirectory: scratch.path,
             detectedTools: Set(ToolchainID.allCases),
             protectedRoots: []
         )
+
+        // Populate declared roots in our owned fixture rather than inspecting
+        // the developer's SDKs, browsers, repositories or simulator instances.
+        for item in CleanCatalog.allItems {
+            if let root = item.declaredRoot(environment), root.hasPrefix(scratch.path + "/") {
+                try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+            }
+        }
 
         for item in CleanCatalog.allItems {
             guard let declaredRoot = item.declaredRoot(environment) else { continue }
@@ -55,6 +62,25 @@ struct CleanCatalogTests {
                 )
             }
         }
+    }
+
+    @Test("Android system-image discovery rejects a child symlink outside its declared root")
+    func androidSystemImageSymlinkEscapeIsExcluded() throws {
+        let scratch = URL(fileURLWithPath: "/private/tmp/Catalog-Android-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let home = scratch.appendingPathComponent("home")
+        let images = home.appendingPathComponent("Library/Android/sdk/system-images")
+        let outside = scratch.appendingPathComponent("outside-image")
+        for directory in [images.appendingPathComponent("owned-image"), outside] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try FileManager.default.createSymbolicLink(at: images.appendingPathComponent("escaped-image"),
+            withDestinationURL: outside)
+        let item = try #require(CleanCatalog.allItems.first { $0.id == "deep.android.system-images" })
+        let targets = item.locate(CleanEnvironment(homeDirectory: home.path,
+            detectedTools: [.android], protectedRoots: []))
+        #expect(targets.map(\.path) == [images.appendingPathComponent("owned-image").path])
+        #expect(FileManager.default.fileExists(atPath: outside.path))
     }
 
     @Test("safe tier contains no custom actions")

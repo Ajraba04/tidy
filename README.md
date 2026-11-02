@@ -6,6 +6,11 @@ Tidy is a native macOS menu bar developer headroom utility for inspecting disk a
 
 The [acceptance record](docs/verification/headroom-acceptance.md) separates implemented changes, test evidence, missing production contracts and runtime/hardware gates. There is no newly approved release from this remediation.
 
+The [10 October local handover](docs/verification/local-handover-2026-10-10.md)
+records the audit checkpoint reconciled onto current main and its pending native verification.
+The [10 October macOS continuation](docs/verification/completion-20261010.md)
+records the subsequent implementation, current test/build evidence and remaining gates.
+
 ## Scope and modes
 
 | Surface | Intended scope | Current boundary |
@@ -21,6 +26,17 @@ The [acceptance record](docs/verification/headroom-acceptance.md) separates impl
 Neither a cache label nor its age proves it safe to delete. Future accepted mutations must bind reviewed resource identities and descendants, protections, complete owner evidence, supported quiescence, fresh policy and durable recovery. Unknown or shared ownership withholds effects. Models, databases, Docker volumes, repository deletion and generic duplicate deletion remain outside permitted destructive scope.
 
 A missing settings file supplies validated in-memory defaults for an explicit scan. Corrupt or unsupported settings keep scans unavailable. If stored files differ when first-launch admission revalidates them, the scan is blocked and the files are preserved. Opening Tidy does not start a scan, create a saved settings file or grant background-work consent. Cleanup actions remain quarantined independently of scan availability.
+
+In Developer Workspace, Build Prep can target the home volume or an explicitly
+approved local root/volume. Refresh Capacity measures that exact identity; a
+missing, replaced or revoked target stays unavailable rather than silently using
+another volume. Notification reviews preserve their original budget and volume.
+
+Settings → Experience provides optional completed-report and scan-index clearing.
+Review the exact stores and current file sizes, then confirm. Active scans or
+cleanup, changed data and stale reviews block clearing. Future history retains
+your existing policy; settings, local consent and mandatory recovery are preserved.
+File sizes do not promise physical disk reclamation.
 
 ## Memory and swap
 

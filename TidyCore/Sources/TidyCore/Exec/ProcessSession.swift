@@ -2,6 +2,31 @@ import Darwin
 import Dispatch
 import Foundation
 
+/// Launcher-owned observation only. No caller, error conversion or child
+/// absence query can construct proof that posix_spawn rejected an attempt.
+struct ManualSimulatorNeverSpawnedReceipt: Sendable {
+    let binding: ManualServiceEffectBinding
+    let runID: UUID
+    let operationID: UUID
+    let invocationDigest: Data
+    let invocationOrigin: ManualSimulatorSubmissionHook.Origin
+    let attemptedExecutablePath: String
+    let submissionHookAttempts: Int
+    let posixErrorCode: Int32
+
+    fileprivate init(commit: ManualSimulatorSubmissionCommit, posixErrorCode: Int32) {
+        binding = commit.permit.binding; runID = commit.permit.runID; operationID = commit.permit.operationID
+        invocationDigest = commit.invocationDigest; invocationOrigin = commit.origin
+        attemptedExecutablePath = commit.attemptedExecutablePath
+        submissionHookAttempts = commit.attempts; self.posixErrorCode = posixErrorCode
+    }
+}
+
+struct ManualSimulatorRejectedSpawn: Error, Sendable {
+    let receipt: ManualSimulatorNeverSpawnedReceipt
+    fileprivate init(_ receipt: ManualSimulatorNeverSpawnedReceipt) { self.receipt = receipt }
+}
+
 /// Explicit SPI used only by the T04 process-mechanism tests. Production
 /// callers receive no raw request type and cannot choose a job kind.
 @_spi(TidyCoreTesting) public enum ProcessTestJobKind: Sendable {
@@ -49,6 +74,53 @@ struct ProcessSessionObservation: Sendable {
     let ownedExit: OwnedProcessExit
     let signalAttempts: Int
     let consumingReapCount: Int
+}
+
+/// Issued only by the owning session after its own consuming reap and captured
+/// identity. This is a physical-child receipt, not an adapter terminal proof.
+struct ReapedMutationReceipt: Sendable {
+    private let gate: ProcessJobGate
+    private let reservation: UUID
+    let sessionID: UUID
+    let identity: ProcessInstanceIdentity
+    let rawStatus: Int32
+    private let transferred: @Sendable (ProcessMutationTransferAcknowledgement) -> Void
+    var isIsolatedFixture: Bool { gate.isTestIsolation }
+
+    fileprivate init(gate: ProcessJobGate, reservation: UUID, sessionID: UUID,
+                     identity: ProcessInstanceIdentity, rawStatus: Int32,
+                     transferred: @escaping @Sendable (ProcessMutationTransferAcknowledgement) -> Void) {
+        self.gate = gate; self.reservation = reservation; self.sessionID = sessionID
+        self.identity = identity; self.rawStatus = rawStatus; self.transferred = transferred
+    }
+    func reservationForTransfer(in gate: ProcessJobGate) throws -> UUID {
+        guard self.gate === gate else { throw ProcessTerminalVerificationError.wrongGate }
+        return reservation
+    }
+    func acknowledgePhysicalTransfer(_ acknowledgement: ProcessMutationTransferAcknowledgement) throws {
+        guard acknowledgement.matches(gate: gate, reservation: reservation, sessionID: sessionID) else {
+            throw ProcessTerminalVerificationError.invalidReceipt
+        }
+        transferred(acknowledgement)
+    }
+    func attemptGenericReleaseForTesting() async throws {
+        guard gate.isTestIsolation else { throw POSIXError(.EPERM) }
+        await gate.release(reservation)
+    }
+}
+
+/// Only the private launch path can mint this on its pre-child throwing path.
+/// A normal returned child, reaped or otherwise, cannot manufacture rollback.
+struct ProcessPreSpawnRollbackReceipt: Sendable {
+    private let gate: ProcessJobGate
+    private let reservation: UUID
+    fileprivate init(gate: ProcessJobGate, reservation: UUID) {
+        self.gate = gate; self.reservation = reservation
+    }
+    func reservationForRollback(in gate: ProcessJobGate) throws -> UUID {
+        guard self.gate === gate else { throw ProcessTerminalVerificationError.wrongGate }
+        return reservation
+    }
 }
 
 /// A detected foreign/auto reaper makes subsequent dispatch unsupported.
@@ -172,23 +244,36 @@ private final class DirectChildOwnership: @unchecked Sendable {
         let kind: ProcessRunner.AuthorizedJobKind
         let deadline: Duration
         let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
+        let terminalVerificationLease: ProcessTerminalVerificationLease?
+        let absoluteReadDeadline: ContinuousClock.Instant?
+        let manualSubmissionHook: ManualSimulatorSubmissionHook?
 
-        init(_ authorization: ProcessRunner.AuthorizedLaunch) {
+        init(_ authorization: ProcessRunner.AuthorizedLaunch,
+             terminalVerificationLease: ProcessTerminalVerificationLease? = nil,
+             absoluteReadDeadline: ContinuousClock.Instant? = nil) {
             executable = authorization.executableURL
             arguments = authorization.arguments
             environment = authorization.environment
             kind = authorization.kind
             deadline = authorization.deadline
             validateImmediatelyBeforeSpawn = authorization.validateImmediatelyBeforeSpawn
+            self.terminalVerificationLease = terminalVerificationLease
+            self.absoluteReadDeadline = absoluteReadDeadline
+            manualSubmissionHook = authorization.manualSubmissionHook
         }
 
-        init(test request: ProcessTestRequest) {
+        init(test request: ProcessTestRequest,
+             terminalVerificationLease: ProcessTerminalVerificationLease? = nil,
+             absoluteReadDeadline: ContinuousClock.Instant? = nil) {
             executable = request.executable
             arguments = request.arguments
             environment = request.environment
             kind = request.kind == .readOnly ? .readOnly : .mutation
             deadline = request.deadline
             validateImmediatelyBeforeSpawn = {}
+            self.terminalVerificationLease = terminalVerificationLease
+            self.absoluteReadDeadline = absoluteReadDeadline
+            manualSubmissionHook = nil
         }
     }
 
@@ -213,6 +298,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
     private let kind: ProcessRunner.AuthorizedJobKind
     private let gate: ProcessJobGate
     private let reservation: UUID
+    private let sessionID = UUID()
     private let queue = DispatchQueue(label: "Tidy.process.observation", qos: .utility)
     private let stdout: Stream
     private let stderr: Stream
@@ -227,6 +313,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
     private var drainWork: DispatchWorkItem?
     private var reservationReleased = false
     private var releaseCompleted = false
+    private var mutationPhysicalSlotTransferred = false
 
     var identity: ProcessInstanceIdentity? { owner.identity }
 
@@ -247,6 +334,70 @@ private final class DirectChildOwnership: @unchecked Sendable {
                                 identityCapture: .system)
     }
 
+    /// One absolute deadline covers ordinary admission, validation and the
+    /// admitted child. A genuine terminal lease changes only its read admission
+    /// lane; it cannot extend either the read deadline or the physical budget.
+    static func launchDeadlineBoundRead(_ authorization: ProcessRunner.AuthorizedLaunch,
+                                       deadline: ContinuousClock.Instant,
+                                       terminalLease: ProcessTerminalVerificationLease? = nil) async throws -> ProcessSession {
+        guard authorization.kind == .readOnly else { throw ProcessReadAdmissionError.notReadOnly }
+        let effectiveDeadline = try boundedReadDeadline(deadline, duration: authorization.deadline, lease: terminalLease)
+        let gate = ProcessJobGate.shared
+        let reservation: UUID
+        if let terminalLease {
+            reservation = try await gate.acquireTerminalVerification(terminalLease, deadline: effectiveDeadline)
+        } else { reservation = try await gate.acquireDeadlineBoundRead(authorization, deadline: effectiveDeadline) }
+        return try await launch(Request(authorization, terminalVerificationLease: terminalLease,
+            absoluteReadDeadline: effectiveDeadline), gate: gate, reservation: reservation, identityCapture: .system)
+    }
+
+    static func launchDeadlineBoundReadForTesting(_ request: ProcessTestRequest,
+                                                 gate: ProcessJobGate,
+                                                 deadline: ContinuousClock.Instant,
+                                                 terminalLease: ProcessTerminalVerificationLease? = nil) async throws -> ProcessSession {
+        guard gate.isTestIsolation else { throw POSIXError(.EPERM) }
+        guard request.kind == .readOnly else { throw ProcessReadAdmissionError.notReadOnly }
+        let effectiveDeadline = try boundedReadDeadline(deadline, duration: request.deadline, lease: terminalLease)
+        let reservation: UUID
+        if let terminalLease {
+            reservation = try await gate.acquireTerminalVerification(terminalLease, deadline: effectiveDeadline)
+        } else { reservation = try await gate.acquireDeadlineBoundReadForTesting(deadline: effectiveDeadline) }
+        return try await launch(Request(test: request, terminalVerificationLease: terminalLease,
+            absoluteReadDeadline: effectiveDeadline), gate: gate, reservation: reservation, identityCapture: .system)
+    }
+
+    private static func boundedReadDeadline(_ deadline: ContinuousClock.Instant,
+                                           duration: Duration,
+                                           lease: ProcessTerminalVerificationLease?) throws -> ContinuousClock.Instant {
+        let now = ContinuousClock.now
+        guard duration > .zero else { throw ProcessReadAdmissionError.expired }
+        var effective = min(deadline, now.advanced(by: duration))
+        if let lease { try lease.checkValidity(); effective = min(effective, lease.expiresAt) }
+        guard now < effective else { throw ProcessReadAdmissionError.expired }
+        return effective
+    }
+
+    /// Only a sealed read-only declaration can enter the production lane. Its
+    /// producer scope remains the compiled caller's responsibility.
+    static func launchTerminalVerification(_ authorization: ProcessRunner.AuthorizedLaunch,
+                                          lease: ProcessTerminalVerificationLease) async throws -> ProcessSession {
+        guard authorization.kind == .readOnly else { throw ProcessTerminalVerificationError.notReadOnly }
+        let gate = ProcessJobGate.shared
+        let reservation = try await gate.acquireTerminalVerification(lease)
+        return try await launch(Request(authorization, terminalVerificationLease: lease),
+            gate: gate, reservation: reservation, identityCapture: .system)
+    }
+
+    static func launchTerminalVerificationForTesting(_ request: ProcessTestRequest,
+                                                     gate: ProcessJobGate,
+                                                     lease: ProcessTerminalVerificationLease) async throws -> ProcessSession {
+        guard gate.isTestIsolation else { throw POSIXError(.EPERM) }
+        guard request.kind == .readOnly else { throw ProcessTerminalVerificationError.notReadOnly }
+        let reservation = try await gate.acquireTerminalVerification(lease)
+        return try await launch(Request(test: request, terminalVerificationLease: lease),
+            gate: gate, reservation: reservation, identityCapture: .system)
+    }
+
     /// Test-only SPI for T04 mechanism fixtures. It cannot target the shared
     /// production gate and is hidden from normal module importers.
     @_spi(TidyCoreTesting)
@@ -258,10 +409,22 @@ private final class DirectChildOwnership: @unchecked Sendable {
                                 identityCapture: identityCapture)
     }
 
+    /// Only Runner's privately constructed fixed fixture declaration can use
+    /// this path. Public ProcessTestRequest has no submission callback.
+    static func launchManualSimulatorFixture(_ authorization: ProcessRunner.AuthorizedLaunch,
+                                             gate: ProcessJobGate) async throws -> ProcessSession {
+        guard gate.isTestIsolation, authorization.kind == .mutation,
+              authorization.manualSubmissionHook?.isFixture == true else { throw POSIXError(.EPERM) }
+        let reservation = try await gate.acquire(authorization)
+        return try await launch(Request(authorization), gate: gate, reservation: reservation,
+            identityCapture: .system)
+    }
+
     private static func launch(_ request: Request, gate: ProcessJobGate, reservation: UUID,
                                identityCapture: ProcessIdentityCapture) async throws -> ProcessSession {
         do {
             try Task.checkCancellation()
+            if request.kind == .mutation { try await gate.registerOwnedMutationReservation(reservation) }
             try request.validateImmediatelyBeforeSpawn()
             let session = try spawn(request, gate: gate, reservation: reservation,
                                     identityCapture: identityCapture)
@@ -270,7 +433,9 @@ private final class DirectChildOwnership: @unchecked Sendable {
             if Task.isCancelled { session.abandonWithoutSignal() }
             return session
         } catch {
-            await gate.release(reservation)
+            if request.kind == .mutation {
+                try? await gate.rollbackBeforeSpawn(ProcessPreSpawnRollbackReceipt(gate: gate, reservation: reservation))
+            } else { await gate.release(reservation) }
             throw error
         }
     }
@@ -337,9 +502,44 @@ private final class DirectChildOwnership: @unchecked Sendable {
         guard argv.allSatisfy({ $0 != nil }), envp.allSatisfy({ $0 != nil }) else { throw POSIXError(.ENOMEM) }
         argv.append(nil); envp.append(nil)
         try Task.checkCancellation()
+        var effectiveDeadline = request.deadline
+        if request.absoluteReadDeadline != nil || request.terminalVerificationLease != nil || request.manualSubmissionHook != nil {
+            try request.validateImmediatelyBeforeSpawn()
+            if let absoluteDeadline = request.absoluteReadDeadline {
+                let remaining = ContinuousClock.now.duration(to: absoluteDeadline)
+                guard remaining > .zero else { throw ProcessReadAdmissionError.expired }
+                effectiveDeadline = min(effectiveDeadline, remaining)
+            }
+            if let lease = request.terminalVerificationLease {
+                try lease.checkValidity()
+                effectiveDeadline = min(effectiveDeadline, try lease.remainingLifetime())
+            }
+            if let hook = request.manualSubmissionHook {
+                guard request.kind == .mutation,
+                      hook.matches(executable: request.executable, arguments: request.arguments,
+                        environment: request.environment) else { throw POSIXError(.EINVAL) }
+                let remaining = ContinuousClock.now.duration(to: hook.deadline)
+                guard remaining > .zero else { throw ManualSimulatorClientError.expired }
+                effectiveDeadline = min(effectiveDeadline, remaining)
+            }
+        }
         var pid: pid_t = 0
+        // The repeatable validators above never submit. This sole one-shot
+        // boundary completes its durable transition immediately before spawn.
+        // If it throws there is no returned permit and no no-spawn receipt.
+        let manualCommit: ManualSimulatorSubmissionCommit?
+        if let hook = request.manualSubmissionHook {
+            // Cancellation may arrive while the final repeatable validator is
+            // blocked. Recheck at the irreversible one-shot commit boundary.
+            try Task.checkCancellation()
+            manualCommit = try hook.commit()
+        } else { manualCommit = nil }
         let spawned = request.executable.withUnsafeFileSystemRepresentation { path in
             posix_spawn(&pid, path!, &actions, &attributes, &argv, &envp)
+        }
+        if spawned != 0, let manualCommit {
+            throw ManualSimulatorRejectedSpawn(ManualSimulatorNeverSpawnedReceipt(
+                commit: manualCommit, posixErrorCode: spawned))
         }
         try checked(spawned)
         // From here on all paths return retained ownership, never throw.
@@ -348,7 +548,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
         let identity = identityCapture == .system ? try? ProcessIdentity.capture(pid: pid) : nil
         let session = ProcessSession(pid: pid, identity: identity, kind: request.kind,
             controlFD: control.1, stdoutFD: out.0, stderrFD: err.0, gate: gate, reservation: reservation)
-        session.start(deadline: request.deadline)
+        session.start(deadline: effectiveDeadline)
         return session
     }
 
@@ -479,6 +679,7 @@ private final class DirectChildOwnership: @unchecked Sendable {
                 }
             }
         } else if !reservationReleased || releaseCompleted {
+            if mutationPhysicalSlotTransferred { retainedSession = nil }
             for continuation in collectors { continuation.resume(returning: output!) }
             collectors.removeAll()
         }
@@ -530,6 +731,42 @@ private final class DirectChildOwnership: @unchecked Sendable {
     }
 
     func observationSnapshot() -> ProcessSessionObservation { owner.snapshot() }
+
+    func reapedMutationReceipt() throws -> ReapedMutationReceipt {
+        guard kind == .mutation else { throw ProcessTerminalVerificationError.notMutation }
+        let snapshot = owner.snapshot()
+        guard snapshot.consumingReapCount == 1,
+              case .reaped(let identity, let rawStatus) = snapshot.ownedExit,
+              owner.identity == identity else { throw ProcessTerminalVerificationError.reapNotProven }
+        return ReapedMutationReceipt(gate: gate, reservation: reservation, sessionID: sessionID,
+            identity: identity, rawStatus: rawStatus, transferred: { [self] acknowledgement in
+                recordMutationPhysicalTransfer(acknowledgement)
+            })
+    }
+
+    func transferReapedMutationToTerminalVerification(within lifetime: Duration) async throws -> ProcessTerminalVerificationLease {
+        try await gate.transferReapedMutation(reapedMutationReceipt(), within: lifetime)
+    }
+
+    private func recordMutationPhysicalTransfer(_ acknowledgement: ProcessMutationTransferAcknowledgement) {
+        guard acknowledgement.matches(gate: gate, reservation: reservation, sessionID: sessionID) else { return }
+        queue.async { [self] in
+            mutationPhysicalSlotTransferred = true
+            reservationReleased = true; releaseCompleted = true
+            finishIfReady()
+        }
+    }
+
+    /// Restores only an isolated fixture's already-reaped physical reservation,
+    /// including deliberately missing-identity fixtures. Never a production proof.
+    func releaseReapedMutationForTesting() async throws {
+        guard gate.isTestIsolation else { throw POSIXError(.EPERM) }
+        guard kind == .mutation, owner.snapshot().consumingReapCount == 1 else {
+            throw ProcessTerminalVerificationError.reapNotProven
+        }
+        let acknowledgement = try await gate.releaseReapedMutationForTesting(reservation, sessionID: sessionID)
+        recordMutationPhysicalTransfer(acknowledgement)
+    }
 
     /// Per-session resource evidence avoids process-global FD counts that can
     /// be perturbed by unrelated concurrently running test suites.

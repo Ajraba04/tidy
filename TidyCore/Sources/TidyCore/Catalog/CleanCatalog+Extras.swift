@@ -69,7 +69,7 @@ extension CleanCatalog {
             let traversal = BoundedTraversal(sessions: orchestration.sessions, limits: limits)
             let result = await traversal.start(root: root, session: orchestration.session,
                 sessionID: orchestration.sessionID, generation: orchestration.generation,
-                options: TraversalOptions(recordSelection: .all))
+                options: TraversalOptions(protectedRoots: environment.protectedRoots, recordSelection: .all))
             var reasons = result.coverage.reasons
             reasons.remove(.missing)
             guard result.cursor == nil, reasons.isEmpty else {
@@ -116,6 +116,7 @@ extension CleanCatalog {
         for root in environment.gitRoots {
             guard let page = await StaleNodeModulesScanner.findBounded(root: root,
                 olderThanDays: environment.staleNodeModulesThresholdDays,
+                protectedRoots: environment.protectedRoots,
                 sessions: orchestration.sessions, session: orchestration.session,
                 sessionID: orchestration.sessionID, generation: orchestration.generation,
                 limits: orchestration.traversalLimits) else { continue }

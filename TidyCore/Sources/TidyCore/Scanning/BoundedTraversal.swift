@@ -419,7 +419,9 @@ public actor BoundedTraversal {
     }
 
     public func start(root: String, session: WorkSession, sessionID: UUID,
-                      generation: UInt64, options: TraversalOptions = .init()) async -> TraversalResult {
+                      generation: UInt64, options: TraversalOptions = .init(),
+                      progressBatchesPerSecond: Int = 4,
+                      progress: (@Sendable (TraversalResult) async -> Bool)? = nil) async -> TraversalResult {
         // Bound caller-controlled storage before canonicalization: Foundation may collapse an
         // overlong, nonexistent path to an empty lexical fallback and hide the original overflow.
         guard root.utf8.count <= limits.maxPathBytes else {
@@ -459,7 +461,8 @@ public actor BoundedTraversal {
                 await self.startUnderPermit(root: canonicalRoot, session: session,
                     sessionID: sessionID, schedulerGeneration: scheduler.generation,
                     traversalGeneration: generation, policyRevision: revision,
-                    options: normalized, probe: probe)
+                    options: normalized, probe: probe,
+                    progressBatchesPerSecond: progressBatchesPerSecond, progress: progress)
             }
         } catch is CancellationError {
             return .terminal(reason: .cancelled)
@@ -469,7 +472,9 @@ public actor BoundedTraversal {
     }
 
     public func `continue`(from cursor: TraversalCursor, session: WorkSession,
-                           sessionID: UUID, generation: UInt64) async -> TraversalResult {
+                           sessionID: UUID, generation: UInt64,
+                           progressBatchesPerSecond: Int = 4,
+                           progress: (@Sendable (TraversalResult) async -> Bool)? = nil) async -> TraversalResult {
         guard let stored = cursors[cursor.token] else {
             return .terminal(reason: tombstones.contains(cursor.token) ? .cursorReplay : .invalidCursor)
         }
@@ -507,7 +512,8 @@ public actor BoundedTraversal {
 
         do {
             return try await sessions.withPermit(session: session) { probe in
-                await self.continueUnderPermit(stored: stored, probe: probe)
+                await self.continueUnderPermit(stored: stored, probe: probe,
+                    progressBatchesPerSecond: progressBatchesPerSecond, progress: progress)
             }
         } catch is CancellationError {
             return .terminal(reason: .cancelled, metrics: stored.state.metrics)
@@ -530,7 +536,9 @@ public actor BoundedTraversal {
     private func startUnderPermit(root: String, session: WorkSession, sessionID: UUID,
                                   schedulerGeneration: UInt64, traversalGeneration: UInt64,
                                   policyRevision: UInt64, options: TraversalOptions,
-                                  probe: SchedulerCancellationProbe) async -> TraversalResult {
+                                  probe: SchedulerCancellationProbe,
+                                  progressBatchesPerSecond: Int,
+                                  progress: (@Sendable (TraversalResult) async -> Bool)?) async -> TraversalResult {
         let source = self.source
         let rootRead: TraversalRootRead
         do {
@@ -556,11 +564,14 @@ public actor BoundedTraversal {
             totalBytes: 0, topItems: BoundedRankedHeap(limit: limits.topN),
             childBytes: [:], hardLinks: [], directoryObservations: [], reasons: [],
             metrics: .zero.recordingQueue(1))
-        return await executeSlice(state: &state, probe: probe)
+        return await executeSlice(state: &state, probe: probe,
+            progressBatchesPerSecond: progressBatchesPerSecond, progress: progress)
     }
 
     private func continueUnderPermit(stored: StoredTraversalCursor,
-                                     probe: SchedulerCancellationProbe) async -> TraversalResult {
+                                     probe: SchedulerCancellationProbe,
+                                     progressBatchesPerSecond: Int,
+                                     progress: (@Sendable (TraversalResult) async -> Bool)?) async -> TraversalResult {
         guard clock.nowNanoseconds() < stored.expiresAt else {
             return .terminal(reason: .cursorExpired, metrics: stored.state.metrics)
         }
@@ -591,14 +602,22 @@ public actor BoundedTraversal {
         if let reason = await validateDirectories(in: state) {
             return makeTerminal(state: state, reason: reason, records: [])
         }
-        return await executeSlice(state: &state, probe: probe)
+        return await executeSlice(state: &state, probe: probe,
+            progressBatchesPerSecond: progressBatchesPerSecond, progress: progress)
     }
 
     private func executeSlice(state: inout TraversalState,
-                              probe: SchedulerCancellationProbe) async -> TraversalResult {
+                              probe: SchedulerCancellationProbe,
+                              progressBatchesPerSecond: Int,
+                              progress: (@Sendable (TraversalResult) async -> Bool)?) async -> TraversalResult {
         let sliceStart = clock.nowNanoseconds()
         let sliceNanoseconds = limits.sliceDurationNanoseconds
         var pageRecords: [TraversalRecord] = []
+        // Progress uses already-accounted batches. It starts no timer, retains no
+        // cursor, and exposes no pending paths or per-entry inventory.
+        let progressRate = UInt64(min(4, max(1, progressBatchesPerSecond)))
+        let progressInterval = (1_000_000_000 + progressRate - 1) / progressRate
+        var lastProgress: UInt64?
 
         while !state.pending.isEmpty {
             if await probe.isCancelled() {
@@ -845,6 +864,23 @@ public actor BoundedTraversal {
                 }
             }
 
+            if let progress, !state.pending.isEmpty, state.totalBytes > 0 {
+                let now = clock.nowNanoseconds()
+                if lastProgress.map({ now >= $0 && now - $0 >= progressInterval }) ?? true {
+                    if await probe.isCancelled() {
+                        return makeTerminal(state: state, reason: .cancelled, records: pageRecords)
+                    }
+                    let partial = TraversalResult(records: [], totalBytes: state.totalBytes,
+                        topItems: [], childTotals: [],
+                        coverage: TraversalCoverage(isComplete: false,
+                            reasons: state.reasons.union([.sliceExpired])),
+                        cursor: nil, metrics: state.metrics)
+                    guard await progress(partial), !Task.isCancelled else {
+                        return makeTerminal(state: state, reason: .cancelled, records: pageRecords)
+                    }
+                    lastProgress = now
+                }
+            }
             if !state.pending.isEmpty,
                let maximum = limits.testingMaximumBatchesPerSlice,
                state.metrics.batches >= maximum {

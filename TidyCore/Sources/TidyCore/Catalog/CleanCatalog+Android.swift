@@ -38,7 +38,11 @@ extension CleanCatalog {
             locate: { env in
                 let root = env.homeDirectory + "/Library/Android/sdk/system-images"
                 guard let entries = try? FileManager.default.contentsOfDirectory(atPath: root) else { return [] }
-                return entries.map { name in
+                let canonicalRoot = PathGuard.canonicalize(root)
+                return entries.filter { name in
+                    PathGuard.isEqualOrDescendant(PathGuard.canonicalize(root + "/" + name),
+                        of: canonicalRoot)
+                }.map { name in
                     TargetPath(path: root + "/" + name, label: "Android system-image \(name)")
                 }
             },

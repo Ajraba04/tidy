@@ -50,6 +50,7 @@ final class ReviewedManifestStore {
         let artifacts: Int
         let bytes: Int
         let hasStaging: Bool
+        let proofNames: [String]
     }
     private struct RetirementIdentity: Codable, Equatable {
         let name: String
@@ -263,6 +264,31 @@ final class ReviewedManifestStore {
         }
     }
 
+    /// Bounded discovery closes only the service proof-publication/event gap.
+    /// No proof is inferred from a prepared intent, PID absence or object state.
+    func findServiceProof(for intent: PendingEffectIntent) throws -> EffectProofReference? {
+        guard intent.schemaVersion == 3, case .service? = intent.binding else {
+            throw EffectArtifactStoreError.invalidReference
+        }
+        return try admission.withLockedStorage { directory, _, _ in
+            let occupancy = try Self.occupancy(directory)
+            guard !occupancy.hasStaging else { throw EffectArtifactStoreError.unavailable }
+            var found: EffectProofReference?
+            for name in occupancy.proofNames {
+                let bytes = try Self.read(directory: directory, name: name, maximumBytes: Self.maximumIndexBytes)
+                let archive = try JSONDecoder().decode(EffectTerminalProofArchive.self, from: bytes)
+                guard archive.operationID == intent.operationID else { continue }
+                guard found == nil, name == Self.proofName(archive.proofID),
+                      CompiledEffectTerminalVerifier.validate(archive, intent: intent) else {
+                    throw EffectArtifactStoreError.corrupt
+                }
+                found = EffectProofReference(id: archive.proofID, operationID: archive.operationID,
+                    digest: Data(SHA256.hash(data: bytes)), encodedBytes: bytes.count)
+            }
+            return found
+        }
+    }
+
     func historicalProof(_ reference: EffectProofReference) throws
         -> EffectTerminalProofArchive {
         guard reference.schema == EffectProofReference.schemaVersion,
@@ -310,19 +336,20 @@ final class ReviewedManifestStore {
         for terminal in events where terminal.phase == .itemTerminal {
             guard let proof = terminal.proof else { throw EffectArtifactStoreError.corrupt }
             let archive = try historicalProof(proof)
-            guard archive.runID == runID, let manifest = archive.manifest else {
+            guard archive.runID == runID else {
                 throw EffectArtifactStoreError.corrupt
             }
-            let index = try admission.withLockedStorage { directory, _, _ -> Index in
-                let bytes = try Self.read(directory: directory,
-                    name: Self.indexName(manifest.id), maximumBytes: Self.maximumIndexBytes)
-                let index = try Self.decodeIndex(bytes, expected: manifest)
-                try Self.validateStoredBatches(directory: directory, index: index,
-                                               indexBytes: bytes)
-                return index
+            if let manifest = archive.manifest {
+                let index = try admission.withLockedStorage { directory, _, _ -> Index in
+                    let bytes = try Self.read(directory: directory,
+                        name: Self.indexName(manifest.id), maximumBytes: Self.maximumIndexBytes)
+                    let index = try Self.decodeIndex(bytes, expected: manifest)
+                    try Self.validateStoredBatches(directory: directory, index: index, indexBytes: bytes)
+                    return index
+                }
+                names.append(contentsOf: index.batches.map(\.name))
+                names.append(Self.indexName(manifest.id))
             }
-            names.append(contentsOf: index.batches.map(\.name))
-            names.append(Self.indexName(manifest.id))
             names.append(Self.proofName(proof.id))
         }
         guard Set(names).count == names.count else { throw EffectArtifactStoreError.corrupt }
@@ -510,6 +537,7 @@ final class ReviewedManifestStore {
         }
         defer { closedir(stream) }
         var count = 0, bytes = 0, staging = false
+        var proofNames: [String] = []
         while true {
             errno = 0
             guard let entry = readdir(stream) else {
@@ -545,9 +573,10 @@ final class ReviewedManifestStore {
                 throw EffectArtifactStoreError.capacity
             }
             count = nextCount; bytes = nextBytes
+            if name.hasPrefix("effect-proof-") { proofNames.append(name) }
             staging = staging || isStagingName(name)
         }
-        return Occupancy(artifacts: count, bytes: bytes, hasStaging: staging)
+        return Occupancy(artifacts: count, bytes: bytes, hasStaging: staging, proofNames: proofNames)
     }
 
     private static func publishImmutable(directory: Int32, name: String, bytes: Data,

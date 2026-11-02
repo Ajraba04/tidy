@@ -251,6 +251,31 @@ private func runAppScanToCompletion(services: AppExecutionServices,
 @MainActor
 final class ScanOrchestrationWiringTests: XCTestCase {
 
+    func testOptionalDataClearingRejectsReservedScanWithoutCancellingIt() async throws {
+        let scratch = try ScanWiringScratch(); defer { scratch.remove() }
+        let gate = ScanLifecycleGate()
+        let services = try await scratch.services(scanLifecycleHook: { event in
+            if event == .startReserved { await gate.pause() }
+        })
+        let review = try await services.previewOptionalDataClearing(.scanIndex)
+        let model = ScanViewModel(services: services)
+        let scan = Task { @MainActor in await model.runScan() }
+        await gate.waitUntilEntered()
+        do {
+            try await services.confirmOptionalDataClearing(review)
+            XCTFail("Clearing overlapped reserved scan startup")
+        } catch AppDataClearError.busy {}
+        do {
+            _ = try await services.previewOptionalDataClearing(.completedReports)
+            XCTFail("Preview overlapped reserved scan startup")
+        } catch AppDataClearError.busy {}
+        await model.cancelScan()
+        await gate.release()
+        await scan.value
+        await services.disposeScanResourcesForTesting()
+        services.disposeMonitoring()
+    }
+
     func testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan() async throws {
         let scratch = try ScanWiringScratch(); defer { scratch.remove() }
         let startGate = ScanLifecycleGate()
@@ -436,6 +461,21 @@ final class ScanOrchestrationWiringTests: XCTestCase {
         XCTAssertEqual(afterLeaseCount, 0)
         XCTAssertFalse(afterTimer)
         await services.disposeScanResourcesForTesting()
+    }
+
+    func testLivePowerAndThermalSignalsRemainIndependent() {
+        let lowPower = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil, swapUnavailableReason: nil,
+            pageOutRatePerSecond: nil, memoryPressureLevel: .normal, thermalState: .nominal,
+            isLowPowerModeEnabled: true)
+        XCTAssertEqual(schedulerLiveObservation(from: lowPower),
+            .signals(lowPower: true, seriousThermal: false))
+        let thermal = SystemSnapshot(observedAt: Date(), bootIdentity: nil, volumes: [],
+            memory: nil, memoryUnavailableReason: nil, swap: nil, swapUnavailableReason: nil,
+            pageOutRatePerSecond: nil, memoryPressureLevel: .normal, thermalState: .serious,
+            isLowPowerModeEnabled: false)
+        XCTAssertEqual(schedulerLiveObservation(from: thermal),
+            .signals(lowPower: false, seriousThermal: true))
     }
 
     func testMissingLiveSignalCannotReopenNominalSchedulerAdmission() {

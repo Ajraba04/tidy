@@ -21,8 +21,8 @@ targets:
       base:
         PRODUCT_NAME: Tidy
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ajraba04.Tidy
-        MARKETING_VERSION: "1.5.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.5.1"
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: "YES"
@@ -94,6 +94,11 @@ targets:
       - path: Tidy/Execution/AppTerminationDelegate.swift
       - path: Tidy/Settings/AppConfigStore.swift
       - path: Tidy/Clean/RunReportPresentation.swift
+      - path: Tidy/Assistance/AssistanceModel.swift
+      - path: Tidy/Assistance/MaintenanceInventoryConsumer.swift
+      - path: Tidy/Budgets/NotificationBroker.swift
+      - path: Tidy/Developer/DeveloperWorkspaceModel.swift
+      - path: Tidy/Developer/ManualServiceReviewModel.swift
     dependencies:
       - package: TidyCore
     settings:

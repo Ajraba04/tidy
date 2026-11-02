@@ -67,6 +67,27 @@ struct StaleNodeModulesScannerTests {
         #expect(results.isEmpty)
     }
 
+    @Test("bounded stale scan honors caller exclusions before descending into projects")
+    @MainActor
+    func boundedFindSkipsProtectedProject() async throws {
+        let rig = try await TraversalBridgeRig.make()
+        let root = rig.root.appendingPathComponent("projects")
+        let protected = root.appendingPathComponent("private")
+        let hidden = protected.appendingPathComponent("node_modules")
+        let visible = root.appendingPathComponent("public/node_modules")
+        for modules in [hidden, visible] {
+            try FileManager.default.createDirectory(at: modules, withIntermediateDirectories: true)
+            try setModificationDate(Date().addingTimeInterval(-90 * 86_400), at: modules)
+        }
+        let possiblePage = await StaleNodeModulesScanner.findBounded(root: root.path,
+            olderThanDays: 60, protectedRoots: [protected.path],
+            sessions: rig.sessions, session: rig.session, sessionID: UUID(), generation: 1,
+            limits: try standardLimits(maxDepth: 5))
+        let page = try #require(possiblePage)
+        #expect(page.result.records.map(\.path) == [PathGuard.canonicalize(visible.path)])
+        await rig.cleanup()
+    }
+
     @Test("bounded stale scan requires the supplied bridge facade and prunes matches")
     @MainActor
     func boundedFindMatchesExistingResults() async throws {

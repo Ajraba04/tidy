@@ -346,7 +346,7 @@ def parse_attestation(path: Path, scenario: str, pid: int, *,
         raise ObservationError("runtime attestation reports changed mutation authority")
     if not value["applicationHidden"]:
         raise ObservationError("runtime observation app is not hidden")
-    if value["backgroundAuthority"] != "unavailable":
+    if value["backgroundAuthority"] not in {"unavailable", "denied"}:
         raise ObservationError("runtime observation authority state is unexpected")
     if value["timerScheduledCount"] != 0 or value["timerCancelledCount"] != 0:
         raise ObservationError("hidden monitor timer instrumentation is nonzero")
@@ -1527,6 +1527,18 @@ def run_self_test() -> None:
             final["observedMonotonicNanoseconds"] += 120 * 1_000_000_000
             ready_path.write_text(json.dumps(final), encoding="utf-8")
             assert parse_attestation(ready_path, "hidden-off", 123, initial=ready) == final
+            denied = dict(ready, backgroundAuthority="denied")
+            ready_path.write_text(json.dumps(denied), encoding="utf-8")
+            assert parse_attestation(ready_path, "hidden-off", 123) == denied
+            for authority in ("granted", "unexpected", "", True):
+                invalid = dict(ready, backgroundAuthority=authority)
+                ready_path.write_text(json.dumps(invalid), encoding="utf-8")
+                try:
+                    parse_attestation(ready_path, "hidden-off", 123)
+                except ObservationError:
+                    pass
+                else:
+                    raise AssertionError("non-denied authority was accepted")
             nettop_path = fixture / "nettop.csv"
             nettop_path.write_text(
                 ",bytes_in,bytes_out,\nPython.1,0,0,\nPython.1,10,20,\n",

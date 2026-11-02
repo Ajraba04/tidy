@@ -18,13 +18,39 @@ python3 scripts/verification/check-personal-data.py --self-test
 python3 scripts/verification/check-personal-data.py
 python3 scripts/verification/privacy-api-inventory.py --self-test
 python3 scripts/verification/run-r13-observation.py --self-test
+python3 -m unittest discover -s scripts/verification/tests -p test_manual_simulator_acceptance.py
 python3 scripts/verification/privacy-api-inventory.py \
   --check-document docs/verification/privacy-api-inventory.md
 (
   cd TidyCore
   swift test --scratch-path "$EVIDENCE/core-build" --jobs 2 --no-parallel
 ) 2>&1 | tee "$EVIDENCE/core.log"
-python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 707 \
+python3 scripts/verification/check-test-results.py swift "$EVIDENCE/core.log" --minimum 881 \
+  --require-case 'acceptsOnlyTheExactPositiveCurrentStoreEnvelope' \
+  --require-case 'rejectsExternalDiskChangesWithoutAdoptingOrLatchingThem(change:)' \
+  --require-case 'preservesIssuedPreviewsAndBootstrapGeneration(kind:)' \
+  --require-case 'firstHistoryEditProjectsAllLegacyCompatibilityFields(route:)' \
+  --require-case 'legacyProjectionDoesNotReplaceRawCompareAndSwap(useBridge:)' \
+  --require-case 'existingTypedDocumentIsNotReprojectedAndInvalidTypesStayReadOnly' \
+  --require-case 'occupied slots cannot extend mutation admission or hide shared app cancellation' \
+  --require-case 'rejected-spawn proof survives publication before its terminal event without becoming native acceptance' \
+  --require-case 'foreignOwnershipDoesNotConsumeAndOwnedAttemptIsOneUse' \
+  --require-case 'fixture retirement never closes a production obligation; publication gaps mint no receipt' \
+  --require-case 'rawJournalCannotPersistSyntacticallyValidUnownedChildTuple' \
+  --require-case 'rawStoreCannotCaptureUnownedTupleOrIntroduceChildAtSubmissionBoundary' \
+  --require-case 'proofPublicationGapReopensWithoutReplayingAndPreservesFixtureOrigin' \
+  --require-case 'capZeroNeverBecomesAvailableButDeadlineRemovesWaiter' \
+  --require-case 'possessionOfReapReceiptCannotReleaseOwnedMutationWithoutObligation' \
+  --require-case 'compiled Docker receipts recover publication before terminal events' \
+  --require-case 'reviewed optional history clearing preserves future retention and rejects stale previews' \
+  --require-case 'reviewed index clearing removes records and watch cursors but rejects changed content' \
+  --require-case 'bounded catalog discovery never enters mandatory cloud roots' \
+  --require-case 'bounded stale scan honors caller exclusions before descending into projects' \
+  --require-case 'a candidate containing a protected descendant is refused even inside its declared root' \
+  --require-case 'overdeep anchor paths are rejected before acquiring ancestor descriptors' \
+  --require-case 'acknowledging settings preserves raw history unless its retention policy changes' \
+  --require-case 'ending the last sampling lease invalidates pressure for the next measurement' \
+  --require-case 'live power and thermal inputs apply only their matching pause rule' \
   --allow-skipped 'registered scan process probes stay within the acknowledged shared process cap' \
   --require-case 'exact absent-file defaults authorize only the bounded Quick roots' \
   --require-case 'artifactAliasesDoNotConsumeRetentionSlotsOrBypassProtection' \
@@ -75,7 +101,32 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyAppModelTests -configuration Debu
   -destination "platform=macOS,arch=$(uname -m)" -jobs 2 \
   -derivedDataPath "$EVIDENCE/models-build" -resultBundlePath "$EVIDENCE/models.xcresult" \
   test CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$EVIDENCE/models.log"
-python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 146 \
+python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/models.xcresult" --minimum 187 \
+  --require-case 'testMaintenanceRetriesBusyPresentationEditStartedInsideActualAcknowledgementValidation' \
+  --require-case 'testRecordingRetriesPresentationEditStartedInsideAcknowledgementValidation' \
+  --require-case 'testRecordingBoundsContinuousRealValidationEditsAndReportsUnstoredTerminalResult' \
+  --require-case 'testCancelledOwnerStillRecordsCompletedTerminalReportAfterPendingSaveSettles' \
+  --require-case 'testRealAcknowledgementAppliesAfterBusyPresentationSaveFailsWithoutAdvancingStore' \
+  --require-case 'testCompletedReportWaitsForPendingPresentationSaveAndIsRecordedExactlyOnce' \
+  --require-case 'testQueuedGlobalEditUsesProjectedLegacyBaseAfterSchemaOneMigration' \
+  --require-case 'testQueuedGlobalEditUsesProjectedLegacyBaseWithSchemaTwoNilPreferences' \
+  --require-case 'testQueuedGlobalEditKeepsExistingTypedDocument' \
+  --require-case 'testLegacyHistoryRemainsExactUntilGenuineDurableSaveAcknowledgement' \
+  --require-case 'testAbsentAndMalformedSettingsPreserveExistingHistoryWithoutFallbackRetention' \
+  --require-case 'testLoadedDurableOwnerPolicyRetainsExistingStartupRetention' \
+  --require-case 'testExternalDurableSupersessionPreservesHistoryInsteadOfApplyingStaleAcknowledgement' \
+  --require-case 'testAppReservationPrecedesAwaitJoinsExactReviewAndClearsAfterRealDenial' \
+  --require-case 'testGlobalCancelBeforeTaskEntryReleasesReservationWithoutEffect' \
+  --require-case 'testLateInventoryCannotRepopulateAfterScopeInvalidation' \
+  --require-case 'testRealOwnerBoundReviewCanBeCancelledAndReopenedWithoutDispatch' \
+  --require-case 'testOptionalDataClearingPreservesUnresolvedRecoveryAndLocalAuthority' \
+  --require-case 'testOptionalDataClearingRejectsReservedScanWithoutCancellingIt' \
+  --require-case 'testClosedAssistanceWindowRoutesEveryDestinationOnce' \
+  --require-case 'testBudgetClickPreservesExactCategoryAndUnavailableVolume' \
+  --require-case 'testUnboundBacklogRetainsOnlyLatestSixteenDestinations' \
+  --require-case 'testReentrantBurstYieldsBeforeDeliveringEveryClick' \
+  --require-case 'testImportFileReaderRejectsFIFOAndSymlinkWithoutBlocking' \
+  --require-case 'testLivePowerAndThermalSignalsRemainIndependent' \
   --require-case 'testDiagnosticExportSnapshotUsesAcknowledgedSettingsWhileEditIsPending' \
   --require-case 'testDiagnosticExportSnapshotDefaultsRedactionOnWhenAcknowledgedPolicyUnavailable' \
   --require-case 'testCancelRequestedBeforeSessionPublicationCancelsRealQueuedScan' \
@@ -111,6 +162,13 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   2>&1 | tee "$EVIDENCE/production-native-build.log"
 python3 scripts/verification/check-runtime-binary.py fixture \
   "$EVIDENCE/production-ui-build/Build/Products/Debug/TidyProductionRuntimeHost.app"
+# Require the complete signed runner before requesting any GUI launch.
+# A cached xctestrun file alone does not prove its runner still exists.
+PRODUCTION_RUNNER="$EVIDENCE/production-ui-build/Build/Products/Debug/TidyProductionNativeUITests-Runner.app"
+test -d "$PRODUCTION_RUNNER"
+codesign --verify --deep --strict "$PRODUCTION_RUNNER"
+codesign --verify --deep --strict \
+  "$EVIDENCE/production-ui-build/Build/Products/Debug/TidyProductionRuntimeHost.app"
 # Fixed-duration and performance cases require the external observer's owned
 # proceed/observed tokens. run-r13-observation.py drives and verifies those
 # separate current-host captures; they are not standalone UI smoke tests.
@@ -123,7 +181,10 @@ xcodebuild -project Tidy.xcodeproj -scheme TidyProductionNativeUITests -configur
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES \
   2>&1 | tee "$EVIDENCE/production-native-ui.log"
 python3 scripts/verification/check-test-results.py xcode "$EVIDENCE/production-native-ui.xcresult" \
-  --minimum 11 \
+  --minimum 14 \
+  --require-case 'testProductionManualServiceReviewRemainsUnavailableAndResetsChoices' \
+  --require-case 'testProductionDiagnosticExportSavesOnlyMetadataInSyntheticHome' \
+  --require-case 'testProductionOptionalDataReviewCancelClearAndDiagnosticPanel' \
   --require-case 'testProductionCompactSettingsAndCleanupPassAutomatedAccessibilityAudit' \
   --require-case 'testProductionLightAppearanceKeepsSettingsAndCleanupUsable' \
   --require-case 'testProductionDarkAppearanceKeepsSettingsAndCleanupUsable' \

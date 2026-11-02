@@ -1,4 +1,139 @@
 import Foundation
+import CryptoKit
+import Darwin
+
+/// A real session combined with the immutable declaration used to launch it.
+/// Metadata alone cannot construct this value or stand in for an owned reap.
+struct ManualSimulatorOwnedLaunch: Sendable {
+    let session: ProcessSession
+    let invocation: ManualSimulatorShutdownInvocation
+    let submissionHookAttempts: Int
+    private let issuingSubmission: ManualServiceSubmission
+    fileprivate init(session: ProcessSession, invocation: ManualSimulatorShutdownInvocation,
+                     issuingSubmission: ManualServiceSubmission, submissionHookAttempts: Int = 0) {
+        self.session = session; self.invocation = invocation
+        self.submissionHookAttempts = submissionHookAttempts
+        self.issuingSubmission = issuingSubmission
+    }
+    func requireIssuingSubmission(_ submission: ManualServiceSubmission) throws {
+        guard issuingSubmission === submission else { throw JournalError.invalidTransition }
+    }
+}
+
+/// Only Runner's fixed native/fixture declarations can construct the hook or
+/// its immutable context. No callback is exposed on public test requests.
+final class ManualSimulatorSubmissionHook: @unchecked Sendable {
+    enum Origin: String, Codable, Sendable { case nativeShutdown, cooperativeFixture, rejectedSpawnFixture }
+    let invocation: ManualSimulatorShutdownInvocation
+    let attemptedExecutablePath: String
+    let origin: Origin
+    let deadline: ContinuousClock.Instant
+    private let submission: ManualServiceSubmission
+    private let effectCancellation: EffectCancellationToken?
+    private let lock = NSLock()
+    private var attemptCount = 0
+    var attempts: Int { lock.withLock { attemptCount } }
+    var isFixture: Bool { origin != .nativeShutdown }
+    var admissionCancellation: EffectCancellationToken? { effectCancellation }
+
+    fileprivate init(submission: ManualServiceSubmission, invocation: ManualSimulatorShutdownInvocation,
+                     attemptedExecutablePath: String, origin: Origin, deadline: ContinuousClock.Instant,
+                     effectCancellation: EffectCancellationToken? = nil) {
+        self.submission = submission; self.invocation = invocation
+        self.attemptedExecutablePath = attemptedExecutablePath; self.origin = origin; self.deadline = deadline
+        self.effectCancellation = effectCancellation
+    }
+
+    func matches(executable: URL, arguments: [String], environment: [String: String]) -> Bool {
+        executable.path == attemptedExecutablePath && arguments == invocation.arguments
+            && environment == invocation.environment
+    }
+
+    func commit() throws -> ManualSimulatorSubmissionCommit {
+        lock.lock(); defer { lock.unlock() }
+        try Task.checkCancellation()
+        guard effectCancellation?.isCancelled != true else { throw CancellationError() }
+        guard attemptCount == 0 else { throw JournalError.invalidTransition }
+        attemptCount = 1
+        let permit = try submission.beginSubmission()
+        guard permit.binding == invocation.binding, permit.runID == invocation.runID,
+              permit.operationID == invocation.operationID else { throw JournalError.invalidTransition }
+        return try ManualSimulatorSubmissionCommit(permit: permit, invocation: invocation,
+            origin: origin, attemptedExecutablePath: attemptedExecutablePath, attempts: attemptCount)
+    }
+}
+
+/// Internal fixed-cat fixture synchronization, never a supplied validator or
+/// production callback. The final validator has a bounded two-second hold.
+final class ManualSimulatorFinalValidationPause: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var count = 0
+    private var held = false
+    private var released = false
+    private var hook: ManualSimulatorSubmissionHook?
+
+    fileprivate func observe(_ hook: ManualSimulatorSubmissionHook) {
+        condition.lock(); self.hook = hook; condition.unlock()
+    }
+    fileprivate func reachFixedFixtureValidator() throws {
+        condition.lock(); defer { condition.unlock() }
+        count += 1
+        guard count == 3 else { return }
+        held = true; condition.broadcast()
+        let deadline = Date().addingTimeInterval(2)
+        while !released {
+            guard condition.wait(until: deadline) else {
+                released = true; condition.broadcast()
+                throw POSIXError(.ETIMEDOUT)
+            }
+        }
+    }
+    func waitUntilHeld() async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            if isHeld { return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        resume()
+        throw POSIXError(.ETIMEDOUT)
+    }
+    private var isHeld: Bool { condition.lock(); defer { condition.unlock() }; return held }
+    func resume() { condition.lock(); released = true; condition.broadcast(); condition.unlock() }
+    var validationCount: Int { condition.lock(); defer { condition.unlock() }; return count }
+    var submissionHookAttempts: Int {
+        condition.lock(); let observed = hook; condition.unlock()
+        return observed?.attempts ?? 0
+    }
+}
+
+struct ManualSimulatorSubmissionCommit: Sendable {
+    let permit: ManualServiceDispatchPermit
+    let invocationDigest: Data
+    let origin: ManualSimulatorSubmissionHook.Origin
+    let attemptedExecutablePath: String
+    let attempts: Int
+    private struct Encoding: Encodable {
+        let schema: Int
+        let declarationDigest: Data
+        let origin: ManualSimulatorSubmissionHook.Origin
+        let attemptedExecutablePath: String
+    }
+    fileprivate init(permit: ManualServiceDispatchPermit, invocation: ManualSimulatorShutdownInvocation,
+                     origin: ManualSimulatorSubmissionHook.Origin, attemptedExecutablePath: String, attempts: Int) throws {
+        self.permit = permit; self.origin = origin; self.attemptedExecutablePath = attemptedExecutablePath
+        self.attempts = attempts
+        invocationDigest = try Self.digest(declarationDigest: invocation.invocationDigest,
+            origin: origin, attemptedExecutablePath: attemptedExecutablePath)
+    }
+    /// Pure archival reconstruction. This digest conveys no launch authority.
+    static func digest(declarationDigest: Data, origin: ManualSimulatorSubmissionHook.Origin,
+                       attemptedExecutablePath: String) throws -> Data {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let bytes = try encoder.encode(Encoding(schema: 1, declarationDigest: declarationDigest,
+            origin: origin, attemptedExecutablePath: attemptedExecutablePath))
+        return Data(SHA256.hash(data: bytes))
+    }
+}
 
 public enum ProcessRunnerError: Error, Equatable, Sendable {
     case undeclaredInvocation
@@ -43,19 +178,22 @@ public enum ProcessRunner: Sendable {
         let environment: [String: String]
         let kind: AuthorizedJobKind
         let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
+        let manualSubmissionHook: ManualSimulatorSubmissionHook?
         /// Every current T08.3 declaration is a direct-child-only shape.
         let maximumDescendants: Int
 
         init(executableURL: URL, arguments: [String],
              environment: [String: String] = ProcessRunner.minimalEnvironment,
              kind: AuthorizedJobKind, maximumDescendants: Int,
-             validateImmediatelyBeforeSpawn: @escaping @Sendable () throws -> Void = {}) {
+             validateImmediatelyBeforeSpawn: @escaping @Sendable () throws -> Void = {},
+             manualSubmissionHook: ManualSimulatorSubmissionHook? = nil) {
             self.executableURL = executableURL
             self.arguments = arguments
             self.environment = environment
             self.kind = kind
             self.maximumDescendants = maximumDescendants
             self.validateImmediatelyBeforeSpawn = validateImmediatelyBeforeSpawn
+            self.manualSubmissionHook = manualSubmissionHook
         }
     }
 
@@ -69,6 +207,7 @@ public enum ProcessRunner: Sendable {
         let kind: AuthorizedJobKind
         let deadline: Duration
         let validateImmediatelyBeforeSpawn: @Sendable () throws -> Void
+        let manualSubmissionHook: ManualSimulatorSubmissionHook?
 
         fileprivate init(_ declaration: DeclaredInvocation, timeout: TimeInterval) {
             executableURL = declaration.executableURL
@@ -77,6 +216,7 @@ public enum ProcessRunner: Sendable {
             kind = declaration.kind
             deadline = .seconds(timeout)
             validateImmediatelyBeforeSpawn = declaration.validateImmediatelyBeforeSpawn
+            manualSubmissionHook = declaration.manualSubmissionHook
         }
     }
 
@@ -154,6 +294,307 @@ public enum ProcessRunner: Sendable {
     static func runSimctlRuntimes(xcrunURL: URL) async throws -> Output {
         try await run(try declared(.simctlRuntimes, executableURL: xcrunURL,
             arguments: ["simctl", "list", "runtimes", "-j"]))
+    }
+
+    /// Groundwork only: the compiled registry currently rejects this route
+    /// before discovery, gate admission or a durable intent transition.
+    static func launchManualSimulatorShutdown(submission: ManualServiceSubmission,
+                                             grant: ManualServicePolicyGrant,
+                                             deadline: ContinuousClock.Instant,
+                                             cancellation: EffectCancellationToken) async throws -> ManualSimulatorNativeLaunchOutcome {
+        let binding = submission.effectBinding
+        try AppleSimulatorOperation.requireAcceptedProducer(for: binding.operation)
+        try AppleSimulatorOperation.validateGrant(grant, binding: binding)
+        let invocation = try ManualSimulatorShutdownInvocation.describe(binding: binding,
+            runID: submission.runID, operationID: submission.operationID)
+        guard case .appleSimulator(let producer) = binding.operation.producer else {
+            throw ManualServiceReviewError.bindingMismatch
+        }
+        let bootstrap = ManualSimulatorReadBootstrap(resolver: producer.resolver, simctl: producer.simctl,
+            developerDirectory: producer.developerDirectory, deviceSet: producer.deviceSet, authority: grant.authority)
+        let resolved = try await runManualSimulatorResolver(resolver: producer.resolver,
+            deviceSet: producer.deviceSet, authority: grant.authority, deadline: deadline)
+        guard try ManualSimulatorDiscovery.parseResolvedSimctl(resolved).path == producer.simctl.canonicalPath else {
+            throw ManualServiceInventoryError.identityMismatch
+        }
+        let version = try await runManualSimctlVersion(bootstrap, deadline: deadline)
+        guard try ManualSimulatorDiscovery.parseCoreSimulatorVersion(version) == producer.coreSimulatorVersion else {
+            throw ManualServiceInventoryError.unsupportedProducer
+        }
+        let validate: @Sendable () throws -> Void = {
+            try AppleSimulatorOperation.requireAcceptedProducer(for: binding.operation)
+            try AppleSimulatorOperation.validateGrant(grant, binding: binding)
+            try bootstrap.checkCurrent(deadline: deadline)
+            let metadata = try ManualSimulatorDiscovery.readVersionMetadata(
+                developerDirectory: producer.developerDirectory, deadline: deadline)
+            guard metadata.version == producer.xcodeVersion, metadata.build == producer.xcodeBuild else {
+                throw ManualServiceInventoryError.unsupportedProducer
+            }
+            try AppleSimulatorOperation.requireAppleSignature(producer.resolver)
+            try AppleSimulatorOperation.requireAppleSignature(producer.simctl)
+            try grant.checkCurrent()
+        }
+        let hook = ManualSimulatorSubmissionHook(submission: submission, invocation: invocation,
+            attemptedExecutablePath: invocation.executable.canonicalPath, origin: .nativeShutdown,
+            deadline: deadline, effectCancellation: cancellation)
+        return try await launchManualSimulatorHook(invocation: invocation, submission: submission,
+            hook: hook, gate: nil, validate: validate)
+    }
+
+    static func launchManualSimulatorHookFixtureForTesting(submission: ManualServiceSubmission,
+                                                           gate: ProcessJobGate,
+                                                           deadline: ContinuousClock.Instant,
+                                                           finalValidationPause: ManualSimulatorFinalValidationPause? = nil,
+                                                           effectCancellation: EffectCancellationToken? = nil) async throws -> ManualSimulatorNativeLaunchOutcome {
+        try await launchManualSimulatorHookFixture(submission: submission, gate: gate,
+            deadline: deadline, rejectedSpawn: false, finalValidationPause: finalValidationPause,
+            effectCancellation: effectCancellation)
+    }
+
+    static func rejectManualSimulatorSpawnFixtureForTesting(submission: ManualServiceSubmission,
+                                                           gate: ProcessJobGate,
+                                                           deadline: ContinuousClock.Instant) async throws -> ManualSimulatorNativeLaunchOutcome {
+        try await launchManualSimulatorHookFixture(submission: submission, gate: gate,
+            deadline: deadline, rejectedSpawn: true)
+    }
+
+    /// The queue fixture can use only an isolated gate whose two read slots
+    /// remain held. It shares the actual hook admission path and fixed cat shape.
+    static func launchQueuedManualSimulatorHookFixtureForTesting(submission: ManualServiceSubmission,
+                                                                gate: ProcessJobGate,
+                                                                deadline: ContinuousClock.Instant,
+                                                                effectCancellation: EffectCancellationToken) async throws -> ManualSimulatorNativeLaunchOutcome {
+        try await launchManualSimulatorHookFixture(submission: submission, gate: gate,
+            deadline: deadline, rejectedSpawn: false, effectCancellation: effectCancellation,
+            occupiedQueueFixture: true)
+    }
+
+    private static func launchManualSimulatorHookFixture(submission: ManualServiceSubmission,
+                                                         gate: ProcessJobGate,
+                                                         deadline: ContinuousClock.Instant,
+                                                         rejectedSpawn: Bool,
+                                                         finalValidationPause: ManualSimulatorFinalValidationPause? = nil,
+                                                         effectCancellation: EffectCancellationToken? = nil,
+                                                         occupiedQueueFixture: Bool = false) async throws -> ManualSimulatorNativeLaunchOutcome {
+        guard gate.isTestIsolation else { throw ManualServiceReviewError.providerUnavailable }
+        try Task.checkCancellation()
+        let state = await gate.snapshot()
+        let expectedSlots = occupiedQueueFixture ? 2 : 0
+        guard state.active == expectedSlots, state.activeReaders == expectedSlots,
+              state.queued == 0, state.unresolvedMutations == 0 else {
+            throw ManualServiceReviewError.busy
+        }
+        let cat = try LocalExecutableApproval.verify(executable: URL(fileURLWithPath: "/bin/cat"))
+        let binding = submission.effectBinding
+        let invocation = try ManualSimulatorShutdownInvocation.cooperativeFixture(binding: binding,
+            runID: submission.runID, operationID: submission.operationID, executable: cat)
+        let attemptedPath = rejectedSpawn
+            ? binding.installation.canonicalDirectoryPath + "/.tidy-fixed-absent-executable"
+            : cat.canonicalPath
+        let validate: @Sendable () throws -> Void = {
+            guard try LocalExecutableApproval.verify(executable: URL(fileURLWithPath: "/bin/cat")) == cat,
+                  try LocalInstallationIdentity.verify(directory: URL(fileURLWithPath:
+                    binding.installation.canonicalDirectoryPath)) == binding.installation else {
+                throw ManualServiceInventoryError.identityMismatch
+            }
+            if rejectedSpawn {
+                var value = stat()
+                guard lstat(attemptedPath, &value) == -1, errno == ENOENT else {
+                    throw ManualServiceInventoryError.invalidIdentity
+                }
+            }
+            guard ContinuousClock.now < deadline else { throw ManualSimulatorClientError.expired }
+            try finalValidationPause?.reachFixedFixtureValidator()
+        }
+        let hook = ManualSimulatorSubmissionHook(submission: submission, invocation: invocation,
+            attemptedExecutablePath: attemptedPath,
+            origin: rejectedSpawn ? .rejectedSpawnFixture : .cooperativeFixture,
+            deadline: deadline, effectCancellation: effectCancellation)
+        finalValidationPause?.observe(hook)
+        return try await launchManualSimulatorHook(invocation: invocation, submission: submission,
+            hook: hook, gate: gate, validate: validate)
+    }
+
+    private static func launchManualSimulatorHook(invocation: ManualSimulatorShutdownInvocation,
+                                                  submission: ManualServiceSubmission,
+                                                  hook: ManualSimulatorSubmissionHook,
+                                                  gate: ProcessJobGate?,
+                                                  validate: @escaping @Sendable () throws -> Void) async throws -> ManualSimulatorNativeLaunchOutcome {
+        guard launchDepth == 0 else { throw ProcessRunnerError.nestedLaunch }
+        let remaining = ContinuousClock.now.duration(to: hook.deadline)
+        guard remaining > .zero, remaining <= .seconds(30) else { throw ManualSimulatorClientError.invalidDeadline }
+        try Task.checkCancellation()
+        try validate()
+        let components = remaining.components
+        let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
+        let declaration = DeclaredInvocation(executableURL: URL(fileURLWithPath: hook.attemptedExecutablePath),
+            arguments: invocation.arguments, environment: invocation.environment, kind: .mutation,
+            maximumDescendants: 0, validateImmediatelyBeforeSpawn: validate, manualSubmissionHook: hook)
+        let authorization = AuthorizedLaunch(declaration, timeout: seconds)
+        return try await $launchDepth.withValue(launchDepth + 1) {
+            do {
+                let session: ProcessSession
+                if let gate {
+                    session = try await ProcessSession.launchManualSimulatorFixture(authorization, gate: gate)
+                } else {
+                    session = try await ProcessSession.launch(authorization)
+                }
+                // No fallible metadata work occurs after successful spawn.
+                return .launched(ManualSimulatorOwnedLaunch(session: session, invocation: invocation,
+                    issuingSubmission: submission, submissionHookAttempts: hook.attempts))
+            } catch let failure as ManualSimulatorRejectedSpawn {
+                return .notSpawned(failure.receipt)
+            }
+        }
+    }
+
+    /// Separate owned-child fixture declaration. No argument, executable or
+    /// environment overrides exist, and the production gate is unreachable.
+    /// This does not activate a native simctl declaration or accepted producer.
+    static func launchManualSimulatorFixtureForTesting(submission: ManualServiceSubmission,
+                                                       gate: ProcessJobGate,
+                                                       deadline: ContinuousClock.Instant) async throws -> ManualSimulatorOwnedLaunch {
+        guard gate.isTestIsolation else { throw ManualServiceReviewError.providerUnavailable }
+        guard launchDepth == 0 else { throw ProcessRunnerError.nestedLaunch }
+        try Task.checkCancellation()
+        let remaining = ContinuousClock.now.duration(to: deadline)
+        guard remaining > .zero, remaining <= .seconds(30) else { throw ManualSimulatorClientError.invalidDeadline }
+        let state = await gate.snapshot()
+        guard state.active == 0, state.queued == 0, state.unresolvedMutations == 0 else {
+            throw ManualServiceReviewError.busy
+        }
+        let catURL = URL(fileURLWithPath: "/bin/cat")
+        let executable = try LocalExecutableApproval.verify(executable: catURL)
+        let binding = submission.effectBinding
+        let (_, producer) = try ManualSimulatorShutdownInvocation.simulatorBinding(binding)
+        guard executable.canonicalPath == "/bin/cat", producer.simctl == executable else {
+            throw ManualServiceInventoryError.identityMismatch
+        }
+        try Task.checkCancellation()
+        guard ContinuousClock.now < deadline else { throw ManualSimulatorClientError.expired }
+        // Conservative durable boundary before even this harmless fixture can
+        // spawn. Do not place this single-use transition in the validator that
+        // ProcessSession may call more than once. Every later failure remains
+        // possibly submitted; an Error cannot manufacture a no-effect proof.
+        let permit = try submission.beginSubmission()
+        let invocation = try ManualSimulatorShutdownInvocation.cooperativeFixture(binding: permit.binding,
+            runID: permit.runID, operationID: permit.operationID, executable: executable)
+        guard try LocalExecutableApproval.verify(executable: catURL) == executable else {
+            throw ManualServiceInventoryError.identityMismatch
+        }
+        let childDuration = ContinuousClock.now.duration(to: deadline)
+        guard childDuration > .zero else { throw ManualSimulatorClientError.expired }
+        return try await $launchDepth.withValue(launchDepth + 1) {
+            let request = ProcessTestRequest(executable: catURL, arguments: [],
+                environment: invocation.environment, kind: .mutation, deadline: childDuration)
+            let session = try await ProcessSession.launchForTesting(request, gate: gate)
+            // Once a child exists, always return its retained owner, even when
+            // identity capture failed or cancellation raced with the spawn.
+            return ManualSimulatorOwnedLaunch(session: session, invocation: invocation, issuingSubmission: submission)
+        }
+    }
+
+    /// Fixed approved resolver query. An inherited developer directory, PATH,
+    /// or writable HOME can never select a different producer for this route.
+    static func runManualSimulatorResolver(resolver: LocalExecutableApproval,
+                                          deviceSet: LocalRootApproval,
+                                          authority: LocalAuthoritySnapshot,
+                                          deadline: ContinuousClock.Instant,
+                                          terminalLease: ProcessTerminalVerificationLease? = nil) async throws -> Data {
+        let validate: @Sendable () throws -> Void = {
+            try terminalLease?.checkValidity()
+            try ManualSimulatorDiscovery.requireInitialAuthority(resolver: resolver,
+                deviceSet: deviceSet, authority: authority)
+            try ManualSimulatorDiscovery.requireExistingDeviceSet(deviceSet, deadline: deadline)
+        }
+        try validate()
+        let declaration = DeclaredInvocation(executableURL: URL(fileURLWithPath: "/usr/bin/xcrun"),
+            arguments: ["--find", "simctl"], environment: manualSimulatorEnvironment,
+            kind: .readOnly, maximumDescendants: 0, validateImmediatelyBeforeSpawn: validate)
+        let data = try await runManualSimulatorDeclaration(declaration, deadline: deadline, terminalLease: terminalLease)
+        try validate()
+        return data
+    }
+
+    static func runManualSimctlVersion(_ bootstrap: ManualSimulatorReadBootstrap,
+                                      deadline: ContinuousClock.Instant,
+                                      terminalLease: ProcessTerminalVerificationLease? = nil) async throws -> Data {
+        let validate: @Sendable () throws -> Void = {
+            try terminalLease?.checkValidity()
+            try bootstrap.checkCurrent(deadline: deadline)
+        }
+        try validate()
+        var environment = manualSimulatorEnvironment
+        environment["DEVELOPER_DIR"] = bootstrap.developerDirectory.canonicalPath
+        let declaration = DeclaredInvocation(executableURL: URL(fileURLWithPath: bootstrap.simctl.canonicalPath),
+            arguments: ["--version"], environment: environment, kind: .readOnly,
+            maximumDescendants: 0, validateImmediatelyBeforeSpawn: validate)
+        let data = try await runManualSimulatorDeclaration(declaration, deadline: deadline, terminalLease: terminalLease)
+        try validate()
+        return data
+    }
+
+    static func runManualSimulatorInventory(_ request: ManualSimulatorReadRequest,
+                                           authority: LocalAuthoritySnapshot,
+                                           deadline: ContinuousClock.Instant,
+                                           terminalLease: ProcessTerminalVerificationLease?) async throws -> Data {
+        let producer = request.producer
+        guard producer.isInspectedCandidateVersion else { throw ProcessRunnerError.undeclaredInvocation }
+        let bootstrap = ManualSimulatorReadBootstrap(resolver: producer.resolver, simctl: producer.simctl,
+            developerDirectory: producer.developerDirectory, deviceSet: producer.deviceSet, authority: authority)
+        let validate: @Sendable () throws -> Void = {
+            try terminalLease?.checkValidity()
+            try bootstrap.checkCurrent(deadline: deadline)
+        }
+        try validate()
+        var environment = manualSimulatorEnvironment
+        environment["DEVELOPER_DIR"] = producer.developerDirectory.canonicalPath
+        // Reconstruct the compiled shape rather than accepting caller argv or
+        // environment, even though the request's initializer is already private.
+        let arguments = ["--set", producer.deviceSet.canonicalPath, "list", request.component.rawValue, "-j"]
+        let declaration = DeclaredInvocation(executableURL: URL(fileURLWithPath: producer.simctl.canonicalPath),
+            arguments: arguments, environment: environment, kind: .readOnly,
+            maximumDescendants: 0, validateImmediatelyBeforeSpawn: validate)
+        let data = try await runManualSimulatorDeclaration(declaration, deadline: deadline,
+            maximumDuration: request.timeout, terminalLease: terminalLease)
+        try validate()
+        return data
+    }
+
+    private static let manualSimulatorEnvironment = [
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": "/var/empty"
+    ]
+
+    private static func runManualSimulatorDeclaration(_ declaration: DeclaredInvocation,
+                                                     deadline: ContinuousClock.Instant,
+                                                     maximumDuration: Duration = .seconds(10),
+                                                     terminalLease: ProcessTerminalVerificationLease? = nil) async throws -> Data {
+        guard launchDepth == 0 else { throw ProcessRunnerError.nestedLaunch }
+        guard declaration.kind == .readOnly, declaration.maximumDescendants == 0 else {
+            throw ProcessRunnerError.undeclaredInvocation
+        }
+        let readDeadline = min(deadline, ContinuousClock.now.advanced(by: min(maximumDuration, .seconds(10))))
+        return try await $launchDepth.withValue(launchDepth + 1) {
+            let remaining = ContinuousClock.now.duration(to: readDeadline)
+            guard remaining > .zero else { throw ManualSimulatorClientError.expired }
+            let components = remaining.components
+            let timeout = Double(components.seconds) + Double(components.attoseconds) / 1e18
+            let authorization = AuthorizedLaunch(declaration, timeout: timeout)
+            let session: ProcessSession
+            do {
+                session = try await ProcessSession.launchDeadlineBoundRead(authorization,
+                    deadline: readDeadline, terminalLease: terminalLease)
+            } catch ProcessReadAdmissionError.expired {
+                throw ManualSimulatorClientError.expired
+            }
+            let output = await session.collect()
+            guard case .exited(0) = output.end, output.stdout.eofObserved, output.stderr.eofObserved,
+                  !output.stdout.truncated, !output.stderr.truncated,
+                  output.stdout.bytes.count <= BoundedAdapterData.maximumBytes else {
+                throw ProcessRunnerError.undeclaredInvocation
+            }
+            return output.stdout.bytes
+        }
     }
 
     static func runLocalSnapshots(tmutilURL: URL, volumePath: String) async throws -> Output {

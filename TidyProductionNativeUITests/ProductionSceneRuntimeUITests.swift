@@ -4,6 +4,144 @@ import XCTest
 /// the compile-scoped synthetic composition in TidyProductionRuntimeHost.
 final class ProductionSceneRuntimeUITests: XCTestCase {
     @MainActor
+    func testProductionManualServiceReviewRemainsUnavailableAndResetsChoices() throws {
+        continueAfterFailure = false
+        let app = launchReadyApp()
+        let witness = URL(fileURLWithPath: try XCTUnwrap(app.staticTexts["runtime.synthetic.witness"].value as? String))
+        let witnessBefore = try Data(contentsOf: witness)
+        let controls = try XCTUnwrap(Self.foregroundVerificationControls(in: app))
+        let openFixture = controls.buttons["runtime.open.manual.fixture"]
+        XCTAssertTrue(Self.waitForHittability(openFixture), controls.debugDescription)
+        XCTAssertTrue(openFixture.isHittable)
+        openFixture.click()
+        let developer = app.windows["Developer Workspace"]
+        XCTAssertTrue(developer.waitForExistence(timeout: 10))
+        let tab = developer.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Manual Operations")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), developer.debugDescription)
+        tab.click()
+        let selected = developer.checkBoxes["manualService.selected"]
+        let acknowledged = developer.checkBoxes["manualService.acknowledged"]
+        let dismiss = developer.buttons["manualService.dismiss"]
+        func reveal(_ element: XCUIElement) {
+            let viewport = developer.scrollViews.firstMatch
+            for _ in 0..<12 {
+                if element.isHittable && viewport.frame.contains(element.frame) { break }
+                viewport.scroll(byDeltaX: 0, deltaY: -180)
+            }
+            XCTAssertTrue(element.isHittable, developer.debugDescription)
+        }
+        reveal(selected)
+        XCTAssertEqual((selected.value as? NSNumber)?.intValue ?? Int(selected.value as? String ?? ""), 0)
+        selected.click()
+        reveal(acknowledged)
+        XCTAssertEqual((acknowledged.value as? NSNumber)?.intValue ?? Int(acknowledged.value as? String ?? ""), 0)
+        acknowledged.click()
+        XCTAssertTrue(developer.descendants(matching: .any).matching(identifier: "manualService.unavailable").firstMatch.exists)
+        XCTAssertFalse(developer.buttons["Execute"].exists)
+        reveal(dismiss); dismiss.click()
+        XCTAssertFalse(selected.exists)
+        _ = try XCTUnwrap(Self.foregroundVerificationControls(in: app))
+        XCTAssertTrue(Self.waitForHittability(openFixture), controls.debugDescription)
+        XCTAssertTrue(openFixture.isHittable)
+        openFixture.click()
+        reveal(selected)
+        XCTAssertEqual((selected.value as? NSNumber)?.intValue ?? Int(selected.value as? String ?? ""), 0)
+        XCTAssertEqual((acknowledged.value as? NSNumber)?.intValue ?? Int(acknowledged.value as? String ?? ""), 0)
+        XCTAssertEqual(try Data(contentsOf: witness), witnessBefore)
+    }
+
+    @MainActor
+    func testProductionDiagnosticExportSavesOnlyMetadataInSyntheticHome() throws {
+        continueAfterFailure = false
+        let app = launchReadyApp()
+        let home = try XCTUnwrap(app.staticTexts["runtime.synthetic.home"].value as? String)
+        let directory = URL(fileURLWithPath: home)
+        let before = Set(try FileManager.default.contentsOfDirectory(atPath: home))
+        func newExports() -> [String] {
+            (try? FileManager.default.contentsOfDirectory(atPath: home))?.filter {
+                !before.contains($0) && $0.hasPrefix("tidy-diagnostics-") && $0.hasSuffix(".json")
+            } ?? []
+        }
+        app.buttons["runtime.open.settings"].click()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.descendants(matching: .any)
+            .matching(identifier: "settings.section.experience").firstMatch.click()
+        settings.buttons["settings.diagnostics.export"].click()
+        let save = app.windows.buttons["Save"].firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        app.typeText(home)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.click()
+        let saved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            newExports().count == 1
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 10), .completed)
+        let destination = directory.appendingPathComponent(try XCTUnwrap(newExports().first))
+        let data = try Data(contentsOf: destination)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNotNil(object["settingsRevision"])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(home))
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        XCTAssertTrue((settings.staticTexts["settings.diagnostics.status"].value as? String
+            ?? settings.staticTexts["settings.diagnostics.status"].label).localizedCaseInsensitiveContains("exported"))
+    }
+
+    @MainActor
+    func testProductionOptionalDataReviewCancelClearAndDiagnosticPanel() throws {
+        continueAfterFailure = false
+        let app = launchReadyApp()
+        app.buttons["runtime.open.settings"].click()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        func clickVisible(_ element: XCUIElement) {
+            let viewport = settings.scrollViews.firstMatch
+            for _ in 0..<8 {
+                if element.isHittable && viewport.frame.contains(element.frame) { break }
+                let delta: CGFloat = element.frame.maxY > viewport.frame.maxY ? -140 : 140
+                viewport.scroll(byDeltaX: 0, deltaY: delta)
+            }
+            XCTAssertTrue(viewport.frame.contains(element.frame), element.debugDescription)
+            element.click()
+        }
+        let experience = settings.descendants(matching: .any)
+            .matching(identifier: "settings.section.experience").firstMatch
+        XCTAssertTrue(experience.waitForExistence(timeout: 5), settings.debugDescription)
+        experience.click()
+        let review = settings.buttons["settings.data.review.completedReports"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5), settings.debugDescription)
+        clickVisible(review)
+        let cancel = settings.buttons["settings.data.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), settings.debugDescription)
+        clickVisible(cancel)
+        XCTAssertTrue(waitForAbsence(cancel))
+        clickVisible(review)
+        let confirm = settings.buttons["settings.data.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        clickVisible(confirm)
+        let status = settings.staticTexts["settings.data.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertTrue((status.value as? String ?? status.label).contains("cleared"), status.debugDescription)
+        let export = settings.buttons["settings.diagnostics.export"]
+        clickVisible(export)
+        // Native panel cancellation must return to the unchanged Settings scene.
+        let panelCancel = app.windows.buttons["Cancel"].firstMatch
+        XCTAssertTrue(panelCancel.waitForExistence(timeout: 5), app.debugDescription)
+        panelCancel.click()
+        XCTAssertTrue(export.isEnabled)
+        settings.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(waitForAbsence(settings))
+        app.buttons["runtime.open.settings"].click()
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertFalse(settings.buttons["settings.data.confirm"].exists)
+        XCTAssertEqual(app.staticTexts["runtime.synthetic.isolation"].value as? String, "isolated")
+        XCTAssertEqual(app.staticTexts["runtime.authorization"].value as? String, "all-denied")
+    }
+
+    @MainActor
     func testProductionRuntimeStartsWithSyntheticStorageAttestation() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -49,10 +187,14 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
 
         let row = app.descendants(matching: .any)["settings.row.feature.headroom"]
         let editor = app.checkBoxes["settings.control.feature.headroom"]
-        let metadata = app.staticTexts["settings.metadata.feature.headroom"]
+        let metadata = app.descendants(matching: .any)
+            .matching(identifier: "settings.metadata.feature.headroom").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), row.debugDescription)
         XCTAssertTrue(editor.exists)
         XCTAssertTrue(metadata.exists)
+        XCTAssertNotEqual(metadata.elementType, .staticText)
+        XCTAssertNotEqual(metadata.identifier, editor.identifier)
+        XCTAssertEqual(metadata.staticTexts.count, 7)
 
         let search = app.textFields["settings.search"]
         XCTAssertTrue(search.exists)
@@ -270,6 +412,40 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
     }
 
     @MainActor
+    private static func waitForHittability(_ element: XCUIElement,
+                                          timeout: TimeInterval = 5) -> Bool {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            element.exists && element.isHittable
+        }, object: element)
+        return XCTWaiter.wait(for: [ready], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private static func foregroundVerificationControls(in app: XCUIApplication) -> XCUIElement? {
+        app.activate()
+        let windowMenu = app.menuBars.menuBarItems["Window"]
+        guard waitForHittability(windowMenu) else {
+            XCTFail("The supported Window menu was not hittable: \(app.debugDescription)")
+            return nil
+        }
+        windowMenu.click()
+        let title = "Tidy Production Runtime Verification"
+        let controlsItem = app.menuItems[title]
+        guard waitForHittability(controlsItem) else {
+            XCTFail("The verification window's Window menu item was not hittable: \(app.debugDescription)")
+            return nil
+        }
+        controlsItem.click()
+        let controls = app.windows[title]
+        guard controls.waitForExistence(timeout: 5), waitForHittability(controls) else {
+            XCTFail("The verification control window was not visible after menu selection: \(app.debugDescription)")
+            return nil
+        }
+        XCTAssertTrue(controls.isHittable)
+        return controls
+    }
+
+    @MainActor
     private static func terminateAndCleanup(_ app: XCUIApplication) {
         let homeElement = app.staticTexts["runtime.synthetic.home"]
         let homePath = homeElement.exists ? homeElement.value as? String : nil
@@ -291,13 +467,23 @@ final class ProductionSceneRuntimeUITests: XCTestCase {
             XCTFail("Refused unsafe fixture cleanup target: \(rootPath)")
             return
         }
-        let cleanup = app.buttons["runtime.fixture.cleanupAndQuit"]
-        guard cleanup.exists else {
+        if let controls = foregroundVerificationControls(in: app) {
+            let cleanup = controls.buttons["runtime.fixture.cleanupAndQuit"]
+            guard cleanup.exists else {
+                app.terminate()
+                XCTFail("Dedicated runtime host did not expose fixture cleanup")
+                return
+            }
+            if waitForHittability(cleanup) {
+                XCTAssertTrue(cleanup.isHittable)
+                cleanup.click()
+            } else {
+                XCTFail("Dedicated runtime fixture cleanup was not hittable: \(controls.debugDescription)")
+                app.terminate()
+            }
+        } else {
             app.terminate()
-            XCTFail("Dedicated runtime host did not expose fixture cleanup")
-            return
         }
-        cleanup.click()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
         let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             !FileManager.default.fileExists(atPath: rootPath)

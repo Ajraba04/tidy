@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 import SwiftUI
@@ -456,24 +457,31 @@ enum SettingsImportFileReader {
     static let maximumByteCount = 1_048_576
 
     static func read(_ url: URL) throws -> Data {
-        let handle: FileHandle
-        do { handle = try FileHandle(forReadingFrom: url) }
-        catch { throw SettingsImportFileReaderError.unavailable }
-        defer { try? handle.close() }
-        do {
-            guard try handle.seekToEnd() <= UInt64(maximumByteCount) else {
-                throw SettingsImportFileReaderError.tooLarge
-            }
-            try handle.seek(toOffset: 0)
-            guard let data = try handle.read(upToCount: 1_048_577),
-                  data.count <= maximumByteCount else {
-                throw SettingsImportFileReaderError.tooLarge
-            }
-            return data
-        } catch let error as SettingsImportFileReaderError {
-            throw error
-        } catch {
+        guard url.isFileURL else { throw SettingsImportFileReaderError.unavailable }
+        let fd = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw SettingsImportFileReaderError.unavailable }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size >= 0 else {
             throw SettingsImportFileReaderError.unavailable
+        }
+        guard info.st_size <= maximumByteCount else { throw SettingsImportFileReaderError.tooLarge }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        while true {
+            try Task.checkCancellation()
+            guard ProcessInfo.processInfo.systemUptime < deadline else {
+                throw SettingsImportFileReaderError.unavailable
+            }
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count == 0 { return data }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw SettingsImportFileReaderError.unavailable
+            }
+            guard count <= maximumByteCount - data.count else { throw SettingsImportFileReaderError.tooLarge }
+            data.append(contentsOf: buffer.prefix(count))
         }
     }
 }
@@ -1066,6 +1074,9 @@ struct SettingsWorkflowSurface: View {
     @State private var controller: SettingsWorkflowController
     @State private var selectedTab: SettingsWorkflowTab
     @State private var showsImporter = false
+    @State private var importReadID = UUID()
+    @State private var isReadingImport = false
+    @State private var importReadTask: Task<Result<Data, Error>, Never>?
     @State private var showsExporter = false
     @State private var exportDocument: PortableSettingsDocument?
     @State private var resetGlobalIDs = Set<SettingID>()
@@ -1101,16 +1112,40 @@ struct SettingsWorkflowSurface: View {
                     .accessibilityIdentifier("settings.workflow.projectionFailure")
             }
         }
+        // SETTINGS_IMPORT_FILE_CALLBACK_BEGIN
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? SettingsImportFileReader.read(url) else {
-                workflowMessage = SettingsCopy.resolve("settings.import.failure", bundle: bundle)
-                return
+            let requestID = UUID()
+            importReadTask?.cancel()
+            importReadID = requestID
+            isReadingImport = true
+            let readTask = Task.detached(priority: .userInitiated) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                return Result { try SettingsImportFileReader.read(url) }
             }
-            controller.beginImportSelection(bytes: data)
+            importReadTask = readTask
+            Task {
+                let result = await readTask.value
+                guard importReadID == requestID else { return }
+                importReadTask = nil
+                isReadingImport = false
+                switch result {
+                case .success(let data): controller.beginImportSelection(bytes: data)
+                case .failure: workflowMessage = SettingsCopy.resolve("settings.import.failure", bundle: bundle)
+                }
+            }
         }
+        // SETTINGS_IMPORT_FILE_CALLBACK_END
+        .overlay(alignment: .bottom) {
+            if isReadingImport {
+                HStack {
+                    ProgressView("Reading settings…")
+                    Button("Cancel") { cancelImportRead() }
+                }.padding().background(.regularMaterial)
+            }
+        }
+        .onDisappear { cancelImportRead() }
         .fileExporter(isPresented: $showsExporter, document: exportDocument,
                       contentType: .json, defaultFilename: "tidy-settings") { result in
             if case .failure = result {
@@ -1118,6 +1153,13 @@ struct SettingsWorkflowSurface: View {
             }
             exportDocument = nil
         }
+    }
+
+    private func cancelImportRead() {
+        importReadID = UUID()
+        importReadTask?.cancel()
+        importReadTask = nil
+        isReadingImport = false
     }
 
     private func workflowContent(
@@ -1441,25 +1483,53 @@ struct SettingsWorkflowSurface: View {
     ) -> some View {
         Text(SettingsCopy.resolve("settings.reset.preview", bundle: bundle)).font(.headline)
         Text("\(SettingsCopy.resolve("settings.workflow.revision", bundle: bundle)): \(preview.baseRevision)")
-        ForEach(preview.globalChanges, id: \.id) { change in
-            Text(change.id.rawValue + ": " + describe(change.oldValue) + " → " +
-                 describe(change.newValue) + " · Default: " + describe(change.defaultValue))
-        }
+        resetGlobalChangeDetails(preview.globalChanges)
         if let profile = preview.profileReset {
-            Text(profile.profileID.uuidString).textSelection(.enabled)
-            ForEach(profile.changes, id: \.id) { change in
-                Text(change.id.rawValue + ": " + describe(change.oldValue) + " → " +
-                     describe(change.newValue) + " · " + describe(change.defaultValue))
-                Text(describe(change.rule) + " · " + describe(change.effect) + " · " +
-                     String(describing: change.oldSource) + " → " +
-                     String(describing: change.newSource))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            resetProfileDetails(profile)
         }
-        ForEach(preview.immutableBoundaries.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) {
-            Text(SettingsCopy.resolve("settings.reset.boundary." + $0.rawValue, bundle: bundle))
-        }
+        resetBoundaryDetails(preview.immutableBoundaries)
         Text(describe(preview.effect)).font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func resetGlobalChangeDetails(_ changes: [ProfileFieldDiff]) -> some View {
+        ForEach(changes, id: \.id) { change in
+            Text(resetChangeValueDescription(change) + " · Default: " + describe(change.defaultValue))
+        }
+    }
+
+    @ViewBuilder private func resetProfileDetails(_ profile: ProfileResetPreview) -> some View {
+        Text(profile.profileID.uuidString).textSelection(.enabled)
+        ForEach(profile.changes, id: \.id) { change in
+            resetProfileFieldDetails(change)
+        }
+    }
+
+    @ViewBuilder private func resetProfileFieldDetails(_ change: ProfileFieldDiff) -> some View {
+        Text(resetChangeValueDescription(change) + " · " + describe(change.defaultValue))
+        Text(resetProfileFieldMetadataDescription(change))
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func resetBoundaryDetails(_ boundaries: Set<SettingsResetBoundary>) -> some View {
+        let ordered = boundaries.sorted { $0.rawValue < $1.rawValue }
+        return ForEach(ordered, id: \.self) { boundary in
+            Text(SettingsCopy.resolve("settings.reset.boundary." + boundary.rawValue, bundle: bundle))
+        }
+    }
+
+    private func resetChangeValueDescription(_ change: ProfileFieldDiff) -> String {
+        var text = change.id.rawValue + ": "
+        text += describe(change.oldValue)
+        text += " → " + describe(change.newValue)
+        return text
+    }
+
+    private func resetProfileFieldMetadataDescription(_ change: ProfileFieldDiff) -> String {
+        var text = describe(change.rule) + " · "
+        text += describe(change.effect) + " · "
+        text += String(describing: change.oldSource) + " → "
+        text += String(describing: change.newSource)
+        return text
     }
 
     private func beginProfileEditor(target: SettingsWorkflowEditorTarget,
@@ -1552,6 +1622,7 @@ struct SettingsWorkflowSurface: View {
 }
 
 struct SettingsView: View {
+    var optionalDataControls: AnyView? = nil
     @Environment(AppConfigStore.self) private var store
     @Environment(\.openWindow) private var openWindow
     @State private var selectedSection = SettingsPresentationSection.features
@@ -1587,6 +1658,7 @@ struct SettingsView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if selectedSection == .experience {
                         DiagnosticExportControl(store: store)
+                        optionalDataControls
                     }
                     RegistrySettingsContent(rows: rows) { id, value in
                         _ = model.submit(id: id, value: value)
@@ -1636,6 +1708,7 @@ private struct DiagnosticExportControl: View {
         panel.nameFieldStringValue = "tidy-diagnostics-\(UUID().uuidString.prefix(8)).json"
         isExporting = true
         message = nil
+        // SETTINGS_DIAGNOSTIC_EXPORT_CALLBACK_BEGIN
         panel.begin { response in
             guard response == .OK, let destination = panel.url else {
                 isExporting = false
@@ -1666,6 +1739,7 @@ private struct DiagnosticExportControl: View {
                 }
             }
         }
+        // SETTINGS_DIAGNOSTIC_EXPORT_CALLBACK_END
     }
 }
 
@@ -1768,23 +1842,19 @@ private struct RegistrySettingRow: View {
     }
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 3) {
-            semanticText(row.help, role: SettingsVisualContract.metadataRole)
-            semanticText("Default: " + row.defaultText, role: SettingsVisualContract.metadataRole)
-            semanticText("Effective: " + row.effectiveText, role: SettingsVisualContract.metadataRole)
-            semanticText("Source: " + row.sourceText, role: SettingsVisualContract.metadataRole)
-            semanticText("Rule: " + row.ruleText, role: SettingsVisualContract.metadataRole)
-            semanticText(row.consequence, role: SettingsVisualContract.metadataRole)
+            ForEach(Array(SettingsAccessibility.primaryMetadataLines(for: row).enumerated()), id: \.offset) { line in
+                semanticText(line.element, role: SettingsVisualContract.metadataRole)
+                    .accessibilityIdentifier("settings.metadata." + row.id.rawValue + ".primary." + String(line.offset))
+            }
             semanticText(row.availabilityText, role:
                 row.availability == .editable ? SettingsVisualContract.metadataRole :
                     SettingsVisualContract.unavailableRole)
+                .accessibilityIdentifier("settings.metadata." + row.id.rawValue + ".availability")
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isStaticText)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.metadata." + row.id.rawValue)
         .accessibilityLabel(row.accessibilityLabel)
-        .accessibilityValue(SettingsAccessibility.value(for: row))
-        .accessibilityHint(SettingsAccessibility.help(for: row))
     }
 }
 
@@ -1845,13 +1915,10 @@ private struct SettingsIntegerEditor: View {
 }
 
 enum SettingsAccessibility {
-    static func value(for row: SettingsSurfaceRow) -> String {
-        "Default: " + row.defaultText + ". Effective: " + row.effectiveText +
-            ". Source: " + row.sourceText + ". Rule: " + row.ruleText
-    }
-
-    static func help(for row: SettingsSurfaceRow) -> String {
-        row.help + " " + row.consequence + " " + row.availabilityText
+    static func primaryMetadataLines(for row: SettingsSurfaceRow) -> [String] {
+        [row.help, "Default: " + row.defaultText,
+         "Effective: " + row.effectiveText, "Source: " + row.sourceText,
+         "Rule: " + row.ruleText, row.consequence]
     }
 }
 

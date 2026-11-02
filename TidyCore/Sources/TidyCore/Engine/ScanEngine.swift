@@ -726,6 +726,7 @@ internal extension ScanEngine {
             for root in environment.gitRoots {
                 guard let page = await StaleNodeModulesScanner.findBounded(root: root,
                     olderThanDays: environment.staleNodeModulesThresholdDays,
+                    protectedRoots: environment.protectedRoots,
                     sessions: context.sessions, session: context.session,
                     sessionID: context.sessionID, generation: context.generation,
                     limits: context.traversalLimits) else { continue }
@@ -921,11 +922,30 @@ internal extension ScanEngine {
                 }
                 continue
             }
+            // Traversal progress is cumulative for this root (also after
+            // Continue). Always combine it with the immutable prior-root base,
+            // never with the preceding progress display.
+            let completedBeforeRoot = completed
+            let progress: @Sendable (TraversalResult) async -> Bool = { partial in
+                do { try authorization.checkValidity() }
+                catch { return false }
+                var displayed = completedBeforeRoot
+                displayed.absorb(partial, optionalMissing: true)
+                if partial.totalBytes > 0 {
+                    displayed.topLevelHomeRanking = Array(displayed.topLevelHomeRanking
+                        .sorted(by: rankedBefore).prefix(7))
+                    displayed.topLevelHomeRanking.append(RankedItem(path: root, bytes: partial.totalBytes))
+                    displayed.topLevelHomeRanking.sort(by: rankedBefore)
+                }
+                return await publishProgress(accumulator: &displayed, context: context,
+                    reporter: reporter, store: store, allowLiveObservationChanges: true)
+            }
             if index == rootIndex, let current {
                 traversal = current.0
                 result = await traversal.continue(from: current.1,
                     session: context.session, sessionID: context.sessionID,
-                    generation: context.generation)
+                    generation: context.generation,
+                    progressBatchesPerSecond: context.uiBatchesPerSecond, progress: progress)
             } else if let visitHook {
                 traversal = BoundedTraversal(sessions: context.sessions,
                     limits: context.traversalLimits, testHook: visitHook)
@@ -933,7 +953,8 @@ internal extension ScanEngine {
                     sessionID: context.sessionID, generation: context.generation,
                     options: TraversalOptions(protectedRoots: protected,
                         minimumFileBytes: largeFileThreshold, collectChildTotals: false,
-                        recordSelection: .none))
+                        recordSelection: .none),
+                    progressBatchesPerSecond: context.uiBatchesPerSecond, progress: progress)
             } else {
                 traversal = BoundedTraversal(sessions: context.sessions,
                     limits: context.traversalLimits)
@@ -941,7 +962,8 @@ internal extension ScanEngine {
                     sessionID: context.sessionID, generation: context.generation,
                     options: TraversalOptions(protectedRoots: protected,
                         minimumFileBytes: largeFileThreshold, collectChildTotals: false,
-                        recordSelection: .none))
+                        recordSelection: .none),
+                    progressBatchesPerSecond: context.uiBatchesPerSecond, progress: progress)
             }
             var displayed = completed
             displayed.absorb(result, optionalMissing: true)
@@ -954,6 +976,11 @@ internal extension ScanEngine {
                 .sorted(by: rankedBefore).prefix(8))
             displayed.filesOver1GB = Array(displayed.filesOver1GB
                 .sorted(by: rankedBefore).prefix(8))
+            do { try authorization.checkValidity() }
+            catch {
+                await continuations.clear()
+                return await cancelledCompletion(displayed, store: store)
+            }
             if let cursor = result.cursor {
                 guard dormantContinuationSupported else {
                     await continuations.clear()
@@ -1073,6 +1100,14 @@ internal extension ScanEngine {
         progressReasons.insert(.sliceExpired)
         let coverage = TraversalCoverage(isComplete: false, reasons: progressReasons)
         var snapshot = accumulator.sessionSnapshot()
+        // Publish the renderable result first: a registry progress event must
+        // never notify observers while latestResult still lacks its aggregate.
+        await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
+            continuationAvailable: false, metadataVisits: accumulator.metadataVisits))
+        if await reporter.isCancelled() { return false }
+        do { _ = try await context.checkCurrent(
+            allowLiveObservationChanges: allowLiveObservationChanges) }
+        catch { return false }
         do {
             try await reporter.recordBatch(coverage: coverage, snapshot: snapshot)
         } catch ScanSessionRegistryError.snapshotLimit {
@@ -1083,8 +1118,6 @@ internal extension ScanEngine {
         } catch {
             return false
         }
-        await store.update(CoreScanResult(report: accumulator.report(), coverage: coverage,
-            continuationAvailable: false, metadataVisits: accumulator.metadataVisits))
         return true
     }
 
